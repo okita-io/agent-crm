@@ -15,6 +15,8 @@ from .enums import (
     ActivityType,
     AgentStatus,
     Brand,
+    ContactKind,
+    ContactVerificationStatus,
     HuntResourceKind,
     JourneyStatus,
     LeadSource,
@@ -142,6 +144,45 @@ class ResearchResult(BaseModel):
     pages_scraped: int
     findings_written: list[int]
     errors: list[str]
+
+
+class VerifyRawRequest(BaseModel):
+    """Verify a raw email or URL without an existing lead."""
+
+    email: str | None = None
+    url: str | None = None
+
+
+class BatchVerifyRequest(BaseModel):
+    """Batch-verify unverified hunter leads."""
+
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class ContactVerificationOut(ORMModel):
+    id: int
+    lead_id: int | None
+    contact: str
+    contact_kind: ContactKind
+    status: ContactVerificationStatus
+    reasons: list[str] | None
+    checked_at: datetime
+    dns_summary: dict | None
+    mx_summary: dict | None
+    http_status: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class BatchVerifyResult(BaseModel):
+    leads_processed: int
+    contacts_verified: int
+    lead_ids: list[int]
+    errors: list[str]
+
+
+class VerifyRawResult(BaseModel):
+    results: list[ContactVerificationOut]
 
 
 # ---- Outputs ---------------------------------------------------------------

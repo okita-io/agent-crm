@@ -179,6 +179,32 @@ def _cmd_research(args: argparse.Namespace) -> int:
     return 0 if result.findings_written or not result.errors else 1
 
 
+def _cmd_verify(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .schemas import VerifyRawRequest
+    from .verifier import verify_batch_unverified, verify_lead, verify_raw
+
+    init_db()
+
+    if args.email or args.url:
+        result = verify_raw(VerifyRawRequest(email=args.email, url=args.url))
+        print(json.dumps(result.model_dump(mode="json"), indent=2))
+        return 0
+
+    if args.lead_id is not None:
+        results = verify_lead(args.lead_id)
+        print(json.dumps([r.model_dump(mode="json") for r in results], indent=2))
+        return 0
+
+    if args.unverified:
+        result = verify_batch_unverified(limit=args.limit)
+        print(json.dumps(result.model_dump(mode="json"), indent=2))
+        return 0 if not result.errors else 1
+
+    print("Specify --lead-id, --unverified, --email, or --url.", file=sys.stderr)
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent-crm", description="Agent CRM tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -276,6 +302,23 @@ def main(argv: list[str] | None = None) -> int:
         help="Do not write Account notes for strong hits",
     )
     research.set_defaults(func=_cmd_research)
+
+    verify = sub.add_parser("verify", help="Verify lead contacts (DNS/MX/HTTP, no mail)")
+    verify.add_argument("--lead-id", type=int, help="Verify a single lead by id")
+    verify.add_argument(
+        "--unverified",
+        action="store_true",
+        help="Batch-verify unverified hunter leads",
+    )
+    verify.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Max leads for --unverified (default 50)",
+    )
+    verify.add_argument("--email", help="Verify a raw email address")
+    verify.add_argument("--url", help="Verify a raw URL")
+    verify.set_defaults(func=_cmd_verify)
 
     args = parser.parse_args(argv)
     return args.func(args)

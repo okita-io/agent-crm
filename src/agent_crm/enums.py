@@ -97,6 +97,7 @@ class ActivityType(str, enum.Enum):
     HOT_LEAD_ALERT = "hot_lead_alert"
     NOTE = "note"
     SCRAPE = "scrape"
+    VERIFIED = "verified"
     ERROR = "error"
 
 
@@ -145,3 +146,19 @@ class ResearchFindingKind(str, enum.Enum):
     COMPETITOR = "competitor"
     NONPROFIT = "nonprofit"
     OTHER = "other"
+
+
+class ContactKind(str, enum.Enum):
+    """Whether a verification record targets an email address or a URL."""
+
+    EMAIL = "email"
+    URL = "url"
+
+
+class ContactVerificationStatus(str, enum.Enum):
+    """Outcome of a defensive contact check (no SMTP / no sending)."""
+
+    VALID = "valid"
+    INVALID = "invalid"
+    RISKY = "risky"
+    UNKNOWN = "unknown"
