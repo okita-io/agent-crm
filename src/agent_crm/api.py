@@ -55,8 +55,7 @@ app = FastAPI(
 
 @app.on_event("startup")
 def _startup() -> None:
-    # Ensure tables exist for a fresh SQLite file. In Postgres/production,
-    # Alembic runs first; create_all is a no-op when the schema already exists.
+    # SQLite: create tables on boot. Postgres: schema from Alembic (entrypoint migrate).
     init_db()
 
 
