@@ -14,6 +14,7 @@ the same on SQLite (dev) and Postgres (the NAS target).
 
 from __future__ import annotations
 
+import enum
 from datetime import UTC, datetime
 
 from sqlalchemy import (
@@ -30,10 +31,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from .db_types import str_enum
 from .enums import (
     ActivityType,
-    AgentHeartbeatStatus,
+    AgentStatus,
     Brand,
     HuntQueryStatus,
     HuntResourceKind,
@@ -48,6 +48,16 @@ from .enums import (
 def utcnow() -> datetime:
     """Timezone-aware UTC now. Used as the default for every timestamp."""
     return datetime.now(UTC)
+
+
+def _str_enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    """Return enum member values for Postgres native enum labels."""
+    return [member.value for member in enum_cls]
+
+
+def str_enum(enum_cls: type[enum.Enum], **kwargs) -> SAEnum:
+    """SAEnum that persists ``str`` enum values (e.g. ``thinking``), not names."""
+    return SAEnum(enum_cls, values_callable=_str_enum_values, **kwargs)
 
 
 class Base(DeclarativeBase):
@@ -179,30 +189,21 @@ class Activity(Base, TimestampMixin):
     lead: Mapped[Lead | None] = relationship(back_populates="activities")
 
 
-class Journey(Base, TimestampMixin):
-    """A nurture state-machine instance owned by the Nurture agent."""
+class AgentHeartbeat(Base):
+    """Last-known liveness and task state for a CRM agent actor."""
 
-    __tablename__ = "journeys"
+    __tablename__ = "agent_heartbeats"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    lead_id: Mapped[int] = mapped_column(
-        ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True
+    agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[AgentStatus] = mapped_column(
+        str_enum(AgentStatus), default=AgentStatus.IDLE, nullable=False
     )
-
-    template_set: Mapped[str] = mapped_column(String(128), nullable=False)
-    brand: Mapped[Brand] = mapped_column(
-        SAEnum(Brand), default=Brand.UNASSIGNED, nullable=False
+    task: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resource: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
     )
-    step_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    next_run_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    status: Mapped[JourneyStatus] = mapped_column(
-        SAEnum(JourneyStatus), default=JourneyStatus.ACTIVE, nullable=False
-    )
-    stop_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    lead: Mapped[Lead] = relationship(back_populates="journeys")
 
 
 class HuntQuery(Base, TimestampMixin):
@@ -255,19 +256,27 @@ class HuntResource(Base, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class AgentHeartbeat(Base):
-    """Latest status for long-running agents (one row per actor)."""
+class Journey(Base, TimestampMixin):
+    """A nurture state-machine instance owned by the Nurture agent."""
 
-    __tablename__ = "agent_heartbeats"
+    __tablename__ = "journeys"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    actor: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    status: Mapped[AgentHeartbeatStatus] = mapped_column(
-        str_enum(AgentHeartbeatStatus),
-        default=AgentHeartbeatStatus.IDLE,
-        nullable=False,
+    lead_id: Mapped[int] = mapped_column(
+        ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+
+    template_set: Mapped[str] = mapped_column(String(128), nullable=False)
+    brand: Mapped[Brand] = mapped_column(
+        SAEnum(Brand), default=Brand.UNASSIGNED, nullable=False
     )
+    step_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    status: Mapped[JourneyStatus] = mapped_column(
+        SAEnum(JourneyStatus), default=JourneyStatus.ACTIVE, nullable=False
+    )
+    stop_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    lead: Mapped[Lead] = relationship(back_populates="journeys")

@@ -32,20 +32,27 @@ class Settings(BaseSettings):
     # Dashboard
     dashboard_port: int = 8501
 
-    # Behavior
-    hot_lead_threshold: int = 80
+    # LLM (Spark queue proxy — never point agents at Spark directly)
+    llm_base_url: str = "http://spark-queue:8088/v1"
 
-    # Outbound Hunter integrations
-    searxng_base_url: str = "http://localhost:8080"
-    firecrawl_base_url: str = "http://localhost:3002"
-    llm_base_url: str = "http://localhost:8001/v1"
-    llm_model: str = "qwen3.8-27b-sglang"
+    # Local ranch search + scrape (SearXNG + Firecrawl on the host)
+    searxng_url: str = "http://host.docker.internal:8080"
+    firecrawl_url: str = "http://host.docker.internal:3002"
+
+    # Outbound Hunter defaults
     hunter_max_pages_per_run: int = 8
+    hunter_search_result_limit: int = 15
     hunter_max_queries_default: int = 20
     hunter_max_minutes_default: int = 25
     hunter_max_branch_terms: int = 5
-    hunter_enable_llm: bool = True
     hunter_request_timeout: float = 60.0
+
+    # Observer / presence
+    api_base_url: str = "http://api:8000"
+    observer_refresh_seconds: int = 3
+
+    # Behavior
+    hot_lead_threshold: int = 80
 
     @property
     def is_sqlite(self) -> bool:

@@ -14,11 +14,9 @@ def db_url(tmp_path, monkeypatch):
     path = tmp_path / "test.db"
     url = f"sqlite:///{path}"
     monkeypatch.setenv("CRM_DATABASE_URL", url)
-    monkeypatch.setenv("CRM_HUNTER_ENABLE_LLM", "false")
     get_settings.cache_clear()
     reset_engine()
     init_db()
     yield url
     reset_engine()
     get_settings.cache_clear()
-

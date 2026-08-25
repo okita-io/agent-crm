@@ -1,90 +1,78 @@
-"""Spark / OpenAI-compatible LLM client for hunter extraction."""
+"""CRM LLM client helper — always targets the Spark queue, never Spark directly.
+
+Future scoring, nurture, and research agents should use this module so all CRM
+LLM traffic flows through the global occupancy-aware queue service.
+"""
 
 from __future__ import annotations
 
-import json
-import re
+from functools import lru_cache
+from typing import Any
 
 import httpx
 
-from agent_crm.config import Settings, get_settings
+from .config import get_settings
+from .enums import AgentStatus
+from .heartbeat import record_heartbeat
+from .presence import AGENT_IDENTITY_HEADER
 
 
-class LlmClient:
-    """Call the ranch LLM (spark-queue) for structured extraction."""
+@lru_cache
+def get_llm_base_url() -> str:
+    """Return the CRM LLM base URL (Spark queue proxy, includes ``/v1``)."""
+    return get_settings().llm_base_url.rstrip("/")
 
-    def __init__(self, settings: Settings | None = None) -> None:
-        self.settings = settings or get_settings()
 
-    @property
-    def enabled(self) -> bool:
-        return self.settings.hunter_enable_llm and bool(self.settings.llm_base_url)
+def _agent_headers(actor: str | None) -> dict[str, str]:
+    if not actor:
+        return {}
+    return {AGENT_IDENTITY_HEADER: actor}
 
-    def extract_follow_up_terms(
-        self,
-        *,
-        query: str,
-        results: list[dict],
-        max_terms: int,
-    ) -> list[str]:
-        """Ask the LLM for follow-up search terms (once per query, not per page)."""
-        if not self.enabled or not results:
-            return []
 
-        lines = []
-        for idx, item in enumerate(results[:12], start=1):
-            lines.append(
-                f"{idx}. {item.get('title', '')} | {item.get('url', '')} | "
-                f"{(item.get('content') or '')[:200]}"
-            )
-        prompt = (
-            "You help an outbound researcher find online communities, directories, "
-            "newsletters, forums, and listicles where potential users gather.\n"
-            f"Original query: {query}\n"
-            "Search results:\n"
-            + "\n".join(lines)
-            + "\n\n"
-            f"Suggest up to {max_terms} NEW search queries to find more such resources. "
-            "Focus on communities, directories, newsletters, forums — not individual people. "
-            "Do NOT invent emails or person names.\n"
-            'Respond with JSON only: {"terms": ["query one", "query two"]}'
+def get_llm_client(timeout: float | None = None, *, actor: str | None = None) -> httpx.Client:
+    """Return a sync HTTP client pointed at the Spark queue proxy."""
+    return httpx.Client(
+        base_url=get_llm_base_url(),
+        timeout=timeout or httpx.Timeout(None, connect=30.0),
+        follow_redirects=True,
+        headers=_agent_headers(actor),
+    )
+
+
+def get_async_llm_client(
+    timeout: float | None = None,
+    *,
+    actor: str | None = None,
+) -> httpx.AsyncClient:
+    """Return an async HTTP client pointed at the Spark queue proxy."""
+    return httpx.AsyncClient(
+        base_url=get_llm_base_url(),
+        timeout=timeout or httpx.Timeout(None, connect=30.0),
+        follow_redirects=True,
+        headers=_agent_headers(actor),
+    )
+
+
+def chat_completions(
+    payload: dict[str, Any],
+    timeout: float | None = None,
+    *,
+    actor: str | None = None,
+    task: str | None = None,
+) -> dict[str, Any]:
+    """POST ``/chat/completions`` through the Spark queue proxy."""
+    if actor:
+        record_heartbeat(
+            actor,
+            status=AgentStatus.WORKING,
+            task=task,
+            resource=f"Spark queue ({get_settings().llm_base_url})",
         )
-
-        try:
-            with httpx.Client(timeout=self.settings.hunter_request_timeout) as client:
-                response = client.post(
-                    f"{self.settings.llm_base_url.rstrip('/')}/chat/completions",
-                    json={
-                        "model": self.settings.llm_model,
-                        "messages": [
-                            {"role": "system", "content": "You output JSON only."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        "temperature": 0.2,
-                    },
-                    headers={"X-Actor": "outbound_hunter"},
-                )
-                response.raise_for_status()
-                content = response.json()["choices"][0]["message"]["content"]
-        except (httpx.HTTPError, KeyError, IndexError, ValueError):
-            return []
-
-        return _parse_terms_json(content, max_terms)
-
-
-def _parse_terms_json(content: str, max_terms: int) -> list[str]:
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if not match:
-        return []
     try:
-        payload = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return []
-    terms = payload.get("terms") or payload.get("queries") or []
-    cleaned: list[str] = []
-    for term in terms:
-        if isinstance(term, str) and term.strip():
-            cleaned.append(term.strip())
-        if len(cleaned) >= max_terms:
-            break
-    return cleaned
+        with get_llm_client(timeout=timeout, actor=actor) as client:
+            response = client.post("/chat/completions", json=payload)
+            response.raise_for_status()
+            return response.json()
+    finally:
+        if actor:
+            record_heartbeat(actor, status=AgentStatus.IDLE, task=None, resource=None)

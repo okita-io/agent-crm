@@ -1,166 +1,259 @@
-"""Integration tests for outbound hunter loop (mocked externals)."""
+"""Tests for Outbound Hunter, SearXNG, and Firecrawl clients."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import json
+from unittest.mock import patch
 
+import httpx
 import pytest
+from fastapi.testclient import TestClient
 
-from agent_crm.enums import Brand
-from agent_crm.hunt_store import HuntStore
-from agent_crm.outbound_hunter import HuntBudget, OutboundHunter
-from agent_crm.searxng_client import SearchResult
-
-
-class MockSearxng:
-    def __init__(self, pages: dict[str, list[SearchResult]] | None = None) -> None:
-        self.pages = pages or {}
-        self.calls: list[dict] = []
-
-    def search(self, q: str, **params):
-        self.calls.append({"q": q, **params})
-        return self.pages.get(q, [])
-
-
-class MockFirecrawl:
-    def scrape(self, url: str):
-        return None
-
-
-class MockLlm:
-    enabled = False
-
-    def extract_follow_up_terms(self, **kwargs):
-        return []
+from agent_crm.api import app
+from agent_crm.db import init_db, reset_engine
+from agent_crm.enums import AgentStatus, Brand, LeadSource, Stage
+from agent_crm.firecrawl_client import FirecrawlError, scrape
+from agent_crm.heartbeat import list_heartbeats
+from agent_crm.outbound_hunter import run_hunt
+from agent_crm.schemas import HuntRequest
+from agent_crm.searxng_client import SearxngError, search
+from agent_crm.tooling import CRMToolkit
 
 
 @pytest.fixture()
-def hunter(db_url):
-    searxng = MockSearxng(
-        {
-            "seed query": [
-                SearchResult(
-                    title="Best BookTok Communities",
-                    url="https://bookblog.example/communities",
-                    content="A list of reader communities",
-                ),
-                SearchResult(
-                    title="Just a moment...",
-                    url="https://cf.example/wait",
-                    content="",
-                ),
-                SearchResult(
-                    title="Romance Reader Discord List",
-                    url="https://discordlist.example/romance",
-                    content="discord servers for readers",
-                ),
-            ],
-            "best booktok communities": [
-                SearchResult(
-                    title="Book Blog Directory",
-                    url="https://directory.example/books",
-                    content="directory of blogs",
-                ),
-            ],
+def client(tmp_path, monkeypatch):
+    db_path = tmp_path / "hunter.db"
+    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    reset_engine()
+    init_db()
+    yield TestClient(app)
+    reset_engine()
+
+
+def _mock_transport(handlers: dict[str, callable]) -> httpx.MockTransport:
+    def _dispatch(request: httpx.Request) -> httpx.Response:
+        for prefix, handler in handlers.items():
+            if request.url.path.startswith(prefix) or str(request.url).startswith(prefix):
+                return handler(request)
+        return httpx.Response(404, json={"error": "not found"})
+
+    return httpx.MockTransport(_dispatch)
+
+
+def test_searxng_search_parses_results() -> None:
+    payload = {
+        "results": [
+            {"url": "https://example.com/a", "title": "Alpha Co", "content": "alpha"},
+            {"url": "https://example.com/b", "title": "Beta LLC", "content": "beta"},
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/search"
+        assert "format=json" in str(request.url)
+        return httpx.Response(200, json=payload)
+
+    http = httpx.Client(transport=_mock_transport({"/search": handler}))
+    results = search("boutique studio", limit=5, client=http)
+    assert len(results) == 2
+    assert results[0].title == "Alpha Co"
+    assert results[0].url == "https://example.com/a"
+
+
+def test_searxng_search_raises_on_failure() -> None:
+    http = httpx.Client(
+        transport=_mock_transport(
+            {"/search": lambda _r: httpx.Response(500, text="boom")}
+        )
+    )
+    with pytest.raises(SearxngError):
+        search("fail query", client=http)
+
+
+def test_firecrawl_scrape_normalizes_v1_payload() -> None:
+    payload = {
+        "success": True,
+        "data": {
+            "markdown": "# Hello",
+            "metadata": {"title": "Hello World"},
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/scrape"
+        body = json.loads(request.content.decode())
+        assert body["url"] == "https://example.com"
+        return httpx.Response(200, json=payload)
+
+    http = httpx.Client(transport=_mock_transport({"/v1/scrape": handler}))
+    result = scrape("https://example.com", client=http)
+    assert result.title == "Hello World"
+    assert result.markdown == "# Hello"
+
+
+def test_firecrawl_scrape_raises_on_failure() -> None:
+    http = httpx.Client(
+        transport=_mock_transport(
+            {
+                "/v1/scrape": lambda _r: httpx.Response(500, text="fail"),
+                "/v2/scrape": lambda _r: httpx.Response(500, text="fail"),
+                "/scrape": lambda _r: httpx.Response(500, text="fail"),
+            }
+        )
+    )
+    with pytest.raises(FirecrawlError):
+        scrape("https://example.com", client=http)
+
+
+def _hunt_http_client() -> httpx.Client:
+    searx_payload = {
+        "results": [
+            {
+                "url": "https://nova.example",
+                "title": "Nova Studio | Design",
+                "content": "Boutique design studio",
+            },
+            {
+                "url": "https://bad.example",
+                "title": "Bad Site",
+                "content": "will fail scrape",
+            },
+        ]
+    }
+    firecrawl_ok = {
+        "data": {
+            "markdown": "Nova Studio builds brand identities for startups.",
+            "metadata": {"title": "Nova Studio"},
         }
-    )
+    }
 
-    llm = MockLlm()
-    llm.extract_follow_up_terms = MagicMock(
-        return_value=["best booktok communities"]
-    )
-    llm.enabled = True
+    def searx_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=searx_payload)
 
-    return OutboundHunter(searxng=searxng, firecrawl=MockFirecrawl(), llm=llm)
+    def firecrawl_handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        if body["url"] == "https://bad.example":
+            return httpx.Response(500, text="scrape failed")
+        return httpx.Response(200, json=firecrawl_ok)
 
-
-def test_resource_upsert_by_url(hunter):
-    store = HuntStore()
-    row = store.upsert_resource(
-        url="https://bookblog.example/communities",
-        brand=Brand.MIDNIGHTSATIN,
-        title="Best BookTok Communities",
-        found_via_query="seed",
-        snippet="list",
-    )
-    assert row is not None
-    assert row.hit_count == 1
-
-    row2 = store.upsert_resource(
-        url="https://bookblog.example/communities/",
-        brand=Brand.MIDNIGHTSATIN,
-        title="Best BookTok Communities",
-        found_via_query="seed again",
-        snippet="list",
-    )
-    assert row2 is not None
-    assert row2.id == row.id
-    assert row2.hit_count == 2
-
-
-def test_junk_url_skipped(hunter):
-    store = HuntStore()
-    assert store.upsert_resource(
-        url="https://site.example/login",
-        brand=Brand.MIDNIGHTSATIN,
-        title="Login",
-        found_via_query="q",
-    ) is None
-
-
-def test_queue_branching_and_dedupe(hunter):
-    store = HuntStore()
-    assert store.enqueue_query(query="alpha", brand=Brand.MIDNIGHTSATIN, origin="seed")
-    assert not store.enqueue_query(query="  ALPHA ", brand=Brand.MIDNIGHTSATIN, origin="seed")
-    assert store.enqueue_query(
-        query="alpha",
-        brand=Brand.MIDNIGHTSATIN,
-        origin="seed",
-        params={"categories": "news"},
+    return httpx.Client(
+        transport=_mock_transport(
+            {
+                "/search": searx_handler,
+                "/v1/scrape": firecrawl_handler,
+            }
+        )
     )
 
 
-def test_loop_stops_at_max_queries(hunter):
-    result = hunter.hunt_loop(
-        query="seed query",
-        brand=Brand.MIDNIGHTSATIN,
-        budget=HuntBudget(max_queries=2, max_minutes=5, max_pages_per_query=0),
-        resume=False,
+def test_run_hunt_creates_leads_and_records_errors(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "hunt-run.db"
+    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    reset_engine()
+    init_db()
+
+    http = _hunt_http_client()
+    with patch("agent_crm.outbound_hunter.chat_completions") as mock_llm:
+        mock_llm.return_value = {
+            "choices": [{"message": {"content": "Nova Studio is a boutique design shop."}}]
+        }
+        result = run_hunt(
+            HuntRequest(
+                query="boutique design studio",
+                brand=Brand.MIDNIGHTSATIN,
+                max_pages=5,
+                search_limit=10,
+            ),
+            searx_client=http,
+            firecrawl_client=http,
+        )
+
+    assert result.search_results == 2
+    assert result.scraped == 1
+    assert len(result.leads_created) == 1
+    assert any("bad.example" in err for err in result.errors)
+
+    crm = CRMToolkit(actor="api")
+    lead = crm.get_lead(result.leads_created[0])
+    assert lead.source == LeadSource.HUNTER
+    assert lead.brand == Brand.MIDNIGHTSATIN
+    assert lead.enrichment_summary == "Nova Studio is a boutique design shop."
+
+    opp = crm.get_opportunity_for_lead(lead.id)
+    assert opp.stage == Stage.PROSPECT
+
+    heartbeats = {hb.agent_name: hb for hb in list_heartbeats()}
+    assert "outbound_hunter" in heartbeats
+    assert heartbeats["outbound_hunter"].status == AgentStatus.IDLE
+    reset_engine()
+
+
+def test_run_hunt_continues_when_searxng_fails(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "hunt-searx-fail.db"
+    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    reset_engine()
+    init_db()
+
+    http = httpx.Client(
+        transport=_mock_transport(
+            {"/search": lambda _r: httpx.Response(503, text="down")}
+        )
     )
-    assert result.queries_run == 2
-    assert result.stop_reason == "max_queries"
-
-
-def test_param_variation_hits_searxng(hunter):
-    hunter.hunt_loop(
-        query="seed query",
-        brand=Brand.MIDNIGHTSATIN,
-        budget=HuntBudget(max_queries=3, max_minutes=5, max_pages_per_query=0),
-        resume=False,
+    result = run_hunt(
+        HuntRequest(query="anything"),
+        searx_client=http,
+        firecrawl_client=http,
     )
-    assert len(hunter.searxng.calls) >= 2
-    categories = [call.get("categories") for call in hunter.searxng.calls]
-    assert categories[0] is None
-    assert categories[1] == "general"
-    assert len(set(categories)) > 1
+    assert result.leads_created == []
+    assert result.search_results == 0
+    assert result.errors
+    reset_engine()
 
 
-def test_completed_query_not_searched_again(hunter):
-    hunter.hunt_loop(
-        query="seed query",
-        brand=Brand.MIDNIGHTSATIN,
-        budget=HuntBudget(max_queries=1, max_minutes=5, max_pages_per_query=0),
-        resume=False,
-    )
-    assert HuntStore().has_completed_query("seed query", None)
-    seed_searches = [c for c in hunter.searxng.calls if c["q"] == "seed query"]
-    count_before = len(seed_searches)
+def test_hunt_api_endpoint(client: TestClient) -> None:
+    from agent_crm.schemas import HuntResult
 
-    hunter.hunt_loop(
-        query="seed query",
-        brand=Brand.MIDNIGHTSATIN,
-        budget=HuntBudget(max_queries=1, max_minutes=5, max_pages_per_query=0),
-        resume=True,
-    )
-    seed_searches_after = [c for c in hunter.searxng.calls if c["q"] == "seed query"]
-    assert len(seed_searches_after) == count_before
+    with patch("agent_crm.api.run_hunt") as mock_run:
+        mock_run.return_value = HuntResult(
+            query="boutique studio NYC",
+            brand=Brand.MIDNIGHTSATIN,
+            search_results=1,
+            scraped=1,
+            leads_created=[1],
+            errors=[],
+        )
+        response = client.post(
+            "/hunt",
+            json={
+                "query": "boutique studio NYC",
+                "brand": "midnightsatin",
+                "max_pages": 3,
+            },
+        )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["leads_created"] == [1]
+    assert payload["scraped"] == 1
+    assert payload["brand"] == "midnightsatin"
+
+
+def test_run_hunt_skips_llm_when_disabled(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "hunt-no-llm.db"
+    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    reset_engine()
+    init_db()
+
+    http = _hunt_http_client()
+    with patch("agent_crm.outbound_hunter.chat_completions") as mock_llm:
+        result = run_hunt(
+            HuntRequest(query="studio", summarize=False, max_pages=1),
+            searx_client=http,
+            firecrawl_client=http,
+        )
+        mock_llm.assert_not_called()
+
+    assert result.leads_created
+    crm = CRMToolkit(actor="api")
+    lead = crm.get_lead(result.leads_created[0])
+    assert "Nova Studio" in (lead.enrichment_summary or "")
+    reset_engine()

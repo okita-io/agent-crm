@@ -109,6 +109,15 @@ class JourneyStatus(str, enum.Enum):
     COMPLETED = "completed"
 
 
+class AgentStatus(str, enum.Enum):
+    """Live observer status for CRM agents."""
+
+    IDLE = "idle"
+    THINKING = "thinking"
+    WORKING = "working"
+    BLOCKED = "blocked"
+
+
 class HuntQueryStatus(str, enum.Enum):
     """Lifecycle of a queued hunter search term."""
 
@@ -128,12 +137,3 @@ class HuntResourceKind(str, enum.Enum):
     LIST = "list"
     SOCIAL = "social"
     OTHER = "other"
-
-
-class AgentHeartbeatStatus(str, enum.Enum):
-    """Coarse status for long-running agents."""
-
-    THINKING = "thinking"
-    WORKING = "working"
-    IDLE = "idle"
-    ERROR = "error"

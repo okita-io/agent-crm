@@ -1,7 +1,7 @@
-"""Add outbound hunter tables (query queue, resources, heartbeats).
+"""Add hunt query queue and resource collection tables.
 
 Revision ID: a3f8c2d91e04
-Revises: 6c1ac6215451
+Revises: a1b2c3d4e5f6
 Create Date: 2026-08-25 20:30:00.000000
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "a3f8c2d91e04"
-down_revision: str | None = "6c1ac6215451"
+down_revision: str | None = "a1b2c3d4e5f6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -104,24 +104,8 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f("ix_hunt_resources_domain"), ["domain"], unique=False)
         batch_op.create_index(batch_op.f("ix_hunt_resources_brand"), ["brand"], unique=False)
 
-    op.create_table(
-        "agent_heartbeats",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("actor", sa.String(length=64), nullable=False),
-        sa.Column(
-            "status",
-            sa.Enum("thinking", "working", "idle", "error", name="agentheartbeatstatus"),
-            nullable=False,
-        ),
-        sa.Column("message", sa.Text(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("actor"),
-    )
-
 
 def downgrade() -> None:
-    op.drop_table("agent_heartbeats")
     with op.batch_alter_table("hunt_resources", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_hunt_resources_brand"))
         batch_op.drop_index(batch_op.f("ix_hunt_resources_domain"))
@@ -130,3 +114,5 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_hunt_queries_run_id"))
         batch_op.drop_index(batch_op.f("ix_hunt_queries_status"))
     op.drop_table("hunt_queries")
+    op.execute("DROP TYPE IF EXISTS huntresourcekind")
+    op.execute("DROP TYPE IF EXISTS huntquerystatus")

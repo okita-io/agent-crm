@@ -14,7 +14,6 @@ import json
 import sys
 
 from .config import get_settings
-from .enums import Brand
 
 
 def _cmd_init_db(_args: argparse.Namespace) -> int:
@@ -97,43 +96,45 @@ def _cmd_report(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _parse_brand(value: str | None) -> Brand:
-    if not value:
-        return Brand.UNASSIGNED
-    return Brand(value)
-
-
 def _cmd_hunt(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .outbound_hunter import OutboundHunter
+    from .enums import Brand
+    from .outbound_hunter import run_hunt
+    from .schemas import HuntRequest
 
     init_db()
-    hunter = OutboundHunter()
-    result = hunter.hunt_once(
-        args.query,
-        brand=_parse_brand(args.brand),
+    brand = Brand(args.brand) if args.brand else None
+    request = HuntRequest(
+        query=args.query,
+        brand=brand,
         max_pages=args.max_pages,
+        search_limit=args.search_limit,
+        transition_to_prospect=not args.no_prospect,
+        summarize=not args.no_summarize,
     )
-    print(json.dumps(result, indent=2))
-    return 0
+    result = run_hunt(request)
+    print(json.dumps(result.model_dump(mode="json"), indent=2))
+    return 0 if not result.errors or result.leads_created else 1
 
 
 def _cmd_hunt_loop(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .outbound_hunter import HuntBudget, OutboundHunter
+    from .enums import Brand
+    from .hunt_loop import HuntBudget, run_hunt_loop
 
     init_db()
-    hunter = OutboundHunter()
+    brand = Brand(args.brand) if args.brand else Brand.UNASSIGNED
     budget = HuntBudget(
         max_queries=args.max_queries,
         max_minutes=args.max_minutes,
         max_pages_per_query=args.max_pages_per_query,
     )
-    result = hunter.hunt_loop(
+    result = run_hunt_loop(
         query=args.query,
-        brand=_parse_brand(args.brand),
+        brand=brand,
         budget=budget,
         resume=not args.no_resume,
+        summarize_branches=not args.no_summarize,
     )
     print(
         json.dumps(
@@ -141,7 +142,6 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
                 "run_id": result.run_id,
                 "queries_run": result.queries_run,
                 "resources_found": result.resources_found,
-                "leads_created": result.leads_created,
                 "branch_terms_enqueued": result.branch_terms_enqueued,
                 "stop_reason": result.stop_reason,
             },
@@ -166,15 +166,39 @@ def main(argv: list[str] | None = None) -> int:
         func=_cmd_report
     )
 
-    hunt = sub.add_parser("hunt", help="One-shot outbound hunt")
-    hunt.add_argument("query", help="Search query")
-    hunt.add_argument("--brand", help="Brand slug (midnightsatin, celestial-nexus, heybuddy)")
-    hunt.add_argument("--max-pages", type=int, default=None, help="Pages to scrape")
+    hunt = sub.add_parser("hunt", help="Run one Outbound Hunter search cycle")
+    hunt.add_argument("query", help="Search query (e.g. boutique design studio NYC)")
+    hunt.add_argument(
+        "--brand",
+        choices=["midnightsatin", "celestial-nexus", "heybuddy"],
+        help="Optional brand to route discovered leads",
+    )
+    hunt.add_argument("--max-pages", type=int, default=8, help="Max pages to scrape (1-10)")
+    hunt.add_argument(
+        "--search-limit",
+        type=int,
+        default=15,
+        help="Max SearXNG results to consider",
+    )
+    hunt.add_argument(
+        "--no-prospect",
+        action="store_true",
+        help="Do not move new leads to the prospect stage",
+    )
+    hunt.add_argument(
+        "--no-summarize",
+        action="store_true",
+        help="Skip Spark LLM summarization",
+    )
     hunt.set_defaults(func=_cmd_hunt)
 
     hunt_loop = sub.add_parser("hunt-loop", help="Bounded branching hunt loop")
     hunt_loop.add_argument("query", nargs="?", default=None, help="Seed query (optional)")
-    hunt_loop.add_argument("--brand", help="Brand slug; uses seed pack when no query")
+    hunt_loop.add_argument(
+        "--brand",
+        choices=["midnightsatin", "celestial-nexus", "heybuddy"],
+        help="Brand slug; uses seed pack when no query",
+    )
     hunt_loop.add_argument("--max-queries", type=int, default=20)
     hunt_loop.add_argument("--max-minutes", type=int, default=25)
     hunt_loop.add_argument("--max-pages-per-query", type=int, default=8)
@@ -182,6 +206,11 @@ def main(argv: list[str] | None = None) -> int:
         "--no-resume",
         action="store_true",
         help="Do not resume pending queries from prior runs",
+    )
+    hunt_loop.add_argument(
+        "--no-summarize",
+        action="store_true",
+        help="Skip Spark LLM branch-term extraction",
     )
     hunt_loop.set_defaults(func=_cmd_hunt_loop)
 

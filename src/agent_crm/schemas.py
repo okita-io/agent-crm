@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .enums import (
     ActivityType,
-    AgentHeartbeatStatus,
+    AgentStatus,
     Brand,
     HuntResourceKind,
     JourneyStatus,
@@ -54,6 +54,68 @@ class EnrichmentInput(BaseModel):
     summary: str
     website: str | None = None
     socials: dict | None = None
+
+
+class HuntRequest(BaseModel):
+    """Outbound Hunter run configuration."""
+
+    query: str = Field(min_length=1, max_length=500)
+    brand: Brand | None = None
+    max_pages: int = Field(default=8, ge=1, le=10)
+    search_limit: int = Field(default=15, ge=1, le=25)
+    transition_to_prospect: bool = True
+    summarize: bool = True
+
+
+class HuntResult(BaseModel):
+    """Summary of one hunt execution."""
+
+    query: str
+    brand: Brand | None
+    search_results: int
+    scraped: int
+    leads_created: list[int]
+    errors: list[str]
+
+
+class HuntLoopRequest(BaseModel):
+    """Bounded branching hunt loop configuration."""
+
+    query: str | None = None
+    brand: Brand = Brand.UNASSIGNED
+    max_queries: int = Field(default=20, ge=1, le=200)
+    max_minutes: int = Field(default=25, ge=1, le=240)
+    max_pages_per_query: int | None = Field(default=None, ge=1, le=10)
+    resume: bool = True
+    summarize_branches: bool = True
+
+
+class HuntLoopResultOut(BaseModel):
+    run_id: str
+    queries_run: int
+    resources_found: int
+    branch_terms_enqueued: int
+    stop_reason: str
+
+
+class HuntResourceOut(ORMModel):
+    id: int
+    url: str
+    domain: str
+    title: str | None
+    brand: Brand
+    kind: HuntResourceKind
+    found_via_query: str | None
+    first_seen: datetime
+    last_seen: datetime
+    hit_count: int
+    notes: str | None
+
+
+class HuntQueueStatusOut(BaseModel):
+    pending: int
+    by_status: dict[str, int]
+    total_resources: int
 
 
 # ---- Outputs ---------------------------------------------------------------
@@ -118,56 +180,26 @@ class JourneyOut(ORMModel):
     stop_reason: str | None
 
 
-# ---- Hunter ----------------------------------------------------------------
+class HeartbeatIn(BaseModel):
+    status: AgentStatus
+    task: str | None = None
+    resource: str | None = None
+    metadata: dict | None = None
 
 
-class HuntRequest(BaseModel):
-    query: str
-    brand: Brand = Brand.UNASSIGNED
-    max_pages: int | None = Field(default=None, ge=0, le=50)
-    params: dict | None = None
+class HeartbeatOut(BaseModel):
+    agent_name: str
+    status: AgentStatus
+    task: str | None
+    resource: str | None
+    metadata: dict | None = None
+    last_seen_at: datetime
 
 
-class HuntLoopRequest(BaseModel):
-    query: str | None = None
-    brand: Brand = Brand.UNASSIGNED
-    max_queries: int = Field(default=20, ge=1, le=200)
-    max_minutes: int = Field(default=25, ge=1, le=240)
-    max_pages_per_query: int | None = Field(default=None, ge=0, le=50)
-    resume: bool = True
-
-
-class HuntResourceOut(ORMModel):
-    id: int
-    url: str
-    domain: str
-    title: str | None
-    brand: Brand
-    kind: HuntResourceKind
-    found_via_query: str | None
-    first_seen: datetime
-    last_seen: datetime
-    hit_count: int
-    notes: str | None
-
-
-class HuntQueueStatusOut(BaseModel):
-    pending: int
-    by_status: dict[str, int]
-    total_resources: int
-
-
-class HuntLoopResultOut(BaseModel):
-    run_id: str
-    queries_run: int
-    resources_found: int
-    leads_created: int
-    branch_terms_enqueued: int
-    stop_reason: str
-
-
-class AgentHeartbeatOut(ORMModel):
-    actor: str
-    status: AgentHeartbeatStatus
-    message: str | None
-    updated_at: datetime
+class AgentObserverOut(BaseModel):
+    name: str
+    display_name: str
+    status: AgentStatus
+    task: str | None
+    resource: str | None
+    last_heartbeat: datetime | None

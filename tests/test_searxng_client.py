@@ -2,38 +2,33 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import httpx
 
-from agent_crm.searxng_client import SearxngClient
+from agent_crm.searxng_client import search
 
 
-def test_search_forwards_searxng_params():
-    client = SearxngClient()
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"results": []}
-    mock_response.raise_for_status = MagicMock()
+def test_search_forwards_searxng_params() -> None:
+    captured: dict = {}
 
-    with patch("agent_crm.searxng_client.httpx.Client") as mock_client_cls:
-        mock_client = MagicMock()
-        mock_client.__enter__.return_value = mock_client
-        mock_client.get.return_value = mock_response
-        mock_client_cls.return_value = mock_client
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(dict(request.url.params))
+        return httpx.Response(200, json={"results": []})
 
-        client.search(
-            "booktok communities",
-            categories="social media",
-            pageno=2,
-            time_range="year",
-            language="en",
-            engines="google",
-        )
-
-        call_kwargs = mock_client.get.call_args
-        params = call_kwargs.kwargs["params"]
-        assert params["q"] == "booktok communities"
-        assert params["format"] == "json"
-        assert params["categories"] == "social media"
-        assert params["pageno"] == 2
-        assert params["time_range"] == "year"
-        assert params["language"] == "en"
-        assert params["engines"] == "google"
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    search(
+        "booktok communities",
+        limit=5,
+        client=http,
+        categories="social media",
+        pageno=2,
+        time_range="year",
+        language="en",
+        engines="google",
+    )
+    assert captured["q"] == "booktok communities"
+    assert captured["format"] == "json"
+    assert captured["categories"] == "social media"
+    assert captured["pageno"] == "2"
+    assert captured["time_range"] == "year"
+    assert captured["language"] == "en"
+    assert captured["engines"] == "google"

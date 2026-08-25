@@ -1,4 +1,4 @@
-"""Database operations for the hunter queue, resources, and heartbeats."""
+"""Database operations for the hunter query queue and resource collection."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 
 from agent_crm.db import session_scope
-from agent_crm.enums import AgentHeartbeatStatus, Brand, HuntQueryStatus, HuntResourceKind
+from agent_crm.enums import AgentStatus, Brand, HuntQueryStatus, HuntResourceKind
+from agent_crm.heartbeat import record_heartbeat
 from agent_crm.hunt_utils import (
     canonical_url,
     classify_resource,
@@ -17,26 +18,22 @@ from agent_crm.hunt_utils import (
     normalize_query,
     registrable_domain,
 )
-from agent_crm.models import AgentHeartbeat, HuntQuery, HuntResource
+from agent_crm.models import HuntQuery, HuntResource
 
 
 class HuntStore:
-    """Persist queue state, discovered resources, and agent heartbeats."""
+    """Persist queue state and discovered resources."""
 
     ACTOR = "outbound_hunter"
 
-    def set_heartbeat(self, status: AgentHeartbeatStatus, message: str | None = None) -> None:
-        with session_scope() as session:
-            row = session.scalar(
-                select(AgentHeartbeat).where(AgentHeartbeat.actor == self.ACTOR)
-            )
-            if row is None:
-                row = AgentHeartbeat(actor=self.ACTOR, status=status, message=message)
-                session.add(row)
-            else:
-                row.status = status
-                row.message = message
-                row.updated_at = datetime.now(UTC)
+    def set_heartbeat(
+        self,
+        status: AgentStatus,
+        task: str | None = None,
+        *,
+        resource: str | None = None,
+    ) -> None:
+        record_heartbeat(self.ACTOR, status=status, task=task, resource=resource)
 
     def enqueue_query(
         self,
@@ -68,7 +65,9 @@ class HuntStore:
             )
             return True
 
-    def next_pending_query(self, run_id: str | None = None, brand: Brand | None = None) -> HuntQuery | None:
+    def next_pending_query(
+        self, run_id: str | None = None, brand: Brand | None = None
+    ) -> HuntQuery | None:
         with session_scope() as session:
             stmt = (
                 select(HuntQuery)

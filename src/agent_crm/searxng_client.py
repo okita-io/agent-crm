@@ -1,61 +1,93 @@
-"""SearXNG search client."""
+"""Tiny SearXNG JSON search client for the Outbound Hunter."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
-from agent_crm.config import Settings, get_settings
+from .config import get_settings
 
 
-@dataclass
+@dataclass(frozen=True)
 class SearchResult:
-    title: str
+    """One SearXNG hit."""
+
     url: str
-    content: str | None = None
-    engine: str | None = None
+    title: str
+    snippet: str
 
 
-class SearxngClient:
-    """Thin wrapper around the SearXNG JSON API."""
+class SearxngError(Exception):
+    """SearXNG request failed."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
-        self.settings = settings or get_settings()
-        self.base_url = self.settings.searxng_base_url.rstrip("/")
 
-    def search(self, q: str, **params: Any) -> list[SearchResult]:
-        """Run a search, forwarding any supported SearXNG params."""
-        query_params: dict[str, Any] = {"q": q, "format": "json"}
-        for key, value in params.items():
-            if value is not None:
-                query_params[key] = value
+@lru_cache
+def get_searxng_base_url() -> str:
+    return get_settings().searxng_url.rstrip("/")
 
-        with httpx.Client(timeout=self.settings.hunter_request_timeout) as client:
-            response = client.get(f"{self.base_url}/search", params=query_params)
-            response.raise_for_status()
-            payload = response.json()
 
-        results: list[SearchResult] = []
-        for item in payload.get("results", []):
-            url = item.get("url")
-            if not url:
-                continue
-            results.append(
-                SearchResult(
-                    title=item.get("title") or "",
-                    url=url,
-                    content=item.get("content"),
-                    engine=item.get("engine"),
-                )
+def search(
+    query: str,
+    *,
+    limit: int = 15,
+    timeout: float = 30.0,
+    client: httpx.Client | None = None,
+    categories: str | None = None,
+    pageno: int | None = None,
+    time_range: str | None = None,
+    language: str | None = None,
+    engines: str | None = None,
+) -> list[SearchResult]:
+    """Run a JSON search against the ranch SearXNG instance."""
+    params: dict[str, Any] = {"q": query, "format": "json"}
+    for key, value in (
+        ("categories", categories),
+        ("pageno", pageno),
+        ("time_range", time_range),
+        ("language", language),
+        ("engines", engines),
+    ):
+        if value is not None:
+            params[key] = value
+    url = f"{get_searxng_base_url()}/search?{urlencode(params)}"
+
+    owns_client = client is None
+    http = client or httpx.Client(timeout=timeout, follow_redirects=True)
+    try:
+        response = http.get(url)
+        response.raise_for_status()
+        payload = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise SearxngError(f"SearXNG search failed for {query!r}: {exc}") from exc
+    finally:
+        if owns_client:
+            http.close()
+
+    results: list[SearchResult] = []
+    for entry in _iter_results(payload):
+        url_value = (entry.get("url") or "").strip()
+        if not url_value:
+            continue
+        results.append(
+            SearchResult(
+                url=url_value,
+                title=(entry.get("title") or "").strip(),
+                snippet=(entry.get("content") or entry.get("snippet") or "").strip(),
             )
-        return results
+        )
+        if len(results) >= limit:
+            break
+    return results
 
-    def last_request_params(self, q: str, **params: Any) -> dict[str, Any]:
-        """Expose the params that would be sent (used by tests)."""
-        query_params: dict[str, Any] = {"q": q, "format": "json"}
-        for key, value in params.items():
-            if value is not None:
-                query_params[key] = value
-        return query_params
+
+def _iter_results(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    raw = payload.get("results")
+    if not isinstance(raw, list):
+        return []
+    return [row for row in raw if isinstance(row, dict)]
