@@ -137,3 +137,11 @@ class HuntResourceKind(str, enum.Enum):
     LIST = "list"
     SOCIAL = "social"
     OTHER = "other"
+
+
+class ResearchFindingKind(str, enum.Enum):
+    """Category of a persisted research finding."""
+
+    COMPETITOR = "competitor"
+    NONPROFIT = "nonprofit"
+    OTHER = "other"

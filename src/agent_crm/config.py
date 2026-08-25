@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     hunter_max_branch_terms: int = 5
     hunter_request_timeout: float = 60.0
 
+    # Research agent defaults
+    research_max_queries_default: int = 12
+    research_max_pages_per_run: int = 4
+    research_max_minutes_default: int = 20
+    research_search_result_limit: int = 15
+
     # Observer / presence
     api_base_url: str = "http://api:8000"
     observer_refresh_seconds: int = 3
