@@ -272,6 +272,18 @@ class AgentObserverOut(BaseModel):
     last_heartbeat: datetime | None
 
 
+class ContactProfileOut(ORMModel):
+    id: int
+    email: str
+    name: str | None
+    brand: Brand
+    socials: dict | None
+    source_urls: list[str] | None
+    lead_id: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class ResearchFindingOut(ORMModel):
     id: int
     url: str

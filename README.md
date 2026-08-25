@@ -1,352 +1,332 @@
 # Agent CRM
 
-A local, agent-driven CRM that recreates the parts of Salesforce that actually matter for finding clients and chasing leads — without Salesforce scale, licenses, or cloud lock-in.
+A local, agent-driven CRM for the ranch creative/tech brands **MidnightSatin**, **Celestial-Nexus**, and **HeyBuddy**. It captures leads, runs outbound research and hunting, extracts contact profiles from scraped pages, and tracks pipeline state — all on your own hardware.
 
-This repo starts as the working brief for that system. Salesforce’s “find clients + chase leads” engine is not one product. It is **six subsystems** coordinated as if they were a single machine. The bet here is that those same six jobs can be done by a small roster of specialized local agents, a lightweight CRM database, and an orchestrator that keeps them in lockstep.
-
-The non-obvious insight: **Salesforce’s magic is not the CRM. It is the coordination of multiple specialized agents.** A ranch-scale stack can cover most of that surface if it is tuned for a handful of creative/tech brands instead of a global sales org.
-
-Target brands for routing and nurture:
-
-- **Midnightsatin**
-- **Celestial-Nexus**
-- **HeyBuddy**
-
-This is not a Salesforce clone. It is a mini Salesforce: inbound capture, scoring, research, outbound hunting, drip nurture, and pipeline tracking, all owned locally.
+**There is no outreach or sending in this stack.** The lead verifier checks DNS, MX, and HTTP only. MX means the domain can receive mail, not that a specific local-part inbox exists.
 
 ---
 
-## The six subsystems
+## Stack and how to run
 
-| # | Job | Salesforce analog | Local equivalent |
-|---|-----|-------------------|------------------|
-| 1 | Lead capture (inbound) | Web-to-lead, bots, APIs, social listening | Inbound Listener agent |
-| 2 | Lead qualification | Einstein scoring, routing | Lead Scorer agent + rules |
-| 3 | Lead enrichment | Data Cloud, Clearbit, ZoomInfo | Researcher agent |
-| 4 | Outbound prospecting | Sales Engagement, cadences, Agentforce | Outbound Hunter + Outreach Writer |
-| 5 | Nurture automation | Marketing Cloud journeys | Nurture Engine agent |
-| 6 | Pipeline tracking | Opportunities, accounts, activities, forecast | Pipeline Manager + Analytics |
-
-Each subsystem is a bounded agent (or a pair of agents) with a clear input, a clear output, and a write-back into the same CRM store. The orchestrator is the only component allowed to sequence them.
-
----
-
-### 1. Lead Capture (Inbound)
-
-**Salesforce tools:** web-to-lead forms, chatbots (Piper, Einstein Bots), API integrations, social listening.
-
-**Local job:** notice that a human asked to be in the pipeline, then write a lead record before anything else happens.
-
-**Agent: Inbound Listener**
-
-- Scrapes or receives website contact-form submissions
-- Monitors an email inbox
-- Reads DMs from Instagram / Twitter / Discord via API where credentials exist
-- Pushes new leads into the local CRM store (SQLite first; Postgres on a NAS when the file outgrows a laptop)
-
-**Tools:** FastAPI webhook receiver, a parser for inbound messages, SQLite or Postgres.
-
-Inbound is a write path, not a conversation. The listener does not score, research, or reply. It creates the record and hands off.
-
----
-
-### 2. Lead Qualification (Scoring)
-
-**Salesforce tools:** Einstein Lead Scoring, behavioral signals, automated routing.
-
-**Local job:** decide whether this lead is worth time, and which brand should own it.
-
-**Agent: Lead Scorer**
-
-Reads each new lead and scores on:
-
-- Budget signals
-- Urgency
-- Project type
-- Fit for Midnightsatin / Celestial-Nexus / HeyBuddy
-
-Then tags a priority level and a brand recommendation. Routing can be a separate Brand Router agent so scoring stays numeric and brand choice stays explicit.
-
-**Tools:** a small local classifier (Mistral 7B or Phi-3) plus a Python rules engine for hard gates (missing email, obvious spam, wrong geography, etc.). Rules first, model second. The KV-cache optimized local inference pipeline is the intended runtime, not a hosted ranking API.
-
----
-
-### 3. Lead Enrichment (Research)
-
-**Salesforce tools:** Data Cloud, Clearbit, ZoomInfo, company profiles.
-
-**Local job:** put enough context on the record that outreach is not a cold guess.
-
-**Agent: Researcher**
-
-- Searches the public web for the lead and their company
-- Scrapes their site
-- Pulls social profiles when they are public
-- Summarizes the business in a few paragraphs
-- Writes that context back onto the CRM entry
-
-**Tools:** Playwright for browser work, a local LLM summarizer, the same orchestration layer that runs the rest of the roster.
-
-Enrichment is best-effort and must be idempotent. A failed scrape is a note on the record, not a blocked pipeline.
-
----
-
-### 4. Outbound Prospecting (Finding Clients)
-
-**Salesforce tools:** Sales Engagement, cadence automation, AI outbound agents (Hunter, Agentforce).
-
-**Local job:** grow the top of funnel on purpose, not only from inbound luck.
-
-**Agent: Outbound Hunter**
-
-- Searches for potential clients
-- Builds prospect lists
-- Hands each prospect to the Outreach Writer
-- Schedules follow-ups rather than sending forever in one burst
-
-**Agent: Outreach Writer** (paired, not mixed into the hunter)
-
-- Writes personalized first-touch copy from enrichment + brand voice
-- Does not send. Sending belongs to the Nurture Engine so delivery, throttling, and unsubscribe live in one place.
-
-**Tools:** Playwright + scraping, local LLM writer, a scheduler the orchestrator already owns.
-
----
-
-### 5. Nurture Automation (Follow-ups)
-
-**Salesforce tools:** Marketing Cloud Journeys, automated email sequences, multi-channel messaging.
-
-**Local job:** keep a human in the loop without requiring a human to remember every follow-up.
-
-**Agent: Nurture Engine**
-
-- Sends follow-up email
-- Records whether a message was opened or replied to when that signal exists
-- Fires reminders
-- Runs brand-specific drip campaigns for Midnightsatin, Celestial-Nexus, and HeyBuddy
-
-**Tools:** SMTP, local LLM for message generation, a state machine per “journey” (stage, next send at, stop conditions).
-
-Journeys stop on reply, unsubscribe, disqualification, or closed-won / closed-lost. No infinite drips.
-
----
-
-### 6. Pipeline Tracking (CRM)
-
-**Salesforce tools:** Opportunities, Accounts, Activities, Forecasting.
-
-**Local job:** be the source of truth the other agents read and write.
-
-**Agent: Pipeline Manager**
-
-- Maintains the CRM database
-- Moves leads through stages
-- Alerts when a lead is hot
-- Produces the weekly report with the Analytics agent
-
-**Tools:** SQLite or Postgres, a local dashboard (Streamlit or a small Node/Next app), the orchestration layer.
-
-This is the only subsystem that must exist on day one of implementation. Capture, score, research, hunt, and nurture are useless if stage and activity history live in chat logs.
-
----
-
-## Recommended agent roster
-
-Deploy these roles even if some of them share a process at first. Names stay stable so the orchestrator can route work without renaming jobs later.
-
-| # | Agent | Owns |
-|---|--------|------|
-| 1 | **Lead Intake** | Inbound listening; new lead records |
-| 2 | **Lead Scoring** | Priority, budget/urgency/fit signals |
-| 3 | **Research** | Public-web enrichment and summaries |
-| 4 | **Outbound Hunter** | Prospect discovery and list building |
-| 5 | **Outreach Writer** | Personalized copy, brand voice |
-| 6 | **Nurture** | Drips, reminders, send/stop rules |
-| 7 | **CRM Manager** | Stages, accounts, opportunities, activities |
-| 8 | **Analytics** | Weekly reports, hot-lead alerts |
-| 9 | **Brand Router** | Midnightsatin vs Celestial-Nexus vs HeyBuddy |
-| 10 | **Orchestrator** | Sequencing, retries, handoffs, schedules |
-
-That is one orchestrator and nine specialists. Five to ten specialists plus a store plus browser and email automation is the whole machine.
-
-```
-                    ┌─────────────────┐
-                    │  Orchestrator   │
-                    └────────┬────────┘
-           ┌─────────────────┼─────────────────┐
-           ▼                 ▼                 ▼
-    Lead Intake        Outbound Hunter    CRM Manager
-           │                 │                 │
-           ▼                 ▼                 ▼
-    Lead Scoring      Outreach Writer      Analytics
-           │                 │
-           ▼                 ▼
-    Brand Router         Nurture
-           │
-           ▼
-    Research
-```
-
-Handoff contract (happy path for inbound):
-
-1. Intake writes a lead (`new`)
-2. Scoring writes a score + priority
-3. Brand Router writes a brand
-4. Research writes enrichment
-5. CRM Manager opens or updates the opportunity stage
-6. Outreach Writer drafts (if outbound or first reply is needed)
-7. Nurture owns the journey
-8. Analytics reads the week; it does not mutate pipeline except via alerts
-
----
-
-## What “local” means here
-
-- **Store:** SQLite on disk to start; Postgres on a Synology NAS (or equivalent) when concurrent agents need it.
-- **Inference:** local models (Mistral 7B / Phi-3 class) on the existing KV-cache optimized pipeline. Hosted APIs are a fallback, not the architecture.
-- **Browser:** Playwright, run where the ranch already runs agents — not a SaaS scraper.
-- **Mail:** SMTP you control. No Marketing Cloud.
-- **Orchestration:** the multi-agent layer already in use. This CRM should be a new *workload* on that layer, not a second orchestrator.
-
-The system should still be useful if the LLM is down: rules can score, humans can move stages, and intake can still write rows.
-
----
-
-## Intended data, in one page
-
-Enough to implement later without inventing a Salesforce schema.
-
-**Lead** — person at the top of funnel. Source (form, email, DM, hunter), raw payload, score, priority, brand, enrichment summary, status.
-
-**Account** — company or project home. Site, socials, notes from Research.
-
-**Opportunity** — a lead that is in play. Stage, amount if known, brand, next action at.
-
-**Activity** — every send, scrape, score, stage change, and human note. Agents append; they do not rewrite history.
-
-**Journey** — nurture state machine instance: template set, step index, next run, stop reason.
-
-Suggested inbound stages: `new → scored → enriched → contacted → replied → qualified → won / lost`. Outbound inserts a `prospect` stage before `contacted`.
-
----
-
-## What this repo is (and is not)
-
-**Is:** the charter for a ranch-scale CRM built from local agents. Next work should implement against this brief rather than rediscovering Salesforce feature lists.
-
-**Is not:** a hosted Salesforce alternative, a multi-tenant SaaS, or a scraping product. Outbound hunting must respect robots.txt, terms of service, and anti-spam law. Enrichment uses public pages. Mail must honor unsubscribe.
-
----
-
-## Implementation order (when code starts)
-
-The roster is the destination. The first slice of software should be smaller:
-
-1. CRM store + Pipeline Manager (stages, activities, a readable dashboard)
-2. Lead Intake (webhook / form / mailbox → row)
-3. Scoring + Brand Router (rules first)
-4. Research (Playwright + summary)
-5. Outreach Writer + Nurture (SMTP, journeys)
-6. Outbound Hunter
-7. Analytics (weekly report)
-
-Do not stand up ten agents on day one. Stand up the store, then attach agents in the order they create value.
-
----
-
-## Running locally
-
-Milestone 1 has landed: the CRM store, the shared database layer, the agent tooling
-SDK, the Pipeline Manager, the FastAPI intake service, and a Streamlit dashboard. This
-is item 1 of the implementation order (store + Pipeline Manager) plus the intake write
-path and the tooling every later agent builds on.
-
-### Layout
-
-```
-src/agent_crm/
-  config.py     env-driven settings (one source of truth for which store is attached)
-  enums.py      controlled vocabularies: brands, sources, stages, transitions, activity types
-  models.py     the data model: Lead, Account, Opportunity, Activity, Journey
-  db.py         engine/session management (SQLite dev, Postgres NAS) + unit-of-work
-  schemas.py    Pydantic I/O shapes at the tooling boundary
-  errors.py     domain errors agents catch (NotFound, InvalidStageTransition)
-  tooling.py    the CRM SDK every agent calls; every write appends an Activity
-  pipeline.py   Pipeline Manager: validated stage transitions, hot-lead alerts, reporting
-  api.py        FastAPI service: health, intake webhook, reads, stage changes, weekly report
-  dashboard.py  Streamlit read view of the pipeline
-  cli.py        agent-crm {init-db,serve,seed,report}
-migrations/     Alembic (source of truth for schema)
-```
-
-### Option A — Docker (matches the Postgres-on-NAS target)
+### Docker Compose (Mini / ranch target)
 
 ```bash
-docker compose up --build
+cp .env.example .env   # adjust if needed
+docker compose up -d --build
 ```
 
-This starts Postgres, runs migrations, serves the API on
-[http://localhost:8000](http://localhost:8000) (docs at `/docs`), and the dashboard on
-[http://localhost:8501](http://localhost:8501).
+| Service | Port | Role |
+|---------|------|------|
+| `api` | 8000 | FastAPI — runs `alembic upgrade head` on boot, then serves |
+| `dashboard` | 8501 | Streamlit observer + pipeline/hunter/research/contacts/verifier |
+| `db` | 5432 | Postgres 16 |
+| `spark-queue` | 8088 | GPU-aware LLM queue proxy |
 
-### Option B — Local Python (SQLite, zero external services)
+API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-Requires Python 3.11+.
+### Host services (not in Compose)
+
+SearXNG and Firecrawl run on the ranch host. Containers reach them via `host.docker.internal`:
+
+| Variable | Default | Service |
+|----------|---------|---------|
+| `CRM_SEARXNG_URL` | `http://host.docker.internal:8080` | JSON search |
+| `CRM_FIRECRAWL_URL` | `http://host.docker.internal:3002` | Page scrape (markdown) |
+
+### Spark LLM
+
+All CRM agents call the LLM through **spark-queue only**:
+
+```
+CRM_LLM_BASE_URL=http://spark-queue:8088/v1
+```
+
+- Model: `qwen3.8-27b-sglang` (configured on the `spark-queue` container)
+- Global cap: **4 concurrent Spark sessions** (shared with Hermes; leaves GPU headroom for ComfyUI)
+- **Never point agents at Spark SGLang directly**
+
+The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats.
+
+### Database and migrations
+
+| Backend | Schema path |
+|---------|-------------|
+| **Postgres** (Compose / NAS) | `alembic upgrade head` — API entrypoint runs this on boot |
+| **SQLite** (local dev/tests) | `init_db()` / `create_all` via `agent-crm init-db` |
+
+Set `CRM_DATABASE_URL` in `.env`. On Postgres, do **not** rely on `create_all`; Alembic is the source of truth.
+
+**Enum convention:** legacy tables (`leads`, `opportunities`, …) use name-bound Postgres enums (`HUNTER`, `MIDNIGHTSATIN`). Newer tables (`hunt_queries`, `contact_verifications`, `contact_profiles`, …) use lowercase values via `str_enum()` in `models.py`. Reuse the existing `brand` enum with `create_type=False`.
+
+### Brands
+
+| Slug | Use |
+|------|-----|
+| `midnightsatin` | MidnightSatin routing and hunts |
+| `celestial-nexus` | Celestial-Nexus routing and hunts |
+| `heybuddy` | HeyBuddy routing; research defaults to nonprofit partnership hunts |
+
+---
+
+## Collection systems
+
+The ranch stack builds prospect intelligence through six layered systems. Each writes to Postgres (or SQLite in dev).
+
+### 1. SearXNG search
+
+Paginated JSON search against the local SearXNG instance. Collects unique URLs until the configured limit (default **50 hits** per query). Used by hunter, hunt-loop, research, and contact social lookup.
+
+### 2. Firecrawl scrape
+
+Each search hit can be scraped to markdown via the host Firecrawl API. Hunter defaults to **50 pages per query** (`CRM_HUNTER_MAX_PAGES_PER_RUN`).
+
+### 3. Outbound Hunter and hunt loop
+
+**Single hunt** (`outbound_hunter`): one query → SearXNG → scrape → create page-level leads + enrichment summary.
+
+**Hunt loop** (`hunt_loop`): bounded branching collection of **sites** into `hunt_resources` (not people). Features:
+
+- FIFO query queue (`hunt_queries`) with dedupe
+- SearXNG param rotation (general, social media, news, IT, …)
+- LLM branch-term extraction to enqueue new queries
+- Defaults: **40 queries**, **60 minutes**, **50 pages per query**
+
+| Entry | Command / API |
+|-------|---------------|
+| Single hunt | `agent-crm hunt "<query>"` · `POST /hunt` |
+| Branching loop | `agent-crm hunt-loop [--brand …] [query]` · `POST /hunt/loop` |
+| List sites | `GET /hunt/resources` |
+| Queue status | `GET /hunt/queue` |
+
+Hunt-loop prompt explicitly forbids inventing emails or person names. Sites land in `hunt_resources`; people are handled by contact extraction (below).
+
+### 4. Research agent
+
+Competitor and nonprofit prospecting with the same SearXNG + Firecrawl + Spark summarization pipeline.
+
+| Brand | Default kind | Focus |
+|-------|--------------|-------|
+| `celestial-nexus`, `midnightsatin` | `competitor` | Competitor site scans |
+| `heybuddy` | `nonprofit` | 501(c)(3) partnership / grant prospects (HeyBuddy itself is **not** a nonprofit) |
+
+Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`.
+
+| Entry | Command / API |
+|-------|---------------|
+| Run | `agent-crm research --brand celestial-nexus [--kind nonprofit] [query]` · `POST /research` |
+| List | `GET /research/findings` |
+
+### 5. Contact extraction and social lookup
+
+After every successful Firecrawl scrape (hunter, hunt-loop, research), the stack extracts contacts from page markdown/HTML:
+
+- **Emails** via regex and `mailto:` links; skip noreply, no-reply, donotreply, privacy, mailer-daemon, notifications@, example.com, sentry.io, wixpress, cloudflare, githubnoreply
+- **Names** only when clearly present (`Name <email>`, prior line, mailto anchor text) — **never invented**
+- **Social URLs** already on the page (x.com, linkedin.com/in, instagram.com, facebook.com)
+
+Each email upserts a row in **`contact_profiles`** (unique lowercase email) and a matching **`Lead`** (`source=CONTACT`). `source_urls` and `socials` merge across pages.
+
+When a profile still has no socials after scrape, a **bounded SearXNG lookup** runs (X / LinkedIn / Instagram) — no paid APIs, no login:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `CRM_CONTACT_SOCIAL_QUERIES_PER_PROFILE` | 4 | Max SearXNG queries per profile lookup |
+| `CRM_CONTACT_SOCIAL_LOOKUPS_PER_RUN` | 40 | Max profiles looked up per hunt/research run |
+
+Skipped when the scrape already attached socials to that contact.
+
+| Entry | Command / API |
+|-------|---------------|
+| List profiles | `agent-crm contacts list [--brand …] [--email …]` · `GET /contacts` |
+
+### 6. Lead verifier
+
+Defensive contact checks — **DNS, MX, HTTP only**. No SMTP, no RCPT/VRFY, no sending.
+
+| Entry | Command / API |
+|-------|---------------|
+| One lead | `agent-crm verify --lead-id N` · `POST /leads/{id}/verify` |
+| Batch | `agent-crm verify --unverified [--limit 50]` · `POST /verify/batch` |
+| Raw | `agent-crm verify --email a@b.com` · `POST /verify/raw` |
+
+Results in `contact_verifications` (one row per lead + contact).
+
+---
+
+## Data model (implemented tables)
+
+| Table | Purpose |
+|-------|---------|
+| `leads` | People at top of funnel (intake, hunter pages, contact emails) |
+| `accounts` | Company/project home; `socials` JSON for **company** profiles |
+| `opportunities` | Pipeline stage per lead |
+| `activities` | Append-only agent history |
+| `journeys` | Nurture state machines (schema present; sending not implemented) |
+| `hunt_queries` | Hunt-loop search queue |
+| `hunt_resources` | Discovered **sites** (directories, communities, newsletters) |
+| `research_findings` | Research agent output |
+| `contact_profiles` | **People** keyed by email — name, socials, source pages |
+| `contact_verifications` | Verifier results per lead contact |
+| `agent_heartbeats` | Live agent observer state |
+
+`Account.socials` is for companies. Person socials live on `contact_profiles` (and in lead `raw_payload`), not on accounts.
+
+---
+
+## Agents and dashboard
+
+Agents call `CRMToolkit(actor="…")` for typed writes. Every mutation appends an `Activity`. Stage changes go through `PipelineManager`.
+
+Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `GET /agents` and `GET /agents/spark`.
+
+### Dashboard tabs
+
+| Tab | Shows |
+|-----|-------|
+| **Live agents** | Heartbeats + spark-queue slot occupancy (auto-refresh) |
+| **Pipeline & leads** | Weekly metrics, stage chart, lead table, activity history, verifications |
+| **Hunter** | Query queue status + `hunt_resources` table |
+| **Research** | `research_findings` with brand/kind filters |
+| **Contacts** | `contact_profiles` — name, email, socials, source pages |
+| **Verifier** | Hunter leads and verification status |
+
+### Agent roster (as implemented)
+
+| Agent | Actor name | What it does today |
+|-------|------------|-------------------|
+| Lead Intake | `lead_intake` | `POST /intake/webhook` → create lead |
+| Lead Scoring | `lead_scoring` | Score + priority via tooling |
+| Brand Router | `brand_router` | Assign brand |
+| Research | `research` | Competitor / nonprofit runs → `research_findings` |
+| Outbound Hunter | `outbound_hunter` | Hunt + hunt-loop → sites and page leads |
+| Lead Verifier | `lead_verifier` | DNS/MX/HTTP checks |
+| CRM / Pipeline | `api`, `dashboard`, … | Stage transitions, reporting |
+
+Outreach, nurture sends, and orchestrator scheduling are **not** implemented.
+
+---
+
+## CLI cheatsheet
 
 ```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,dashboard]"
+# Stack
+agent-crm serve                          # API on CRM_API_PORT (default 8000)
+agent-crm init-db                        # SQLite only — Postgres uses Alembic
+agent-crm seed                           # Demo leads
+agent-crm report                         # Weekly JSON report
 
-export CRM_DATABASE_URL="sqlite:///./data/agent_crm.db"
-alembic upgrade head        # create the schema
-agent-crm seed              # optional: a couple of demo leads
-agent-crm serve             # API on :8000  (or: uvicorn agent_crm.api:app)
-streamlit run src/agent_crm/dashboard.py   # dashboard on :8501
+# Hunter
+agent-crm hunt "boutique design NYC" \
+  [--brand midnightsatin|celestial-nexus|heybuddy] \
+  [--max-pages 50] [--search-limit 50] \
+  [--no-prospect] [--no-summarize]
+
+agent-crm hunt-loop [query] \
+  [--brand midnightsatin|celestial-nexus|heybuddy] \
+  [--max-queries 40] [--max-minutes 60] [--max-pages-per-query 50] \
+  [--no-resume] [--no-summarize]
+
+# Research
+agent-crm research --brand heybuddy [--kind nonprofit|competitor|other] [query] \
+  [--max-queries 20] [--max-pages 200] [--max-minutes 60] \
+  [--search-limit 50] [--no-summarize] [--no-accounts]
+
+# Contacts
+agent-crm contacts list \
+  [--brand midnightsatin|celestial-nexus|heybuddy|unassigned] \
+  [--email user@example.com] [--limit 500]
+
+# Verifier (no mail sent)
+agent-crm verify --lead-id 42
+agent-crm verify --unverified [--limit 50]
+agent-crm verify --email a@b.com
+agent-crm verify --url https://example.com
 ```
 
-Configuration lives in environment variables (see `.env.example`); copy it to `.env`
-to override defaults. Switching from SQLite to Postgres is only a change to
-`CRM_DATABASE_URL`.
+Dashboard (outside Compose):
 
-### The tooling contract (what later agents call)
-
-Agents never touch SQL or hold a database session. They instantiate `CRMToolkit` with
-their own name and call typed methods; every mutation appends an `Activity` so history
-stays complete, and stage changes route through `PipelineManager` so transition rules
-live in one place.
-
-```python
-from agent_crm.tooling import CRMToolkit
-from agent_crm.pipeline import PipelineManager
-from agent_crm.enums import Brand, LeadSource, Priority, Stage
-from agent_crm.schemas import LeadCreate, ScoreInput, EnrichmentInput
-
-intake = CRMToolkit(actor="lead_intake")
-lead = intake.create_lead(LeadCreate(source=LeadSource.FORM, email="a@b.example"))
-
-CRMToolkit(actor="lead_scoring").record_score(lead.id, ScoreInput(score=88, priority=Priority.HIGH))
-CRMToolkit(actor="brand_router").route_brand(lead.id, Brand.MIDNIGHTSATIN)
-
-pm = PipelineManager()
-pm.evaluate_hot(lead.id)        # flags hot + alerts when a lead clears the threshold
-pm.transition(lead.id, Stage.SCORED)   # rejects illegal jumps with InvalidStageTransition
+```bash
+streamlit run src/agent_crm/dashboard.py
 ```
 
-### HTTP surface
+---
+
+## HTTP API (summary)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/health` | Liveness + which store is attached |
-| POST | `/intake/webhook` | Inbound Listener write path (form / DM / email → row) |
-| GET | `/leads` | List leads |
-| GET | `/leads/{id}` | One lead |
-| GET | `/leads/{id}/activities` | Append-only history |
-| POST | `/leads/{id}/stage` | Pipeline Manager stage transition |
-| GET | `/report/weekly` | Analytics weekly snapshot |
+| GET | `/health` | Liveness + database kind |
+| POST | `/intake/webhook` | Create lead |
+| POST | `/hunt` | Single hunter run |
+| POST | `/hunt/loop` | Branching hunt loop |
+| GET | `/hunt/resources` | List `hunt_resources` |
+| GET | `/hunt/queue` | Hunt queue status |
+| POST | `/research` | Research run |
+| GET | `/research/findings` | List findings |
+| GET | `/contacts` | List `contact_profiles` (`?brand=`, `?email=`) |
+| POST | `/leads/{id}/verify` | Verify lead contacts |
+| GET | `/leads/{id}/verifications` | List verifications |
+| POST | `/verify/batch` | Batch verify unverified leads |
+| POST | `/verify/raw` | Verify raw email or URL |
+| GET | `/leads`, `/leads/{id}`, `/leads/{id}/activities` | Lead reads |
+| POST | `/leads/{id}/stage` | Pipeline stage transition |
+| GET | `/report/weekly` | Weekly snapshot |
+| POST | `/agents/{name}/heartbeat` | Agent heartbeat |
+| GET | `/agents` | Observer roster |
+| GET | `/agents/spark` | Spark queue slot summary |
 
-### Not yet built (next slices)
+Full OpenAPI at `/docs`.
 
-Scoring/Brand Router logic, Research (Playwright), Outreach Writer + Nurture (SMTP,
-journeys), Outbound Hunter, and the Orchestrator remain to be implemented against this
-foundation, in the order listed above.
+---
+
+## Environment variables
+
+Copy `.env.example` to `.env`. Key settings:
+
+| Variable | Purpose |
+|----------|---------|
+| `CRM_DATABASE_URL` | `postgresql+psycopg://…` or `sqlite:///./data/agent_crm.db` |
+| `CRM_SEARXNG_URL` | Ranch SearXNG base URL |
+| `CRM_FIRECRAWL_URL` | Ranch Firecrawl base URL |
+| `CRM_LLM_BASE_URL` | Spark queue OpenAI-compatible endpoint (`http://spark-queue:8088/v1`) |
+| `CRM_HUNTER_MAX_PAGES_PER_RUN` | Max Firecrawl pages per hunt query (50) |
+| `CRM_HUNTER_SEARCH_RESULT_LIMIT` | Max SearXNG hits per query (50) |
+| `CRM_HUNTER_MAX_QUERIES_DEFAULT` | Hunt-loop query budget (40) |
+| `CRM_HUNTER_MAX_MINUTES_DEFAULT` | Hunt-loop wall clock (60) |
+| `CRM_RESEARCH_MAX_QUERIES_DEFAULT` | Research query budget (20) |
+| `CRM_RESEARCH_MAX_PAGES_PER_RUN` | Research scrape budget (200) |
+| `CRM_RESEARCH_MAX_MINUTES_DEFAULT` | Research wall clock (60) |
+| `CRM_RESEARCH_SEARCH_RESULT_LIMIT` | Research SERP hits per query (50) |
+| `CRM_CONTACT_SOCIAL_QUERIES_PER_PROFILE` | SearXNG queries per social lookup (4) |
+| `CRM_CONTACT_SOCIAL_LOOKUPS_PER_RUN` | Profiles looked up per run (40) |
+| `CRM_API_BASE_URL` | Dashboard → API for live agent panel |
+| `CRM_HOT_LEAD_THRESHOLD` | Score threshold for hot-lead flag (80) |
+
+Spark queue container vars (`SPARK_LLM_*`) are documented in `.env.example`.
+
+---
+
+## Local dev (SQLite)
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,dashboard]"
+
+export CRM_DATABASE_URL="sqlite:///./data/agent_crm.db"
+alembic upgrade head
+agent-crm seed
+agent-crm serve
+```
+
+Point `CRM_SEARXNG_URL` and `CRM_FIRECRAWL_URL` at your host services. For LLM summarization, run spark-queue locally or set `CRM_LLM_BASE_URL` to a reachable queue instance.
+
+---
+
+## Migrations
+
+```bash
+alembic upgrade head      # apply all revisions
+alembic current           # show head
+```
+
+Current chain ends at `c5d6e7f8a9b0` (`contact_profiles` + `CONTACT` lead source). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.

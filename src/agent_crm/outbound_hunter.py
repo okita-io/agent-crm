@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import get_settings
+from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
 from .enums import ActivityType, AgentStatus, Brand, LeadSource, Stage
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
 from .llm_client import chat_completions
@@ -40,6 +41,7 @@ def run_hunt(
 
     errors: list[str] = []
     leads_created: list[int] = []
+    contact_budget = ContactExtractionBudget.from_settings()
 
     crm.record_heartbeat(
         status=AgentStatus.THINKING,
@@ -129,6 +131,17 @@ def run_hunt(
                 website=hit.url,
             ),
         )
+
+        try:
+            process_scraped_page_contacts(
+                markdown=page.markdown,
+                source_url=hit.url,
+                brand=request.brand or Brand.UNASSIGNED,
+                searx_client=searx_client,
+                budget=contact_budget,
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     crm.record_heartbeat(status=AgentStatus.IDLE)
     return HuntResult(

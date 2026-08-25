@@ -180,6 +180,19 @@ def _cmd_research(args: argparse.Namespace) -> int:
     return 0 if result.findings_written or not result.errors else 1
 
 
+def _cmd_contacts(args: argparse.Namespace) -> int:
+    from .contact_store import list_contact_profiles
+    from .db import init_db
+    from .enums import Brand
+
+    init_db()
+    brand = Brand(args.brand) if args.brand else None
+    profiles = list_contact_profiles(brand=brand, email=args.email, limit=args.limit)
+    rows = [profile.model_dump(mode="json") for profile in profiles]
+    print(json.dumps(rows, indent=2))
+    return 0
+
+
 def _cmd_verify(args: argparse.Namespace) -> int:
     from .db import init_db
     from .schemas import VerifyRawRequest
@@ -309,6 +322,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Do not write Account notes for strong hits",
     )
     research.set_defaults(func=_cmd_research)
+
+    contacts = sub.add_parser("contacts", help="List contact profiles extracted from scrapes")
+    contacts_sub = contacts.add_subparsers(dest="contacts_command", required=True)
+    contacts_list = contacts_sub.add_parser("list", help="List contact profiles")
+    contacts_list.add_argument(
+        "--brand",
+        choices=["midnightsatin", "celestial-nexus", "heybuddy", "unassigned"],
+        help="Filter by brand",
+    )
+    contacts_list.add_argument("--email", help="Filter by exact email")
+    contacts_list.add_argument("--limit", type=int, default=500, help="Max profiles to return")
+    contacts_list.set_defaults(func=_cmd_contacts)
 
     verify = sub.add_parser("verify", help="Verify lead contacts (DNS/MX/HTTP, no mail)")
     verify.add_argument("--lead-id", type=int, help="Verify a single lead by id")

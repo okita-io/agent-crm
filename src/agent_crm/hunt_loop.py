@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import Settings, get_settings
+from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
 from .enums import AgentStatus, Brand, HuntQueryStatus
 from .firecrawl_client import FirecrawlError, scrape
 from .heartbeat import record_heartbeat
@@ -94,6 +95,7 @@ def run_hunt_loop(
     use_run_id = None if resume else result.run_id
     brand_filter = brand if brand != Brand.UNASSIGNED else None
     palette_index = 0
+    contact_budget = ContactExtractionBudget.from_settings()
 
     while result.queries_run < budget.max_queries and time.monotonic() < deadline:
         pending = store.next_pending_query(run_id=use_run_id, brand=brand_filter)
@@ -130,6 +132,7 @@ def run_hunt_loop(
                 summarize_branches=summarize_branches,
                 searx_client=searx_client,
                 firecrawl_client=firecrawl_client,
+                contact_budget=contact_budget,
             )
         except Exception as exc:  # noqa: BLE001
             store.mark_query_failed(pending.id, str(exc))
@@ -171,6 +174,7 @@ def _run_queued_query(
     summarize_branches: bool,
     searx_client: httpx.Client | None,
     firecrawl_client: httpx.Client | None,
+    contact_budget: ContactExtractionBudget | None = None,
 ) -> dict[str, int]:
     search_kwargs = dict(params)
     results = search(
@@ -213,6 +217,16 @@ def _run_queued_query(
             )
             if row is not None:
                 pages_scraped += 1
+                try:
+                    process_scraped_page_contacts(
+                        markdown=page.markdown,
+                        source_url=hit.url,
+                        brand=brand,
+                        searx_client=searx_client,
+                        budget=contact_budget,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
         resources += pages_scraped
 
     branch_terms = _extract_branch_terms(

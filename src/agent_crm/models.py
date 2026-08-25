@@ -145,6 +145,9 @@ class Lead(Base, TimestampMixin):
     contact_verifications: Mapped[list[ContactVerification]] = relationship(
         back_populates="lead", order_by="ContactVerification.checked_at"
     )
+    contact_profile: Mapped[ContactProfile | None] = relationship(
+        back_populates="lead", uselist=False
+    )
 
 
 class Opportunity(Base, TimestampMixin):
@@ -295,6 +298,26 @@ class ResearchFinding(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
+
+
+class ContactProfile(Base, TimestampMixin):
+    """A person contact keyed by email, with social links for follow-up."""
+
+    __tablename__ = "contact_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    brand: Mapped[Brand] = mapped_column(
+        existing_brand_enum(), nullable=False, index=True
+    )
+    socials: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    lead_id: Mapped[int | None] = mapped_column(
+        ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    lead: Mapped[Lead | None] = relationship(back_populates="contact_profile")
 
 
 class ContactVerification(Base, TimestampMixin):
