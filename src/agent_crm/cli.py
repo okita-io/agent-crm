@@ -147,6 +147,8 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
                 "queries_run": result.queries_run,
                 "resources_found": result.resources_found,
                 "branch_terms_enqueued": result.branch_terms_enqueued,
+                "community_terms_enqueued": result.community_terms_enqueued,
+                "person_terms_enqueued": result.person_terms_enqueued,
                 "stop_reason": result.stop_reason,
             },
             indent=2,

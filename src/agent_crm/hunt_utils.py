@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
-from urllib.parse import parse_qs, urlparse, urlunparse
+from dataclasses import dataclass
+from urllib.parse import parse_qs, unquote, urlparse, urlunparse
 
 from agent_crm.enums import HuntResourceKind
 
@@ -110,16 +112,183 @@ def is_junk_url(url: str) -> bool:
     return any(fragment in lower for fragment in _JUNK_URL_FRAGMENTS)
 
 
-def classify_resource(url: str, title: str | None, snippet: str | None = None) -> HuntResourceKind:
-    """Heuristic resource kind from URL/title/snippet."""
+@dataclass(frozen=True)
+class ResourceClassification:
+    """URL/title classification with optional community metadata."""
+
+    kind: HuntResourceKind
+    community_slug: str | None = None
+    community_label: str | None = None
+    platform: str | None = None
+
+
+_REDDIT_SUB_RE = re.compile(r"/r/([A-Za-z0-9_]+)", re.IGNORECASE)
+_FACEBOOK_GROUP_RE = re.compile(r"/groups/([A-Za-z0-9.\-]+)", re.IGNORECASE)
+_DISCORD_INVITE_RE = re.compile(
+    r"(?:discord\.gg|discord\.com/invite)/([A-Za-z0-9\-]+)",
+    re.IGNORECASE,
+)
+_GOOGLE_GROUP_RE = re.compile(r"groups\.google\.com/g/([A-Za-z0-9_\-]+)", re.IGNORECASE)
+_LEMMY_COMMUNITY_RE = re.compile(r"/c/([A-Za-z0-9_]+)", re.IGNORECASE)
+_DISCOURSE_TOPIC_RE = re.compile(r"/t/([A-Za-z0-9\-]+)", re.IGNORECASE)
+_MEETUP_GROUP_RE = re.compile(r"meetup\.com/(?:[A-Za-z]{2}-[A-Za-z]{2}/)?([^/?#]+)", re.IGNORECASE)
+_SLACK_COMMUNITY_RE = re.compile(
+    r"(?:\.slack\.com|slackin\.com|join\.slack\.com)/(?:t/)?([A-Za-z0-9\-_/]+)?",
+    re.IGNORECASE,
+)
+
+
+def _label_from_slug(slug: str) -> str:
+    return slug.replace("-", " ").replace("_", " ").strip()
+
+
+def _match_platform(url: str, host: str) -> ResourceClassification | None:
+    lower = url.lower()
+
+    reddit_match = _REDDIT_SUB_RE.search(url)
+    if "reddit.com" in host and reddit_match:
+        slug = reddit_match.group(1)
+        return ResourceClassification(
+            kind=HuntResourceKind.COMMUNITY,
+            community_slug=slug,
+            community_label=_label_from_slug(slug),
+            platform="reddit",
+        )
+
+    facebook_match = _FACEBOOK_GROUP_RE.search(url)
+    if "facebook.com" in host and facebook_match:
+        slug = unquote(facebook_match.group(1))
+        return ResourceClassification(
+            kind=HuntResourceKind.COMMUNITY,
+            community_slug=slug,
+            community_label=_label_from_slug(slug),
+            platform="facebook",
+        )
+
+    discord_match = _DISCORD_INVITE_RE.search(lower)
+    if discord_match:
+        slug = discord_match.group(1)
+        return ResourceClassification(
+            kind=HuntResourceKind.COMMUNITY,
+            community_slug=slug,
+            community_label=slug,
+            platform="discord",
+        )
+
+    google_match = _GOOGLE_GROUP_RE.search(lower)
+    if google_match:
+        slug = google_match.group(1)
+        return ResourceClassification(
+            kind=HuntResourceKind.COMMUNITY,
+            community_slug=slug,
+            community_label=_label_from_slug(slug),
+            platform="google_groups",
+        )
+
+    if "groups.google.com" in host:
+        return ResourceClassification(
+            kind=HuntResourceKind.COMMUNITY,
+            platform="google_groups",
+        )
+
+    lemmy_match = _LEMMY_COMMUNITY_RE.search(url)
+    if "lemmy" in host and lemmy_match:
+        slug = lemmy_match.group(1)
+        return ResourceClassification(
+            kind=HuntResourceKind.COMMUNITY,
+            community_slug=slug,
+            community_label=_label_from_slug(slug),
+            platform="lemmy",
+        )
+
+    if host == "lobste.rs" or host.endswith(".lobste.rs"):
+        slug = urlparse(url).path.strip("/").split("/")[0] if urlparse(url).path else None
+        return ResourceClassification(
+            kind=HuntResourceKind.FORUM,
+            community_slug=slug,
+            community_label=_label_from_slug(slug) if slug else "Lobsters",
+            platform="lobsters",
+        )
+
+    if "discourse" in host or _DISCOURSE_TOPIC_RE.search(url):
+        topic_match = _DISCOURSE_TOPIC_RE.search(url)
+        slug = topic_match.group(1) if topic_match else host.split(".")[0]
+        return ResourceClassification(
+            kind=HuntResourceKind.FORUM,
+            community_slug=slug,
+            community_label=_label_from_slug(slug) if slug else None,
+            platform="discourse",
+        )
+
+    meetup_match = _MEETUP_GROUP_RE.search(lower)
+    if "meetup.com" in host and meetup_match:
+        slug = meetup_match.group(1)
+        if slug not in {"find", "events", "topics"}:
+            return ResourceClassification(
+                kind=HuntResourceKind.COMMUNITY,
+                community_slug=slug,
+                community_label=_label_from_slug(slug),
+                platform="meetup",
+            )
+
+    slack_match = _SLACK_COMMUNITY_RE.search(lower)
+    if slack_match and ("slack.com" in host or "slackin.com" in host):
+        slug = (slack_match.group(1) or host.split(".")[0]).strip("/")
+        return ResourceClassification(
+            kind=HuntResourceKind.COMMUNITY,
+            community_slug=slug,
+            community_label=_label_from_slug(slug) if slug else None,
+            platform="slack",
+        )
+
+    return None
+
+
+def classify_resource_detailed(
+    url: str,
+    title: str | None,
+    snippet: str | None = None,
+) -> ResourceClassification:
+    """Heuristic resource kind and community metadata from URL/title/snippet."""
     haystack = " ".join(filter(None, [url, title, snippet])).lower()
     host = registrable_domain(url)
+
+    platform_match = _match_platform(url, host)
+    if platform_match is not None:
+        return platform_match
+
     if any(host.endswith(social) or host == social for social in _SOCIAL_HOSTS):
-        return HuntResourceKind.SOCIAL
+        return ResourceClassification(kind=HuntResourceKind.SOCIAL)
+
     for kind, hints in _KIND_HINTS:
         if any(hint in haystack for hint in hints):
-            return kind
-    return HuntResourceKind.OTHER
+            return ResourceClassification(kind=kind)
+
+    return ResourceClassification(kind=HuntResourceKind.OTHER)
+
+
+def format_resource_notes(
+    classification: ResourceClassification,
+    snippet: str | None = None,
+) -> str | None:
+    """Serialize community metadata (and optional snippet) into notes."""
+    if classification.community_slug or classification.platform:
+        payload: dict[str, str] = {}
+        if classification.platform:
+            payload["community"] = classification.platform
+        if classification.community_slug:
+            payload["slug"] = classification.community_slug
+        if classification.community_label:
+            payload["label"] = classification.community_label
+        if snippet:
+            payload["snippet"] = snippet[:400]
+        return json.dumps(payload, separators=(",", ":"))
+    return snippet
+
+
+def classify_resource(url: str, title: str | None, snippet: str | None = None) -> HuntResourceKind:
+    """Heuristic resource kind from URL/title/snippet."""
+    return classify_resource_detailed(url, title, snippet).kind
 
 
 def extract_heuristic_terms(

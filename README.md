@@ -89,6 +89,7 @@ Each search hit can be scraped to markdown via the host Firecrawl API. Hunter de
 - FIFO query queue (`hunt_queries`) with dedupe
 - SearXNG param rotation (general, social media, news, IT, …)
 - LLM branch-term extraction to enqueue new queries
+- **Community/person feedback**: newly catalogued communities and extracted contact names enqueue deterministic follow-up queries (`origin` prefix `community:` / `person:`)
 - Defaults: **40 queries**, **60 minutes**, **50 pages per query**
 
 | Entry | Command / API |
@@ -99,6 +100,8 @@ Each search hit can be scraped to markdown via the host Firecrawl API. Hunter de
 | Queue status | `GET /hunt/queue` |
 
 Hunt-loop prompt explicitly forbids inventing emails or person names. Sites land in `hunt_resources`; people are handled by contact extraction (below).
+
+**Community & name feedback.** When the loop first sees a community/forum URL (e.g. `reddit.com/r/<sub>`, Discord invite, Facebook group), it enqueues bounded `community:` search terms (`site:reddit.com/r/<sub>`, `"<sub>" community`, etc.). After contact extraction on a scraped page, real person names (not emails, not single tokens like “Admin”) enqueue `person:` terms (`"Jane Doe" reddit`, `"Jane Doe" discord`, …). Caps per run: `CRM_HUNTER_COMMUNITY_TERMS_PER_RUN` (default **30**) and `CRM_HUNTER_PERSON_TERMS_PER_RUN` (default **20**). Dedupe uses `hunt_queries.dedupe_key` as usual. The dashboard **Hunter** tab lists catalogued communities and derived queued terms; `GET /hunt/queue` reports aggregate pending counts (inspect `hunt_queries.origin` for `community:` / `person:` prefixes).
 
 ### 4. Research agent
 
@@ -293,6 +296,8 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_HUNTER_SEARCH_RESULT_LIMIT` | Max SearXNG hits per query (50) |
 | `CRM_HUNTER_MAX_QUERIES_DEFAULT` | Hunt-loop query budget (40) |
 | `CRM_HUNTER_MAX_MINUTES_DEFAULT` | Hunt-loop wall clock (60) |
+| `CRM_HUNTER_COMMUNITY_TERMS_PER_RUN` | Max community feedback queries per loop run (30) |
+| `CRM_HUNTER_PERSON_TERMS_PER_RUN` | Max person-name feedback queries per loop run (20) |
 | `CRM_RESEARCH_MAX_QUERIES_DEFAULT` | Research query budget (20) |
 | `CRM_RESEARCH_MAX_PAGES_PER_RUN` | Research scrape budget (200) |
 | `CRM_RESEARCH_MAX_MINUTES_DEFAULT` | Research wall clock (60) |
