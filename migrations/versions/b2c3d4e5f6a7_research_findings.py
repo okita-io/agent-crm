@@ -29,11 +29,12 @@ brand_enum = postgresql.ENUM(
     create_type=False,
 )
 
-research_finding_kind_enum = sa.Enum(
+research_finding_kind_enum = postgresql.ENUM(
     "competitor",
     "nonprofit",
     "other",
     name="researchfindingkind",
+    create_type=False,
 )
 
 
