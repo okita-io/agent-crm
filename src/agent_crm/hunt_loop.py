@@ -35,9 +35,9 @@ PARAM_PALETTES: list[dict | None] = [
 
 @dataclass
 class HuntBudget:
-    max_queries: int = 20
-    max_minutes: int = 25
-    max_pages_per_query: int = 8
+    max_queries: int = 40
+    max_minutes: int = 60
+    max_pages_per_query: int = 50
 
     def __post_init__(self) -> None:
         settings = get_settings()
@@ -192,7 +192,9 @@ def _run_queued_query(
             f"scraping for: {query}",
             resource=settings.firecrawl_url,
         )
-        for hit in results[:max_pages]:
+        for hit in results:
+            if pages_scraped >= max_pages:
+                break
             if not _is_scrapable_url(hit.url):
                 continue
             try:

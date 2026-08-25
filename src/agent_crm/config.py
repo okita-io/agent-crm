@@ -40,18 +40,18 @@ class Settings(BaseSettings):
     firecrawl_url: str = "http://host.docker.internal:3002"
 
     # Outbound Hunter defaults
-    hunter_max_pages_per_run: int = 8
-    hunter_search_result_limit: int = 15
-    hunter_max_queries_default: int = 20
-    hunter_max_minutes_default: int = 25
+    hunter_max_pages_per_run: int = 50
+    hunter_search_result_limit: int = 50
+    hunter_max_queries_default: int = 40
+    hunter_max_minutes_default: int = 60
     hunter_max_branch_terms: int = 5
     hunter_request_timeout: float = 60.0
 
     # Research agent defaults
-    research_max_queries_default: int = 12
-    research_max_pages_per_run: int = 4
-    research_max_minutes_default: int = 20
-    research_search_result_limit: int = 15
+    research_max_queries_default: int = 20
+    research_max_pages_per_run: int = 200
+    research_max_minutes_default: int = 60
+    research_search_result_limit: int = 50
 
     # Observer / presence
     api_base_url: str = "http://api:8000"

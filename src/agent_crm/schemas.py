@@ -64,8 +64,8 @@ class HuntRequest(BaseModel):
 
     query: str = Field(min_length=1, max_length=500)
     brand: Brand | None = None
-    max_pages: int = Field(default=8, ge=1, le=10)
-    search_limit: int = Field(default=15, ge=1, le=25)
+    max_pages: int = Field(default=50, ge=1, le=250)
+    search_limit: int = Field(default=50, ge=1, le=250)
     transition_to_prospect: bool = True
     summarize: bool = True
 
@@ -86,9 +86,9 @@ class HuntLoopRequest(BaseModel):
 
     query: str | None = None
     brand: Brand = Brand.UNASSIGNED
-    max_queries: int = Field(default=20, ge=1, le=200)
-    max_minutes: int = Field(default=25, ge=1, le=240)
-    max_pages_per_query: int | None = Field(default=None, ge=1, le=10)
+    max_queries: int = Field(default=40, ge=1, le=200)
+    max_minutes: int = Field(default=60, ge=1, le=240)
+    max_pages_per_query: int | None = Field(default=None, ge=1, le=250)
     resume: bool = True
     summarize_branches: bool = True
 
@@ -127,10 +127,10 @@ class ResearchRequest(BaseModel):
     brand: Brand
     kind: ResearchFindingKind | None = None
     query: str | None = Field(default=None, max_length=500)
-    max_queries: int = Field(default=12, ge=1, le=30)
-    max_pages: int = Field(default=4, ge=1, le=10)
-    max_minutes: int = Field(default=20, ge=1, le=120)
-    search_limit: int = Field(default=15, ge=1, le=25)
+    max_queries: int = Field(default=20, ge=1, le=100)
+    max_pages: int = Field(default=200, ge=1, le=250)
+    max_minutes: int = Field(default=60, ge=1, le=240)
+    search_limit: int = Field(default=50, ge=1, le=250)
     summarize: bool = True
     write_accounts: bool = True
 

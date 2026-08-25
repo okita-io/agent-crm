@@ -156,9 +156,62 @@ def test_param_variation_hits_searxng(loop_db, mock_pages):
             firecrawl_client=http,
         )
     assert len(calls) >= 2
-    categories = [call.get("categories") for call in calls]
+    first_page_calls = [call for call in calls if call.get("pageno") in (None, "1")]
+    categories = [call.get("categories") for call in first_page_calls]
     assert categories[0] is None
     assert categories[1] == "general"
+
+
+def test_loop_scrapes_beyond_legacy_eight_page_cap(loop_db):
+    """Hunt loop should scrape up to max_pages_per_query, not a hard top-8 slice."""
+    pages: dict[str, list[SearchResult]] = {
+        "wide query": [
+            SearchResult(
+                title=f"Resource {idx}",
+                url=f"https://resource{idx}.example",
+                snippet=f"snippet {idx}",
+            )
+            for idx in range(12)
+        ],
+    }
+    calls: list[dict] = []
+    scrape_calls = 0
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/search":
+            params = dict(request.url.params)
+            calls.append(params)
+            query = params.get("q", "")
+            payload = {
+                "results": [
+                    {"url": hit.url, "title": hit.title, "content": hit.snippet}
+                    for hit in pages.get(query, [])
+                ]
+            }
+            return httpx.Response(200, json=payload)
+        if request.url.path == "/v1/scrape":
+            nonlocal scrape_calls
+            scrape_calls += 1
+            return httpx.Response(
+                200,
+                json={"data": {"markdown": "body", "metadata": {"title": "Page"}}},
+            )
+        return httpx.Response(404)
+
+    http = httpx.Client(transport=httpx.MockTransport(transport))
+    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+        mock_llm.return_value = {"choices": [{"message": {"content": '{"terms": []}'}}]}
+        result = run_hunt_loop(
+            query="wide query",
+            brand=Brand.MIDNIGHTSATIN,
+            budget=HuntBudget(max_queries=1, max_minutes=5, max_pages_per_query=10),
+            resume=False,
+            searx_client=http,
+            firecrawl_client=http,
+        )
+
+    assert result.queries_run == 1
+    assert scrape_calls == 10
 
 
 def test_completed_query_not_searched_again(loop_db, mock_pages):

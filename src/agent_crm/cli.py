@@ -171,6 +171,7 @@ def _cmd_research(args: argparse.Namespace) -> int:
         max_queries=args.max_queries,
         max_pages=args.max_pages,
         max_minutes=args.max_minutes,
+        search_limit=args.search_limit,
         summarize=not args.no_summarize,
         write_accounts=not args.no_accounts,
     )
@@ -227,11 +228,11 @@ def main(argv: list[str] | None = None) -> int:
         choices=["midnightsatin", "celestial-nexus", "heybuddy"],
         help="Optional brand to route discovered leads",
     )
-    hunt.add_argument("--max-pages", type=int, default=8, help="Max pages to scrape (1-10)")
+    hunt.add_argument("--max-pages", type=int, default=50, help="Max pages to scrape")
     hunt.add_argument(
         "--search-limit",
         type=int,
-        default=15,
+        default=50,
         help="Max SearXNG results to consider",
     )
     hunt.add_argument(
@@ -253,9 +254,9 @@ def main(argv: list[str] | None = None) -> int:
         choices=["midnightsatin", "celestial-nexus", "heybuddy"],
         help="Brand slug; uses seed pack when no query",
     )
-    hunt_loop.add_argument("--max-queries", type=int, default=20)
-    hunt_loop.add_argument("--max-minutes", type=int, default=25)
-    hunt_loop.add_argument("--max-pages-per-query", type=int, default=8)
+    hunt_loop.add_argument("--max-queries", type=int, default=40)
+    hunt_loop.add_argument("--max-minutes", type=int, default=60)
+    hunt_loop.add_argument("--max-pages-per-query", type=int, default=50)
     hunt_loop.add_argument(
         "--no-resume",
         action="store_true",
@@ -288,9 +289,15 @@ def main(argv: list[str] | None = None) -> int:
         nargs="?",
         help="Optional single seed query (otherwise uses brand seed pack)",
     )
-    research.add_argument("--max-queries", type=int, default=12, help="Max search queries")
-    research.add_argument("--max-pages", type=int, default=4, help="Max pages to scrape")
-    research.add_argument("--max-minutes", type=int, default=20, help="Wall-clock budget")
+    research.add_argument("--max-queries", type=int, default=20, help="Max search queries")
+    research.add_argument("--max-pages", type=int, default=200, help="Max pages to scrape")
+    research.add_argument("--max-minutes", type=int, default=60, help="Wall-clock budget")
+    research.add_argument(
+        "--search-limit",
+        type=int,
+        default=50,
+        help="Max SearXNG results per query",
+    )
     research.add_argument(
         "--no-summarize",
         action="store_true",
