@@ -11,7 +11,7 @@ def test_hunter_defaults_are_exhaustive() -> None:
     assert settings.hunter_search_result_limit == 50
     assert settings.hunter_max_pages_per_run == 50
     assert settings.hunter_max_queries_default == 40
-    assert settings.hunter_max_minutes_default == 60
+    assert settings.hunter_max_minutes_default == 0
 
     hunt = HuntRequest(query="studio")
     assert hunt.max_pages == 50
@@ -19,7 +19,10 @@ def test_hunter_defaults_are_exhaustive() -> None:
 
     loop = HuntLoopRequest()
     assert loop.max_queries == 40
-    assert loop.max_minutes == 60
+    assert loop.max_minutes == 0
+
+    assert HuntLoopRequest(max_minutes=60).max_minutes == 60
+    assert HuntLoopRequest(max_minutes=None).max_minutes == 0
 
 
 def test_research_defaults_are_exhaustive() -> None:

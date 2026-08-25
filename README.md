@@ -90,7 +90,7 @@ Each search hit can be scraped to markdown via the host Firecrawl API. Hunter de
 - SearXNG param rotation (general, social media, news, IT, …)
 - LLM branch-term extraction to enqueue new queries
 - **Community/person feedback**: newly catalogued communities and extracted contact names enqueue deterministic follow-up queries (`origin` prefix `community:` / `person:`)
-- Defaults: **40 queries**, **60 minutes**, **50 pages per query**
+- Defaults: **40 queries**, **unlimited wall clock**, **50 pages per query** (still capped by community/person term limits per run)
 
 | Entry | Command / API |
 |-------|---------------|
@@ -226,7 +226,7 @@ agent-crm hunt "boutique design NYC" \
 
 agent-crm hunt-loop [query] \
   [--brand midnightsatin|celestial-nexus|heybuddy] \
-  [--max-queries 40] [--max-minutes 60] [--max-pages-per-query 50] \
+  [--max-queries 40] [--max-minutes 0] [--max-pages-per-query 50] \
   [--no-resume] [--no-summarize]
 
 # Research
@@ -295,7 +295,7 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_HUNTER_MAX_PAGES_PER_RUN` | Max Firecrawl pages per hunt query (50) |
 | `CRM_HUNTER_SEARCH_RESULT_LIMIT` | Max SearXNG hits per query (50) |
 | `CRM_HUNTER_MAX_QUERIES_DEFAULT` | Hunt-loop query budget (40) |
-| `CRM_HUNTER_MAX_MINUTES_DEFAULT` | Hunt-loop wall clock (60) |
+| `CRM_HUNTER_MAX_MINUTES_DEFAULT` | Hunt-loop wall clock in minutes (`0` = unlimited) |
 | `CRM_HUNTER_COMMUNITY_TERMS_PER_RUN` | Max community feedback queries per loop run (30) |
 | `CRM_HUNTER_PERSON_TERMS_PER_RUN` | Max person-name feedback queries per loop run (20) |
 | `CRM_RESEARCH_MAX_QUERIES_DEFAULT` | Research query budget (20) |

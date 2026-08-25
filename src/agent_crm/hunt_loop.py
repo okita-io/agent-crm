@@ -42,7 +42,7 @@ PARAM_PALETTES: list[dict | None] = [
 @dataclass
 class HuntBudget:
     max_queries: int = 40
-    max_minutes: int = 60
+    max_minutes: int | None = 0
     max_pages_per_query: int = 50
 
     def __post_init__(self) -> None:
@@ -59,6 +59,13 @@ class HuntLoopResult:
     community_terms_enqueued: int = 0
     person_terms_enqueued: int = 0
     stop_reason: str = "queue_empty"
+
+
+def _wall_clock_deadline(max_minutes: int | None) -> float | None:
+    """Return a monotonic deadline when max_minutes > 0; None means unlimited."""
+    if max_minutes is None or max_minutes <= 0:
+        return None
+    return time.monotonic() + max_minutes * 60
 
 
 def run_hunt_loop(
@@ -80,7 +87,7 @@ def run_hunt_loop(
     )
     store = HuntStore()
     result = HuntLoopResult()
-    deadline = time.monotonic() + budget.max_minutes * 60
+    deadline = _wall_clock_deadline(budget.max_minutes)
 
     pending_existing = store.count_pending(brand if brand != Brand.UNASSIGNED else None)
     if resume and not query and pending_existing > 0:
@@ -105,7 +112,9 @@ def run_hunt_loop(
     contact_budget = ContactExtractionBudget.from_settings()
     feedback_budget = HuntFeedbackBudget.from_settings()
 
-    while result.queries_run < budget.max_queries and time.monotonic() < deadline:
+    while result.queries_run < budget.max_queries and (
+        deadline is None or time.monotonic() < deadline
+    ):
         pending = store.next_pending_query(run_id=use_run_id, brand=brand_filter)
         if pending is None:
             result.stop_reason = "queue_empty"
@@ -154,7 +163,7 @@ def run_hunt_loop(
         result.person_terms_enqueued += stats["person_terms_enqueued"]
         store.mark_query_completed(pending.id)
 
-        if time.monotonic() >= deadline:
+        if deadline is not None and time.monotonic() >= deadline:
             result.stop_reason = "max_minutes"
             break
         if result.queries_run >= budget.max_queries:

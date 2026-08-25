@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     hunter_max_pages_per_run: int = 50
     hunter_search_result_limit: int = 50
     hunter_max_queries_default: int = 40
-    hunter_max_minutes_default: int = 60
+    hunter_max_minutes_default: int = 0
     hunter_max_branch_terms: int = 5
     hunter_community_terms_per_run: int = 30
     hunter_person_terms_per_run: int = 20

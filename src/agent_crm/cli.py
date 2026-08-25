@@ -270,7 +270,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Brand slug; uses seed pack when no query",
     )
     hunt_loop.add_argument("--max-queries", type=int, default=40)
-    hunt_loop.add_argument("--max-minutes", type=int, default=60)
+    hunt_loop.add_argument(
+        "--max-minutes",
+        type=int,
+        default=0,
+        help="Wall-clock budget in minutes (0 = unlimited)",
+    )
     hunt_loop.add_argument("--max-pages-per-query", type=int, default=50)
     hunt_loop.add_argument(
         "--no-resume",
