@@ -257,6 +257,96 @@ Do not stand up ten agents on day one. Stand up the store, then attach agents in
 
 ## Running locally
 
-No application is in this repo yet. This document is the starting artifact.
+Milestone 1 has landed: the CRM store, the shared database layer, the agent tooling
+SDK, the Pipeline Manager, the FastAPI intake service, and a Streamlit dashboard. This
+is item 1 of the implementation order (store + Pipeline Manager) plus the intake write
+path and the tooling every later agent builds on.
 
-When the first slice lands, this section will cover how to start the store, the intake webhook, and the dashboard.
+### Layout
+
+```
+src/agent_crm/
+  config.py     env-driven settings (one source of truth for which store is attached)
+  enums.py      controlled vocabularies: brands, sources, stages, transitions, activity types
+  models.py     the data model: Lead, Account, Opportunity, Activity, Journey
+  db.py         engine/session management (SQLite dev, Postgres NAS) + unit-of-work
+  schemas.py    Pydantic I/O shapes at the tooling boundary
+  errors.py     domain errors agents catch (NotFound, InvalidStageTransition)
+  tooling.py    the CRM SDK every agent calls; every write appends an Activity
+  pipeline.py   Pipeline Manager: validated stage transitions, hot-lead alerts, reporting
+  api.py        FastAPI service: health, intake webhook, reads, stage changes, weekly report
+  dashboard.py  Streamlit read view of the pipeline
+  cli.py        agent-crm {init-db,serve,seed,report}
+migrations/     Alembic (source of truth for schema)
+```
+
+### Option A — Docker (matches the Postgres-on-NAS target)
+
+```bash
+docker compose up --build
+```
+
+This starts Postgres, runs migrations, serves the API on
+[http://localhost:8000](http://localhost:8000) (docs at `/docs`), and the dashboard on
+[http://localhost:8501](http://localhost:8501).
+
+### Option B — Local Python (SQLite, zero external services)
+
+Requires Python 3.11+.
+
+```bash
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,dashboard]"
+
+export CRM_DATABASE_URL="sqlite:///./data/agent_crm.db"
+alembic upgrade head        # create the schema
+agent-crm seed              # optional: a couple of demo leads
+agent-crm serve             # API on :8000  (or: uvicorn agent_crm.api:app)
+streamlit run src/agent_crm/dashboard.py   # dashboard on :8501
+```
+
+Configuration lives in environment variables (see `.env.example`); copy it to `.env`
+to override defaults. Switching from SQLite to Postgres is only a change to
+`CRM_DATABASE_URL`.
+
+### The tooling contract (what later agents call)
+
+Agents never touch SQL or hold a database session. They instantiate `CRMToolkit` with
+their own name and call typed methods; every mutation appends an `Activity` so history
+stays complete, and stage changes route through `PipelineManager` so transition rules
+live in one place.
+
+```python
+from agent_crm.tooling import CRMToolkit
+from agent_crm.pipeline import PipelineManager
+from agent_crm.enums import Brand, LeadSource, Priority, Stage
+from agent_crm.schemas import LeadCreate, ScoreInput, EnrichmentInput
+
+intake = CRMToolkit(actor="lead_intake")
+lead = intake.create_lead(LeadCreate(source=LeadSource.FORM, email="a@b.example"))
+
+CRMToolkit(actor="lead_scoring").record_score(lead.id, ScoreInput(score=88, priority=Priority.HIGH))
+CRMToolkit(actor="brand_router").route_brand(lead.id, Brand.MIDNIGHTSATIN)
+
+pm = PipelineManager()
+pm.evaluate_hot(lead.id)        # flags hot + alerts when a lead clears the threshold
+pm.transition(lead.id, Stage.SCORED)   # rejects illegal jumps with InvalidStageTransition
+```
+
+### HTTP surface
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/health` | Liveness + which store is attached |
+| POST | `/intake/webhook` | Inbound Listener write path (form / DM / email → row) |
+| GET | `/leads` | List leads |
+| GET | `/leads/{id}` | One lead |
+| GET | `/leads/{id}/activities` | Append-only history |
+| POST | `/leads/{id}/stage` | Pipeline Manager stage transition |
+| GET | `/report/weekly` | Analytics weekly snapshot |
+
+### Not yet built (next slices)
+
+Scoring/Brand Router logic, Research (Playwright), Outreach Writer + Nurture (SMTP,
+journeys), Outbound Hunter, and the Orchestrator remain to be implemented against this
+foundation, in the order listed above.

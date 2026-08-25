@@ -1,0 +1,53 @@
+# Local stack for Agent CRM milestone 1.
+#
+# Default profile uses Postgres (matches the eventual NAS target) so the whole
+# machine runs the way it will in production. To run against the SQLite file
+# instead, comment out the `db` service + depends_on and set CRM_DATABASE_URL
+# to the sqlite path in a .env file.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: crm
+      POSTGRES_DB: agent_crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - crm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm -d agent_crm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    command: ["api"]
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_API_HOST: 0.0.0.0
+      CRM_API_PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  dashboard:
+    build: .
+    command: ["dashboard"]
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_DASHBOARD_PORT: "8501"
+    ports:
+      - "8501:8501"
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+volumes:
+  crm_pgdata:
