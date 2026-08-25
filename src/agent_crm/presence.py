@@ -22,6 +22,7 @@ KNOWN_AGENT_ROSTER: dict[str, str] = {
     "crm_manager": "CRM Manager",
     "analytics": "Analytics",
     "brand_router": "Brand Router",
+    "lead_verifier": "Lead Verifier",
     "orchestrator": "Orchestrator",
 }
 

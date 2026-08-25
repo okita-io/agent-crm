@@ -11,7 +11,7 @@ import streamlit as st
 
 from agent_crm.config import get_settings
 from agent_crm.db import database_kind, init_db
-from agent_crm.enums import AgentStatus, Brand, ResearchFindingKind, Stage
+from agent_crm.enums import AgentStatus, Brand, ContactVerificationStatus, ResearchFindingKind, Stage
 from agent_crm.heartbeat import list_heartbeats
 from agent_crm.hunt_store import HuntStore
 from agent_crm.pipeline import PipelineManager
@@ -22,6 +22,7 @@ from agent_crm.presence import (
 )
 from agent_crm.research_store import list_findings
 from agent_crm.tooling import CRMToolkit
+from agent_crm.verifier import list_verifications
 
 _STATUS_EMOJI = {
     AgentStatus.IDLE: "⚪",
@@ -36,8 +37,24 @@ def _lead_rows() -> pd.DataFrame:
     leads = crm.list_leads(limit=500)
     if not leads:
         return pd.DataFrame()
-    return pd.DataFrame(
-        [
+    rows = []
+    for lead in leads:
+        verification_status = "—"
+        try:
+            verifications = list_verifications(lead.id)
+            if verifications:
+                statuses = {v.status.value for v in verifications}
+                if ContactVerificationStatus.INVALID.value in statuses:
+                    verification_status = "invalid"
+                elif ContactVerificationStatus.RISKY.value in statuses:
+                    verification_status = "risky"
+                elif ContactVerificationStatus.UNKNOWN.value in statuses:
+                    verification_status = "unknown"
+                else:
+                    verification_status = "valid"
+        except Exception:
+            verification_status = "—"
+        rows.append(
             {
                 "id": lead.id,
                 "name": lead.name,
@@ -48,11 +65,11 @@ def _lead_rows() -> pd.DataFrame:
                 "priority": lead.priority.value if lead.priority else None,
                 "brand": lead.brand.value,
                 "status": lead.status.value,
+                "verified": verification_status,
                 "created": lead.created_at,
             }
-            for lead in leads
-        ]
-    )
+        )
+    return pd.DataFrame(rows)
 
 
 def _resource_rows(brand: Brand | None) -> pd.DataFrame:
@@ -212,6 +229,30 @@ def _render_pipeline_tab() -> None:
                 hide_index=True,
             )
 
+            try:
+                verifications = list_verifications(int(lead_id))
+                if verifications:
+                    st.write("Contact verifications:")
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "contact": v.contact,
+                                    "kind": v.contact_kind.value,
+                                    "status": v.status.value,
+                                    "reasons": "; ".join(v.reasons or []),
+                                    "checked": v.checked_at,
+                                    "http": v.http_status,
+                                }
+                                for v in verifications
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+            except Exception:
+                pass
+
 
 def _render_hunter_tab() -> None:
     st.subheader("Hunter resources")
@@ -285,6 +326,65 @@ def _render_research_tab() -> None:
     )
 
 
+def _render_verifier_tab() -> None:
+    st.subheader("Lead verifier")
+    st.caption("Defensive DNS/MX/HTTP checks — no mail is ever sent.")
+
+    crm = CRMToolkit(actor="dashboard")
+    leads = crm.list_leads(limit=500)
+    hunter_leads = [lead for lead in leads if lead.source.value == "hunter"]
+
+    st.metric("Hunter leads", len(hunter_leads))
+
+    rows = []
+    for lead in hunter_leads:
+        try:
+            verifications = list_verifications(lead.id)
+        except Exception:
+            verifications = []
+        if not verifications:
+            rows.append(
+                {
+                    "lead_id": lead.id,
+                    "name": lead.name,
+                    "company": lead.company,
+                    "email": lead.email,
+                    "verification": "unverified",
+                    "contacts": 0,
+                }
+            )
+            continue
+        worst = ContactVerificationStatus.VALID
+        rank = {
+            ContactVerificationStatus.VALID: 0,
+            ContactVerificationStatus.UNKNOWN: 1,
+            ContactVerificationStatus.RISKY: 2,
+            ContactVerificationStatus.INVALID: 3,
+        }
+        for v in verifications:
+            if rank[v.status] > rank[worst]:
+                worst = v.status
+        rows.append(
+            {
+                "lead_id": lead.id,
+                "name": lead.name,
+                "company": lead.company,
+                "email": lead.email,
+                "verification": worst.value,
+                "contacts": len(verifications),
+            }
+        )
+
+    if not rows:
+        st.info("No hunter leads yet. Run `agent-crm hunt` first.")
+    else:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    st.caption(
+        "CLI: `agent-crm verify --lead-id N` or `agent-crm verify --unverified`"
+    )
+
+
 def _observer_fragment(refresh_seconds: int) -> None:
     try:
         fragment = st.fragment(run_every=timedelta(seconds=refresh_seconds))
@@ -308,8 +408,8 @@ def main() -> None:
     st.title("Agent CRM")
     st.caption(f"Store: {database_kind()}")
 
-    observer_tab, pipeline_tab, hunter_tab, research_tab = st.tabs(
-        ["Live agents", "Pipeline & leads", "Hunter", "Research"]
+    observer_tab, pipeline_tab, hunter_tab, research_tab, verifier_tab = st.tabs(
+        ["Live agents", "Pipeline & leads", "Hunter", "Research", "Verifier"]
     )
 
     with observer_tab:
@@ -323,6 +423,9 @@ def main() -> None:
 
     with research_tab:
         _render_research_tab()
+
+    with verifier_tab:
+        _render_verifier_tab()
 
 
 if __name__ == "__main__":

@@ -34,6 +34,9 @@ from .research_store import list_findings
 from .schemas import (
     ActivityOut,
     AgentObserverOut,
+    BatchVerifyRequest,
+    BatchVerifyResult,
+    ContactVerificationOut,
     HeartbeatIn,
     HeartbeatOut,
     HuntLoopRequest,
@@ -48,8 +51,11 @@ from .schemas import (
     ResearchFindingOut,
     ResearchRequest,
     ResearchResult,
+    VerifyRawRequest,
+    VerifyRawResult,
 )
 from .tooling import CRMToolkit
+from .verifier import list_verifications, verify_batch_unverified, verify_lead, verify_raw
 
 app = FastAPI(
     title="Agent CRM",
@@ -163,6 +169,48 @@ def research_findings(
     limit: int = 200,
 ) -> list[ResearchFindingOut]:
     return list_findings(brand=brand, kind=kind, limit=limit)
+
+
+# ---- lead verifier ---------------------------------------------------------
+
+
+@app.post(
+    "/leads/{lead_id}/verify",
+    response_model=list[ContactVerificationOut],
+    tags=["verifier"],
+)
+def verify_lead_endpoint(lead_id: int) -> list[ContactVerificationOut]:
+    """Verify all extractable contacts on a lead (DNS/MX/HTTP — no mail sent)."""
+    try:
+        return verify_lead(lead_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get(
+    "/leads/{lead_id}/verifications",
+    response_model=list[ContactVerificationOut],
+    tags=["verifier"],
+)
+def get_lead_verifications(lead_id: int) -> list[ContactVerificationOut]:
+    try:
+        return list_verifications(lead_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/verify/batch", response_model=BatchVerifyResult, tags=["verifier"])
+def verify_batch_endpoint(body: BatchVerifyRequest) -> BatchVerifyResult:
+    """Verify unverified hunter leads, capped at ``limit``."""
+    return verify_batch_unverified(limit=body.limit)
+
+
+@app.post("/verify/raw", response_model=VerifyRawResult, tags=["verifier"])
+def verify_raw_endpoint(body: VerifyRawRequest) -> VerifyRawResult:
+    """Verify a raw email or URL without a lead record."""
+    if not body.email and not body.url:
+        raise HTTPException(status_code=400, detail="email or url required")
+    return verify_raw(body)
 
 
 # ---- reads -----------------------------------------------------------------

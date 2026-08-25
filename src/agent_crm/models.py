@@ -25,6 +25,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy import (
     Enum as SAEnum,
@@ -35,6 +36,8 @@ from .enums import (
     ActivityType,
     AgentStatus,
     Brand,
+    ContactKind,
+    ContactVerificationStatus,
     HuntQueryStatus,
     HuntResourceKind,
     JourneyStatus,
@@ -139,6 +142,9 @@ class Lead(Base, TimestampMixin):
         back_populates="lead", order_by="Activity.created_at"
     )
     journeys: Mapped[list[Journey]] = relationship(back_populates="lead")
+    contact_verifications: Mapped[list[ContactVerification]] = relationship(
+        back_populates="lead", order_by="ContactVerification.checked_at"
+    )
 
 
 class Opportunity(Base, TimestampMixin):
@@ -289,6 +295,32 @@ class ResearchFinding(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
+
+
+class ContactVerification(Base, TimestampMixin):
+    """Defensive check result for an email or contact URL on a lead."""
+
+    __tablename__ = "contact_verifications"
+    __table_args__ = (UniqueConstraint("lead_id", "contact", name="uq_lead_contact"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lead_id: Mapped[int] = mapped_column(
+        ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    contact: Mapped[str] = mapped_column(String(2048), nullable=False)
+    contact_kind: Mapped[ContactKind] = mapped_column(
+        str_enum(ContactKind), nullable=False
+    )
+    status: Mapped[ContactVerificationStatus] = mapped_column(
+        str_enum(ContactVerificationStatus), nullable=False
+    )
+    reasons: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    dns_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    mx_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    lead: Mapped[Lead] = relationship(back_populates="contact_verifications")
 
 
 class Journey(Base, TimestampMixin):
