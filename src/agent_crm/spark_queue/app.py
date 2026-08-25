@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from agent_crm.presence import AGENT_IDENTITY_HEADER
 
 from .config import get_spark_queue_settings
 from .gate import GlobalConcurrencyGate, QueueTimeoutError
@@ -59,8 +62,24 @@ def _upstream_url(path: str) -> str:
     return f"{settings.base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
+def _request_actor(request: Request) -> str:
+    return request.headers.get(AGENT_IDENTITY_HEADER, "external")
+
+
+def _serialize_actor_entries(entries: list) -> list[dict[str, str | float]]:
+    now = time.monotonic()
+    return [
+        {
+            "actor": entry.actor,
+            "since_seconds": round(now - entry.since, 2),
+        }
+        for entry in entries
+    ]
+
+
 async def _proxy_request(request: Request, upstream_path: str) -> Response:
     body = await request.body()
+    actor = _request_actor(request)
     headers = {
         key: value
         for key, value in request.headers.items()
@@ -75,7 +94,7 @@ async def _proxy_request(request: Request, upstream_path: str) -> Response:
             pass
 
     try:
-        await gate.acquire()
+        await gate.acquire(actor)
     except QueueTimeoutError as exc:
         return JSONResponse(
             status_code=503,
@@ -90,7 +109,7 @@ async def _proxy_request(request: Request, upstream_path: str) -> Response:
 
     if is_stream:
         return StreamingResponse(
-            _stream_upstream(request.method, upstream_path, body, headers),
+            _stream_upstream(request.method, upstream_path, body, headers, actor),
             media_type="text/event-stream",
             status_code=200,
         )
@@ -109,7 +128,7 @@ async def _proxy_request(request: Request, upstream_path: str) -> Response:
             media_type=upstream.headers.get("content-type"),
         )
     finally:
-        await gate.release()
+        await gate.release(actor)
 
 
 async def _stream_upstream(
@@ -117,6 +136,7 @@ async def _stream_upstream(
     upstream_path: str,
     body: bytes,
     headers: dict[str, str],
+    actor: str,
 ) -> AsyncIterator[bytes]:
     try:
         async with _client().stream(
@@ -128,20 +148,24 @@ async def _stream_upstream(
             async for chunk in upstream.aiter_bytes():
                 yield chunk
     finally:
-        await gate.release()
+        await gate.release(actor)
 
 
 @app.get("/health", tags=["system"])
 async def health() -> dict:
     observed = await occupancy_client.observe_running_count()
+    local = gate.local_in_flight
     return {
         "status": "ok",
-        "local_in_flight": gate.local_in_flight,
+        "local_in_flight": local,
         "waiting": gate.waiting,
         "observed_upstream_in_flight": observed,
         "max_concurrency": gate.max_concurrency,
         "upstream": settings.base_url,
         "model": settings.model,
+        "waiters": _serialize_actor_entries(gate.waiters),
+        "in_flight": _serialize_actor_entries(gate.in_flight),
+        "external_upstream_slots": max(0, observed - local),
     }
 
 

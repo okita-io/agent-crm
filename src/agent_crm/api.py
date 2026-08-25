@@ -22,8 +22,18 @@ from . import __version__
 from .db import database_kind, init_db
 from .enums import Stage
 from .errors import InvalidStageTransition, NotFoundError
+from .heartbeat import list_heartbeats, record_heartbeat
 from .pipeline import PipelineManager
-from .schemas import ActivityOut, LeadCreate, LeadOut, OpportunityOut
+from .presence import build_observer_rows, fetch_spark_queue_health, spark_slot_summary
+from .schemas import (
+    ActivityOut,
+    AgentObserverOut,
+    HeartbeatIn,
+    HeartbeatOut,
+    LeadCreate,
+    LeadOut,
+    OpportunityOut,
+)
 from .tooling import CRMToolkit
 
 app = FastAPI(
@@ -127,3 +137,47 @@ def change_stage(lead_id: int, body: StageChangeIn) -> OpportunityOut:
 @app.get("/report/weekly", tags=["analytics"])
 def weekly_report() -> dict:
     return PipelineManager(actor="analytics").weekly_report()
+
+
+# ---- agent presence / observer ---------------------------------------------
+
+
+@app.post("/agents/{agent_name}/heartbeat", response_model=HeartbeatOut, tags=["agents"])
+def agent_heartbeat(agent_name: str, body: HeartbeatIn) -> HeartbeatOut:
+    snapshot = record_heartbeat(
+        agent_name,
+        status=body.status,
+        task=body.task,
+        resource=body.resource,
+        metadata=body.metadata,
+    )
+    return HeartbeatOut(
+        agent_name=snapshot.agent_name,
+        status=snapshot.status,
+        task=snapshot.task,
+        resource=snapshot.resource,
+        metadata=body.metadata,
+        last_seen_at=snapshot.last_seen_at,
+    )
+
+
+@app.get("/agents", response_model=list[AgentObserverOut], tags=["agents"])
+def list_agents() -> list[AgentObserverOut]:
+    queue_health = fetch_spark_queue_health()
+    rows = build_observer_rows(list_heartbeats(), queue_health)
+    return [
+        AgentObserverOut(
+            name=row.name,
+            display_name=row.display_name,
+            status=row.status,
+            task=row.task,
+            resource=row.resource,
+            last_heartbeat=row.last_heartbeat,
+        )
+        for row in rows
+    ]
+
+
+@app.get("/agents/spark", tags=["agents"])
+def spark_resources() -> dict:
+    return spark_slot_summary(fetch_spark_queue_health())
