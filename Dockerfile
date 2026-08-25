@@ -23,7 +23,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Data dir for the SQLite fallback (mounted as a volume in compose).
 RUN mkdir -p /app/data
 
-EXPOSE 8000 8501
+EXPOSE 8000 8088 8501
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["api"]

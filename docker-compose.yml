@@ -4,6 +4,9 @@
 # machine runs the way it will in production. To run against the SQLite file
 # instead, comment out the `db` service + depends_on and set CRM_DATABASE_URL
 # to the sqlite path in a .env file.
+#
+# Spark SGLang queue: CRM agents must use spark-queue (not Spark directly) so
+# Hermes + CRM share one global 4-session GPU cap on Spark.
 
 services:
   db:
@@ -22,6 +25,19 @@ services:
       timeout: 3s
       retries: 10
 
+  spark-queue:
+    build: .
+    command: ["spark-queue"]
+    environment:
+      # Reach Spark on the ranch LAN via extra_hosts (spark -> 10.0.1.9).
+      SPARK_LLM_BASE_URL: http://spark:8888/v1
+      SPARK_LLM_MODEL: qwen3.8-27b-sglang
+      SPARK_LLM_MAX_CONCURRENCY: "4"
+    extra_hosts:
+      - "spark:10.0.1.9"
+    ports:
+      - "8088:8088"
+
   api:
     build: .
     command: ["api"]
@@ -29,11 +45,14 @@ services:
       CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
       CRM_API_HOST: 0.0.0.0
       CRM_API_PORT: "8000"
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      spark-queue:
+        condition: service_started
 
   dashboard:
     build: .
@@ -41,12 +60,15 @@ services:
     environment:
       CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
       CRM_DASHBOARD_PORT: "8501"
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
     ports:
       - "8501:8501"
     depends_on:
       db:
         condition: service_healthy
       api:
+        condition: service_started
+      spark-queue:
         condition: service_started
 
 volumes:
