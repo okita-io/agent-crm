@@ -41,6 +41,7 @@ from .enums import (
     LeadSource,
     LeadStatus,
     Priority,
+    ResearchFindingKind,
     Stage,
 )
 
@@ -261,6 +262,33 @@ class HuntResource(Base, TimestampMixin):
     )
     hit_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ResearchFinding(Base):
+    """First-class research output from the Research agent."""
+
+    __tablename__ = "research_findings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True, index=True)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    brand: Mapped[Brand] = mapped_column(
+        existing_brand_enum(), nullable=False, index=True
+    )
+    kind: Mapped[ResearchFindingKind] = mapped_column(
+        str_enum(ResearchFindingKind), nullable=False, index=True
+    )
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    source_query: Mapped[str] = mapped_column(String(500), nullable=False)
+    raw_snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
 
 
 class Journey(Base, TimestampMixin):

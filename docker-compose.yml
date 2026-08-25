@@ -50,6 +50,10 @@ services:
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
       CRM_HUNTER_MAX_PAGES_PER_RUN: "8"
       CRM_HUNTER_SEARCH_RESULT_LIMIT: "15"
+      CRM_RESEARCH_MAX_QUERIES_DEFAULT: "12"
+      CRM_RESEARCH_MAX_PAGES_PER_RUN: "4"
+      CRM_RESEARCH_MAX_MINUTES_DEFAULT: "20"
+      CRM_RESEARCH_SEARCH_RESULT_LIMIT: "15"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

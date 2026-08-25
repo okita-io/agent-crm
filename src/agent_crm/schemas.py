@@ -20,6 +20,7 @@ from .enums import (
     LeadSource,
     LeadStatus,
     Priority,
+    ResearchFindingKind,
     Stage,
 )
 
@@ -118,6 +119,31 @@ class HuntQueueStatusOut(BaseModel):
     total_resources: int
 
 
+class ResearchRequest(BaseModel):
+    """Research agent run configuration."""
+
+    brand: Brand
+    kind: ResearchFindingKind | None = None
+    query: str | None = Field(default=None, max_length=500)
+    max_queries: int = Field(default=12, ge=1, le=30)
+    max_pages: int = Field(default=4, ge=1, le=10)
+    max_minutes: int = Field(default=20, ge=1, le=120)
+    search_limit: int = Field(default=15, ge=1, le=25)
+    summarize: bool = True
+    write_accounts: bool = True
+
+
+class ResearchResult(BaseModel):
+    """Summary of one research run."""
+
+    brand: Brand
+    kind: ResearchFindingKind
+    queries_run: int
+    pages_scraped: int
+    findings_written: list[int]
+    errors: list[str]
+
+
 # ---- Outputs ---------------------------------------------------------------
 
 
@@ -203,3 +229,18 @@ class AgentObserverOut(BaseModel):
     task: str | None
     resource: str | None
     last_heartbeat: datetime | None
+
+
+class ResearchFindingOut(ORMModel):
+    id: int
+    url: str
+    domain: str
+    title: str
+    brand: Brand
+    kind: ResearchFindingKind
+    summary: str
+    source_query: str
+    raw_snippet: str | None
+    extra: dict | None
+    first_seen_at: datetime
+    last_seen_at: datetime

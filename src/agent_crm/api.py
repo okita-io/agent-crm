@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from . import __version__
 from .config import get_settings
 from .db import database_kind, init_db
-from .enums import Brand, Stage
+from .enums import Brand, ResearchFindingKind, Stage
 from .errors import InvalidStageTransition, NotFoundError
 from .heartbeat import list_heartbeats, record_heartbeat
 from .hunt_loop import HuntBudget, run_hunt_loop
@@ -29,6 +29,8 @@ from .hunt_store import HuntStore
 from .outbound_hunter import run_hunt
 from .pipeline import PipelineManager
 from .presence import build_observer_rows, fetch_spark_queue_health, spark_slot_summary
+from .research import run_research
+from .research_store import list_findings
 from .schemas import (
     ActivityOut,
     AgentObserverOut,
@@ -43,6 +45,9 @@ from .schemas import (
     LeadCreate,
     LeadOut,
     OpportunityOut,
+    ResearchFindingOut,
+    ResearchRequest,
+    ResearchResult,
 )
 from .tooling import CRMToolkit
 
@@ -140,6 +145,24 @@ def list_hunt_resources(
 @app.get("/hunt/queue", response_model=HuntQueueStatusOut, tags=["hunter"])
 def hunt_queue_status() -> HuntQueueStatusOut:
     return HuntQueueStatusOut(**HuntStore().queue_status())
+
+
+# ---- research --------------------------------------------------------------
+
+
+@app.post("/research", response_model=ResearchResult, tags=["research"])
+def research(payload: ResearchRequest) -> ResearchResult:
+    """Run a bounded Research agent cycle (competitor or nonprofit prospecting)."""
+    return run_research(payload)
+
+
+@app.get("/research/findings", response_model=list[ResearchFindingOut], tags=["research"])
+def research_findings(
+    brand: Brand | None = None,
+    kind: ResearchFindingKind | None = None,
+    limit: int = 200,
+) -> list[ResearchFindingOut]:
+    return list_findings(brand=brand, kind=kind, limit=limit)
 
 
 # ---- reads -----------------------------------------------------------------

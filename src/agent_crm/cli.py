@@ -155,6 +155,30 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_research(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .enums import Brand, ResearchFindingKind
+    from .research import run_research
+    from .schemas import ResearchRequest
+
+    init_db()
+    brand = Brand(args.brand)
+    kind = ResearchFindingKind(args.kind) if args.kind else None
+    request = ResearchRequest(
+        brand=brand,
+        kind=kind,
+        query=args.query,
+        max_queries=args.max_queries,
+        max_pages=args.max_pages,
+        max_minutes=args.max_minutes,
+        summarize=not args.no_summarize,
+        write_accounts=not args.no_accounts,
+    )
+    result = run_research(request)
+    print(json.dumps(result.model_dump(mode="json"), indent=2))
+    return 0 if result.findings_written or not result.errors else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent-crm", description="Agent CRM tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -217,6 +241,41 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip Spark LLM branch-term extraction",
     )
     hunt_loop.set_defaults(func=_cmd_hunt_loop)
+
+    research = sub.add_parser(
+        "research",
+        help="Run a Research agent cycle (competitor or nonprofit prospecting)",
+    )
+    research.add_argument(
+        "--brand",
+        required=True,
+        choices=["midnightsatin", "celestial-nexus", "heybuddy"],
+        help="Brand context for the research run",
+    )
+    research.add_argument(
+        "--kind",
+        choices=["competitor", "nonprofit", "other"],
+        help="Finding kind (defaults from brand: heybuddy->nonprofit, others->competitor)",
+    )
+    research.add_argument(
+        "query",
+        nargs="?",
+        help="Optional single seed query (otherwise uses brand seed pack)",
+    )
+    research.add_argument("--max-queries", type=int, default=12, help="Max search queries")
+    research.add_argument("--max-pages", type=int, default=4, help="Max pages to scrape")
+    research.add_argument("--max-minutes", type=int, default=20, help="Wall-clock budget")
+    research.add_argument(
+        "--no-summarize",
+        action="store_true",
+        help="Skip Spark LLM summarization",
+    )
+    research.add_argument(
+        "--no-accounts",
+        action="store_true",
+        help="Do not write Account notes for strong hits",
+    )
+    research.set_defaults(func=_cmd_research)
 
     args = parser.parse_args(argv)
     return args.func(args)

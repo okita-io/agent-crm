@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 import httpx
@@ -10,7 +11,7 @@ import streamlit as st
 
 from agent_crm.config import get_settings
 from agent_crm.db import database_kind, init_db
-from agent_crm.enums import AgentStatus, Brand, Stage
+from agent_crm.enums import AgentStatus, Brand, ResearchFindingKind, Stage
 from agent_crm.heartbeat import list_heartbeats
 from agent_crm.hunt_store import HuntStore
 from agent_crm.pipeline import PipelineManager
@@ -19,6 +20,7 @@ from agent_crm.presence import (
     fetch_spark_queue_health,
     spark_slot_summary,
 )
+from agent_crm.research_store import list_findings
 from agent_crm.tooling import CRMToolkit
 
 _STATUS_EMOJI = {
@@ -233,6 +235,56 @@ def _render_hunter_tab() -> None:
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 
+def _render_research_tab() -> None:
+    st.subheader("Research findings")
+    st.caption("Competitor and nonprofit prospecting output from the Research agent.")
+
+    brand_filter = st.selectbox(
+        "Brand filter",
+        options=["all", "celestial-nexus", "midnightsatin", "heybuddy"],
+        index=0,
+    )
+    kind_filter = st.selectbox(
+        "Kind filter",
+        options=["all", "competitor", "nonprofit", "other"],
+        index=0,
+    )
+
+    brand = Brand(brand_filter) if brand_filter != "all" else None
+    kind = ResearchFindingKind(kind_filter) if kind_filter != "all" else None
+    findings = list_findings(brand=brand, kind=kind, limit=500)
+
+    if not findings:
+        st.info(
+            "No findings yet. Run `agent-crm research --brand celestial-nexus` "
+            "or POST to /research."
+        )
+        return
+
+    st.metric("Findings", len(findings))
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "id": row.id,
+                    "brand": row.brand.value,
+                    "kind": row.kind.value,
+                    "domain": row.domain,
+                    "title": row.title,
+                    "url": row.url,
+                    "summary": row.summary[:240] + ("…" if len(row.summary) > 240 else ""),
+                    "source query": row.source_query,
+                    "extra": json.dumps(row.extra) if row.extra else None,
+                    "last seen": row.last_seen_at,
+                }
+                for row in findings
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 def _observer_fragment(refresh_seconds: int) -> None:
     try:
         fragment = st.fragment(run_every=timedelta(seconds=refresh_seconds))
@@ -256,8 +308,8 @@ def main() -> None:
     st.title("Agent CRM")
     st.caption(f"Store: {database_kind()}")
 
-    observer_tab, pipeline_tab, hunter_tab = st.tabs(
-        ["Live agents", "Pipeline & leads", "Hunter"]
+    observer_tab, pipeline_tab, hunter_tab, research_tab = st.tabs(
+        ["Live agents", "Pipeline & leads", "Hunter", "Research"]
     )
 
     with observer_tab:
@@ -268,6 +320,9 @@ def main() -> None:
 
     with hunter_tab:
         _render_hunter_tab()
+
+    with research_tab:
+        _render_research_tab()
 
 
 if __name__ == "__main__":
