@@ -14,6 +14,7 @@ the same on SQLite (dev) and Postgres (the NAS target).
 
 from __future__ import annotations
 
+import enum
 from datetime import UTC, datetime
 
 from sqlalchemy import (
@@ -45,6 +46,16 @@ from .enums import (
 def utcnow() -> datetime:
     """Timezone-aware UTC now. Used as the default for every timestamp."""
     return datetime.now(UTC)
+
+
+def _str_enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    """Return enum member values for Postgres native enum labels."""
+    return [member.value for member in enum_cls]
+
+
+def str_enum(enum_cls: type[enum.Enum], **kwargs) -> SAEnum:
+    """SAEnum that persists ``str`` enum values (e.g. ``thinking``), not names."""
+    return SAEnum(enum_cls, values_callable=_str_enum_values, **kwargs)
 
 
 class Base(DeclarativeBase):
@@ -183,7 +194,7 @@ class AgentHeartbeat(Base):
 
     agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
     status: Mapped[AgentStatus] = mapped_column(
-        SAEnum(AgentStatus), default=AgentStatus.IDLE, nullable=False
+        str_enum(AgentStatus), default=AgentStatus.IDLE, nullable=False
     )
     task: Mapped[str | None] = mapped_column(String(255), nullable=True)
     resource: Mapped[str | None] = mapped_column(String(255), nullable=True)
