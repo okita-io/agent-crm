@@ -19,6 +19,10 @@ from .config import get_settings
 def _cmd_init_db(_args: argparse.Namespace) -> int:
     from .db import init_db
 
+    settings = get_settings()
+    if not settings.is_sqlite:
+        print("Postgres schema is managed by Alembic (alembic upgrade head).")
+        return 0
     init_db()
     print("Tables created.")
     return 0

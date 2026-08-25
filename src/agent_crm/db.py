@@ -95,11 +95,17 @@ def session_scope() -> Iterator[Session]:
 
 
 def init_db(settings: Settings | None = None) -> None:
-    """Create all tables directly (dev convenience / fallback for Alembic).
+    """Create tables for SQLite (tests/dev). Postgres schema is via Alembic only.
 
-    Alembic is the source of truth for schema changes; this exists so a fresh
-    SQLite file can be brought up with a single call in tests and demos.
+    Alembic is the source of truth for schema changes on Postgres. ``create_all``
+    there can fail when enums already exist (e.g. ``huntquerystatus`` from a prior
+    boot). Use ``alembic upgrade head`` instead. If tables already exist but
+    ``alembic_version`` is behind, ``alembic stamp <revision>`` is enough — a
+    successful ``upgrade head`` does not require a follow-up stamp.
     """
+    settings = settings or get_settings()
+    if not settings.is_sqlite:
+        return
     engine = get_engine(settings)
     Base.metadata.create_all(engine)
 
