@@ -334,7 +334,10 @@ def test_run_research_stops_on_query_budget(tmp_path, monkeypatch) -> None:
 
     call_count = {"searches": 0}
 
-    def searx_handler(_request: httpx.Request) -> httpx.Response:
+    def searx_handler(request: httpx.Request) -> httpx.Response:
+        page = dict(request.url.params).get("pageno", "1")
+        if page != "1":
+            return httpx.Response(200, json={"results": []})
         call_count["searches"] += 1
         return httpx.Response(
             200,
@@ -370,7 +373,7 @@ def test_run_research_stops_on_query_budget(tmp_path, monkeypatch) -> None:
             ResearchRequest(
                 brand=Brand.CELESTIAL_NEXUS,
                 max_queries=2,
-                max_pages=10,
+                max_pages=2,
                 summarize=False,
                 write_accounts=False,
             ),
@@ -380,6 +383,69 @@ def test_run_research_stops_on_query_budget(tmp_path, monkeypatch) -> None:
 
     assert result.queries_run == 2
     assert call_count["searches"] == 2
+    _teardown_db()
+
+
+def test_run_research_scrapes_beyond_legacy_four_page_run_cap(
+    tmp_path, monkeypatch
+) -> None:
+    """Research runs must not stop after four total scraped pages."""
+    _setup_db(tmp_path, monkeypatch, "research-run-cap.db")
+
+    results = [
+        {
+            "url": f"https://org{idx}.example",
+            "title": f"Org {idx}",
+            "content": f"nonprofit mission {idx}",
+        }
+        for idx in range(6)
+    ]
+
+    def searx_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": results})
+
+    scrape_calls = 0
+
+    def firecrawl_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal scrape_calls
+        scrape_calls += 1
+        body = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "markdown": f"Mission body for {body['url']}",
+                    "metadata": {"title": body["url"]},
+                }
+            },
+        )
+
+    http = httpx.Client(
+        transport=_mock_transport(
+            {
+                "/search": searx_handler,
+                "/v1/scrape": firecrawl_handler,
+            }
+        )
+    )
+
+    with patch("agent_crm.research.chat_completions"):
+        result = run_research(
+            ResearchRequest(
+                brand=Brand.HEYBUDDY,
+                query="501c3 loneliness nonprofit",
+                max_pages=6,
+                max_queries=1,
+                summarize=False,
+                write_accounts=False,
+            ),
+            searx_client=http,
+            firecrawl_client=http,
+        )
+
+    assert result.pages_scraped == 6
+    assert scrape_calls == 6
+    assert len(result.findings_written) == 6
     _teardown_db()
 
 
