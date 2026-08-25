@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     hunter_max_queries_default: int = 40
     hunter_max_minutes_default: int = 60
     hunter_max_branch_terms: int = 5
+    hunter_community_terms_per_run: int = 30
+    hunter_person_terms_per_run: int = 20
     hunter_request_timeout: float = 60.0
 
     # Research agent defaults

@@ -12,7 +12,15 @@ import streamlit as st
 from agent_crm.config import get_settings
 from agent_crm.contact_store import list_contact_profiles
 from agent_crm.db import database_kind, init_db
-from agent_crm.enums import AgentStatus, Brand, ContactVerificationStatus, ResearchFindingKind, Stage
+from agent_crm.enums import (
+    AgentStatus,
+    Brand,
+    ContactVerificationStatus,
+    HuntResourceKind,
+    ResearchFindingKind,
+    Stage,
+)
+from agent_crm.hunt_feedback import parse_community_notes
 from agent_crm.heartbeat import list_heartbeats
 from agent_crm.hunt_store import HuntStore
 from agent_crm.pipeline import PipelineManager
@@ -258,11 +266,19 @@ def _render_pipeline_tab() -> None:
 def _render_hunter_tab() -> None:
     st.subheader("Hunter resources")
     status = HuntStore().queue_status()
+    store = HuntStore()
 
-    cols = st.columns(3)
+    cols = st.columns(5)
     cols[0].metric("Pending queries", status["pending"])
     cols[1].metric("Total resources", status["total_resources"])
     cols[2].metric("Completed queries", status["by_status"].get("completed", 0))
+    feedback_queries = store.list_feedback_queries(limit=500)
+    community_pending = sum(
+        1 for row in feedback_queries if row.origin.startswith("community:")
+    )
+    person_pending = sum(1 for row in feedback_queries if row.origin.startswith("person:"))
+    cols[3].metric("Community terms queued", community_pending)
+    cols[4].metric("Person terms queued", person_pending)
 
     brand_filter = st.selectbox(
         "Brand filter",
@@ -270,6 +286,65 @@ def _render_hunter_tab() -> None:
         key="resource_brand",
     )
     brand = None if brand_filter == "all" else Brand(brand_filter)
+
+    st.subheader("Communities & forums")
+    community_kinds = (
+        HuntResourceKind.COMMUNITY,
+        HuntResourceKind.FORUM,
+        HuntResourceKind.SOCIAL,
+    )
+    communities = store.list_resources(brand=brand, kinds=community_kinds, limit=200)
+    if not communities:
+        st.info("No community resources catalogued yet.")
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "kind": row.kind.value,
+                        "title": row.title,
+                        "domain": row.domain,
+                        "slug": (parse_community_notes(row.notes) or {}).get("slug"),
+                        "brand": row.brand.value,
+                        "hits": row.hit_count,
+                        "url": row.url,
+                        "last_seen": row.last_seen,
+                    }
+                    for row in communities
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.subheader("Derived hunt queries")
+    st.caption(
+        "Deterministic follow-ups from discovered communities and extracted contact names. "
+        "Inspect `origin` on `hunt_queries` (prefix `community:` or `person:`); "
+        "`GET /hunt/queue` reports aggregate pending counts."
+    )
+    derived = store.list_feedback_queries(brand=brand, limit=200)
+    if not derived:
+        st.info("No community/person feedback queries yet.")
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "origin": row.origin,
+                        "query": row.query,
+                        "status": row.status.value,
+                        "brand": row.brand.value,
+                        "created": row.created_at,
+                    }
+                    for row in derived
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.subheader("All hunter resources")
     df = _resource_rows(brand)
     if df.empty:
         st.info("No hunter resources yet. Run `agent-crm hunt-loop --brand midnightsatin`.")

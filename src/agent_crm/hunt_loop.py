@@ -17,6 +17,11 @@ from .contact_store import ContactExtractionBudget, process_scraped_page_contact
 from .enums import AgentStatus, Brand, HuntQueryStatus
 from .firecrawl_client import FirecrawlError, scrape
 from .heartbeat import record_heartbeat
+from .hunt_feedback import (
+    HuntFeedbackBudget,
+    enqueue_community_terms,
+    enqueue_person_terms,
+)
 from .hunt_seeds import seeds_for_brand
 from .hunt_store import HuntStore
 from .hunt_utils import extract_heuristic_terms, is_junk_title
@@ -51,6 +56,8 @@ class HuntLoopResult:
     queries_run: int = 0
     resources_found: int = 0
     branch_terms_enqueued: int = 0
+    community_terms_enqueued: int = 0
+    person_terms_enqueued: int = 0
     stop_reason: str = "queue_empty"
 
 
@@ -96,6 +103,7 @@ def run_hunt_loop(
     brand_filter = brand if brand != Brand.UNASSIGNED else None
     palette_index = 0
     contact_budget = ContactExtractionBudget.from_settings()
+    feedback_budget = HuntFeedbackBudget.from_settings()
 
     while result.queries_run < budget.max_queries and time.monotonic() < deadline:
         pending = store.next_pending_query(run_id=use_run_id, brand=brand_filter)
@@ -133,6 +141,7 @@ def run_hunt_loop(
                 searx_client=searx_client,
                 firecrawl_client=firecrawl_client,
                 contact_budget=contact_budget,
+                feedback_budget=feedback_budget,
             )
         except Exception as exc:  # noqa: BLE001
             store.mark_query_failed(pending.id, str(exc))
@@ -141,6 +150,8 @@ def run_hunt_loop(
         result.queries_run += 1
         result.resources_found += stats["resources_collected"]
         result.branch_terms_enqueued += stats["branch_terms_enqueued"]
+        result.community_terms_enqueued += stats["community_terms_enqueued"]
+        result.person_terms_enqueued += stats["person_terms_enqueued"]
         store.mark_query_completed(pending.id)
 
         if time.monotonic() >= deadline:
@@ -175,6 +186,7 @@ def _run_queued_query(
     searx_client: httpx.Client | None,
     firecrawl_client: httpx.Client | None,
     contact_budget: ContactExtractionBudget | None = None,
+    feedback_budget: HuntFeedbackBudget | None = None,
 ) -> dict[str, int]:
     search_kwargs = dict(params)
     results = search(
@@ -187,7 +199,15 @@ def _run_queued_query(
         {"title": hit.title, "url": hit.url, "content": hit.snippet} for hit in results
     ]
 
-    resources = _collect_from_results(store, query, brand, results)
+    feedback_budget = feedback_budget or HuntFeedbackBudget.from_settings()
+    resources, community_terms, person_terms = _collect_from_results(
+        store,
+        query,
+        brand,
+        results,
+        run_id=run_id,
+        feedback_budget=feedback_budget,
+    )
 
     pages_scraped = 0
     if results and max_pages > 0:
@@ -208,23 +228,40 @@ def _run_queued_query(
             title = page.title or hit.title
             if is_junk_title(title):
                 continue
-            row = store.upsert_resource(
+            upsert = store.upsert_resource(
                 url=hit.url,
                 brand=brand,
                 title=title,
                 found_via_query=query,
                 snippet=(page.markdown or hit.snippet or "")[:500] or None,
             )
-            if row is not None:
+            if upsert.resource is not None:
                 pages_scraped += 1
+                if upsert.is_new and upsert.classification is not None:
+                    community_terms += enqueue_community_terms(
+                        store,
+                        classification=upsert.classification,
+                        title=title,
+                        brand=brand,
+                        run_id=run_id,
+                        budget=feedback_budget,
+                    )
                 try:
-                    process_scraped_page_contacts(
+                    profiles = process_scraped_page_contacts(
                         markdown=page.markdown,
                         source_url=hit.url,
                         brand=brand,
                         searx_client=searx_client,
                         budget=contact_budget,
                     )
+                    for profile in profiles:
+                        person_terms += enqueue_person_terms(
+                            store,
+                            name=profile.name or "",
+                            brand=brand,
+                            run_id=run_id,
+                            budget=feedback_budget,
+                        )
                 except Exception:  # noqa: BLE001
                     pass
         resources += pages_scraped
@@ -249,6 +286,8 @@ def _run_queued_query(
     return {
         "resources_collected": resources,
         "branch_terms_enqueued": enqueued,
+        "community_terms_enqueued": community_terms,
+        "person_terms_enqueued": person_terms,
     }
 
 
@@ -257,19 +296,34 @@ def _collect_from_results(
     query: str,
     brand: Brand,
     results: list[SearchResult],
-) -> int:
+    *,
+    run_id: str | None = None,
+    feedback_budget: HuntFeedbackBudget | None = None,
+) -> tuple[int, int, int]:
+    feedback_budget = feedback_budget or HuntFeedbackBudget.from_settings()
     count = 0
+    community_terms = 0
+    person_terms = 0
     for hit in results:
-        row = store.upsert_resource(
+        upsert = store.upsert_resource(
             url=hit.url,
             brand=brand,
             title=hit.title,
             found_via_query=query,
             snippet=(hit.snippet or "")[:500] or None,
         )
-        if row is not None:
+        if upsert.resource is not None:
             count += 1
-    return count
+            if upsert.is_new and upsert.classification is not None:
+                community_terms += enqueue_community_terms(
+                    store,
+                    classification=upsert.classification,
+                    title=hit.title,
+                    brand=brand,
+                    run_id=run_id,
+                    budget=feedback_budget,
+                )
+    return count, community_terms, person_terms
 
 
 def _extract_branch_terms(

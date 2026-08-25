@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -10,8 +11,10 @@ from agent_crm.db import session_scope
 from agent_crm.enums import AgentStatus, Brand, HuntQueryStatus, HuntResourceKind
 from agent_crm.heartbeat import record_heartbeat
 from agent_crm.hunt_utils import (
+    ResourceClassification,
     canonical_url,
-    classify_resource,
+    classify_resource_detailed,
+    format_resource_notes,
     is_junk_title,
     is_junk_url,
     make_dedupe_key,
@@ -19,6 +22,13 @@ from agent_crm.hunt_utils import (
     registrable_domain,
 )
 from agent_crm.models import HuntQuery, HuntResource
+
+
+@dataclass
+class UpsertResourceResult:
+    resource: HuntResource | None
+    is_new: bool
+    classification: ResourceClassification | None = None
 
 
 class HuntStore:
@@ -124,22 +134,31 @@ class HuntStore:
         found_via_query: str,
         snippet: str | None = None,
         kind: HuntResourceKind | None = None,
-    ) -> HuntResource | None:
-        """Insert or bump a discovered resource. Returns None for junk URLs."""
+    ) -> UpsertResourceResult:
+        """Insert or bump a discovered resource. Returns None resource for junk URLs."""
         if is_junk_url(url):
-            return None
+            return UpsertResourceResult(resource=None, is_new=False)
         clean_url = canonical_url(url)
         if is_junk_url(clean_url):
-            return None
+            return UpsertResourceResult(resource=None, is_new=False)
         if is_junk_title(title):
             title = None
 
         domain = registrable_domain(clean_url)
-        resource_kind = kind or classify_resource(clean_url, title, snippet)
+        classification = classify_resource_detailed(clean_url, title, snippet)
+        resource_kind = kind or classification.kind
+        classification = ResourceClassification(
+            kind=resource_kind,
+            community_slug=classification.community_slug,
+            community_label=classification.community_label or title,
+            platform=classification.platform,
+        )
+        notes = format_resource_notes(classification, snippet)
         now = datetime.now(UTC)
 
         with session_scope() as session:
             row = session.scalar(select(HuntResource).where(HuntResource.url == clean_url))
+            is_new = row is None
             if row is None:
                 row = HuntResource(
                     url=clean_url,
@@ -151,7 +170,7 @@ class HuntStore:
                     first_seen=now,
                     last_seen=now,
                     hit_count=1,
-                    notes=snippet,
+                    notes=notes,
                 )
                 session.add(row)
             else:
@@ -159,23 +178,71 @@ class HuntStore:
                 row.hit_count += 1
                 if title and not is_junk_title(title):
                     row.title = title
-                if snippet:
-                    row.notes = snippet
+                if notes:
+                    row.notes = notes
+                if resource_kind != HuntResourceKind.OTHER:
+                    row.kind = resource_kind
                 row.found_via_query = found_via_query
             session.flush()
             session.refresh(row)
-            return row
+            return UpsertResourceResult(
+                resource=row,
+                is_new=is_new,
+                classification=classification,
+            )
 
     def list_resources(
         self,
         *,
         brand: Brand | None = None,
         limit: int = 500,
+        kinds: tuple[HuntResourceKind, ...] | None = None,
     ) -> list[HuntResource]:
         with session_scope() as session:
             stmt = select(HuntResource).order_by(HuntResource.last_seen.desc()).limit(limit)
             if brand is not None:
                 stmt = stmt.where(HuntResource.brand == brand)
+            if kinds:
+                stmt = stmt.where(HuntResource.kind.in_(kinds))
+            return list(session.scalars(stmt))
+
+    def list_queries(
+        self,
+        *,
+        brand: Brand | None = None,
+        origin_prefix: str | None = None,
+        status: HuntQueryStatus | None = None,
+        limit: int = 200,
+    ) -> list[HuntQuery]:
+        with session_scope() as session:
+            stmt = select(HuntQuery).order_by(HuntQuery.id.desc()).limit(limit)
+            if brand is not None:
+                stmt = stmt.where(HuntQuery.brand == brand)
+            if origin_prefix is not None:
+                stmt = stmt.where(HuntQuery.origin.startswith(origin_prefix))
+            if status is not None:
+                stmt = stmt.where(HuntQuery.status == status)
+            return list(session.scalars(stmt))
+
+    def list_feedback_queries(
+        self,
+        *,
+        brand: Brand | None = None,
+        limit: int = 200,
+    ) -> list[HuntQuery]:
+        """Queries enqueued from community or person feedback loops."""
+        with session_scope() as session:
+            stmt = (
+                select(HuntQuery)
+                .where(
+                    HuntQuery.origin.startswith("community:")
+                    | HuntQuery.origin.startswith("person:")
+                )
+                .order_by(HuntQuery.id.desc())
+                .limit(limit)
+            )
+            if brand is not None:
+                stmt = stmt.where(HuntQuery.brand == brand)
             return list(session.scalars(stmt))
 
     def queue_status(self, run_id: str | None = None) -> dict:

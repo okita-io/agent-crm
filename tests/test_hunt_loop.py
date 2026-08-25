@@ -9,7 +9,7 @@ import pytest
 
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
-from agent_crm.enums import Brand
+from agent_crm.enums import Brand, HuntResourceKind
 from agent_crm.hunt_loop import HuntBudget, run_hunt_loop
 from agent_crm.hunt_store import HuntStore
 from agent_crm.searxng_client import SearchResult
@@ -84,7 +84,7 @@ def test_resource_upsert_by_url(loop_db):
         found_via_query="seed",
         snippet="list",
     )
-    assert row is not None
+    assert row.resource is not None
     row2 = store.upsert_resource(
         url="https://bookblog.example/communities/",
         brand=Brand.MIDNIGHTSATIN,
@@ -92,9 +92,10 @@ def test_resource_upsert_by_url(loop_db):
         found_via_query="seed again",
         snippet="list",
     )
-    assert row2 is not None
-    assert row2.id == row.id
-    assert row2.hit_count == 2
+    assert row2.resource is not None
+    assert row2.resource.id == row.resource.id
+    assert row2.resource.hit_count == 2
+    assert row2.is_new is False
 
 
 def test_junk_url_skipped(loop_db):
@@ -104,7 +105,7 @@ def test_junk_url_skipped(loop_db):
             brand=Brand.MIDNIGHTSATIN,
             title="Login",
             found_via_query="q",
-        )
+        ).resource
         is None
     )
 
@@ -240,3 +241,82 @@ def test_completed_query_not_searched_again(loop_db, mock_pages):
         )
     count_after = len([c for c in calls if c.get("q") == "seed query"])
     assert count_after == count_before
+
+
+def test_community_and_person_feedback_enqueue(loop_db, monkeypatch):
+    """Reddit community + extracted contact name feed back into hunt_queries."""
+    monkeypatch.setenv("CRM_HUNTER_COMMUNITY_TERMS_PER_RUN", "30")
+    monkeypatch.setenv("CRM_HUNTER_PERSON_TERMS_PER_RUN", "20")
+    get_settings.cache_clear()
+
+    reddit_url = "https://www.reddit.com/r/RomanceBooks/"
+    pages: dict[str, list[SearchResult]] = {
+        "romance reader communities": [
+            SearchResult(
+                title="Romance Books on Reddit",
+                url=reddit_url,
+                snippet="A subreddit for romance readers",
+            ),
+        ],
+    }
+    calls: list[dict] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/search":
+            params = dict(request.url.params)
+            calls.append(params)
+            query = params.get("q", "")
+            payload = {
+                "results": [
+                    {"url": hit.url, "title": hit.title, "content": hit.snippet}
+                    for hit in pages.get(query, [])
+                ]
+            }
+            return httpx.Response(200, json=payload)
+        if request.url.path == "/v1/scrape":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "markdown": "Ada Vega <ada.vega@romancebooks.test> moderates the community.",
+                        "metadata": {"title": "Romance Books subreddit"},
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    http = httpx.Client(transport=httpx.MockTransport(transport))
+    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+        mock_llm.return_value = {"choices": [{"message": {"content": '{"terms": []}'}}]}
+        result = run_hunt_loop(
+            query="romance reader communities",
+            brand=Brand.MIDNIGHTSATIN,
+            budget=HuntBudget(max_queries=1, max_minutes=5, max_pages_per_query=1),
+            resume=False,
+            searx_client=http,
+            firecrawl_client=http,
+        )
+
+    store = HuntStore()
+    resources = store.list_resources(brand=Brand.MIDNIGHTSATIN)
+    reddit_resource = next(
+        (row for row in resources if "/r/RomanceBooks" in row.url or "/r/romancebooks" in row.url.lower()),
+        None,
+    )
+    assert reddit_resource is not None
+    assert reddit_resource.kind == HuntResourceKind.COMMUNITY
+
+    feedback = store.list_feedback_queries(brand=Brand.MIDNIGHTSATIN, limit=100)
+    community_queries = [row for row in feedback if row.origin.startswith("community:")]
+    person_queries = [row for row in feedback if row.origin.startswith("person:")]
+
+    assert result.community_terms_enqueued >= 2
+    assert result.person_terms_enqueued >= 3
+    assert len(community_queries) >= 2
+    assert len(person_queries) >= 3
+    assert any("site:reddit.com/r/RomanceBooks" in row.query for row in community_queries)
+    assert any("Ada Vega" in row.query for row in person_queries)
+    assert all("@" not in row.query for row in feedback)
+    assert all("invented" not in row.query.lower() for row in feedback)
+    assert not any(row.query.lower().startswith("ada.vega@") for row in feedback)
+

@@ -98,6 +98,8 @@ class HuntLoopResultOut(BaseModel):
     queries_run: int
     resources_found: int
     branch_terms_enqueued: int
+    community_terms_enqueued: int = 0
+    person_terms_enqueued: int = 0
     stop_reason: str
 
 
