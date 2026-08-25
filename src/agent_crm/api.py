@@ -20,10 +20,23 @@ from pydantic import BaseModel
 
 from . import __version__
 from .db import database_kind, init_db
-from .enums import Stage
+from .enums import Brand, Stage
 from .errors import InvalidStageTransition, NotFoundError
+from .hunt_store import HuntStore
+from .outbound_hunter import HuntBudget, OutboundHunter
 from .pipeline import PipelineManager
-from .schemas import ActivityOut, LeadCreate, LeadOut, OpportunityOut
+from .schemas import (
+    ActivityOut,
+    AgentHeartbeatOut,
+    HuntLoopRequest,
+    HuntLoopResultOut,
+    HuntQueueStatusOut,
+    HuntRequest,
+    HuntResourceOut,
+    LeadCreate,
+    LeadOut,
+    OpportunityOut,
+)
 from .tooling import CRMToolkit
 
 app = FastAPI(
@@ -127,3 +140,76 @@ def change_stage(lead_id: int, body: StageChangeIn) -> OpportunityOut:
 @app.get("/report/weekly", tags=["analytics"])
 def weekly_report() -> dict:
     return PipelineManager(actor="analytics").weekly_report()
+
+
+# ---- outbound hunter -------------------------------------------------------
+
+
+@app.post("/hunt", tags=["hunter"])
+def hunt_once(body: HuntRequest) -> dict:
+    """One-shot prospect search via SearXNG + optional scrape."""
+    hunter = OutboundHunter()
+    return hunter.hunt_once(
+        body.query,
+        brand=body.brand,
+        max_pages=body.max_pages,
+        params=body.params,
+    )
+
+
+@app.post("/hunt/loop", response_model=HuntLoopResultOut, tags=["hunter"])
+def hunt_loop(body: HuntLoopRequest) -> HuntLoopResultOut:
+    """Run a bounded branching hunt loop (sync)."""
+    hunter = OutboundHunter()
+    budget = HuntBudget(
+        max_queries=body.max_queries,
+        max_minutes=body.max_minutes,
+        max_pages_per_query=body.max_pages_per_query
+        or hunter.settings.hunter_max_pages_per_run,
+    )
+    result = hunter.hunt_loop(
+        query=body.query,
+        brand=body.brand,
+        budget=budget,
+        resume=body.resume,
+    )
+    return HuntLoopResultOut(
+        run_id=result.run_id,
+        queries_run=result.queries_run,
+        resources_found=result.resources_found,
+        leads_created=result.leads_created,
+        branch_terms_enqueued=result.branch_terms_enqueued,
+        stop_reason=result.stop_reason,
+    )
+
+
+@app.get("/hunt/resources", response_model=list[HuntResourceOut], tags=["hunter"])
+def list_hunt_resources(
+    brand: Brand | None = None,
+    limit: int = 500,
+) -> list[HuntResourceOut]:
+    store = HuntStore()
+    rows = store.list_resources(brand=brand, limit=limit)
+    return [HuntResourceOut.model_validate(row) for row in rows]
+
+
+@app.get("/hunt/queue", response_model=HuntQueueStatusOut, tags=["hunter"])
+def hunt_queue_status() -> HuntQueueStatusOut:
+    status = HuntStore().queue_status()
+    return HuntQueueStatusOut(**status)
+
+
+@app.get("/hunt/heartbeat", response_model=AgentHeartbeatOut | None, tags=["hunter"])
+def hunt_heartbeat() -> AgentHeartbeatOut | None:
+    from sqlalchemy import select
+
+    from .db import session_scope
+    from .models import AgentHeartbeat
+
+    with session_scope() as session:
+        row = session.scalar(
+            select(AgentHeartbeat).where(AgentHeartbeat.actor == "outbound_hunter")
+        )
+        if row is None:
+            return None
+        return AgentHeartbeatOut.model_validate(row)

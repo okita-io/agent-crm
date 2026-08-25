@@ -107,3 +107,33 @@ class JourneyStatus(str, enum.Enum):
     PAUSED = "paused"
     STOPPED = "stopped"
     COMPLETED = "completed"
+
+
+class HuntQueryStatus(str, enum.Enum):
+    """Lifecycle of a queued hunter search term."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class HuntResourceKind(str, enum.Enum):
+    """What kind of site/resource the hunter discovered."""
+
+    DIRECTORY = "directory"
+    COMMUNITY = "community"
+    NEWSLETTER = "newsletter"
+    FORUM = "forum"
+    LIST = "list"
+    SOCIAL = "social"
+    OTHER = "other"
+
+
+class AgentHeartbeatStatus(str, enum.Enum):
+    """Coarse status for long-running agents."""
+
+    THINKING = "thinking"
+    WORKING = "working"
+    IDLE = "idle"
+    ERROR = "error"

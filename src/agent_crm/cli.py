@@ -14,6 +14,7 @@ import json
 import sys
 
 from .config import get_settings
+from .enums import Brand
 
 
 def _cmd_init_db(_args: argparse.Namespace) -> int:
@@ -96,6 +97,60 @@ def _cmd_report(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_brand(value: str | None) -> Brand:
+    if not value:
+        return Brand.UNASSIGNED
+    return Brand(value)
+
+
+def _cmd_hunt(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .outbound_hunter import OutboundHunter
+
+    init_db()
+    hunter = OutboundHunter()
+    result = hunter.hunt_once(
+        args.query,
+        brand=_parse_brand(args.brand),
+        max_pages=args.max_pages,
+    )
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _cmd_hunt_loop(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .outbound_hunter import HuntBudget, OutboundHunter
+
+    init_db()
+    hunter = OutboundHunter()
+    budget = HuntBudget(
+        max_queries=args.max_queries,
+        max_minutes=args.max_minutes,
+        max_pages_per_query=args.max_pages_per_query,
+    )
+    result = hunter.hunt_loop(
+        query=args.query,
+        brand=_parse_brand(args.brand),
+        budget=budget,
+        resume=not args.no_resume,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": result.run_id,
+                "queries_run": result.queries_run,
+                "resources_found": result.resources_found,
+                "leads_created": result.leads_created,
+                "branch_terms_enqueued": result.branch_terms_enqueued,
+                "stop_reason": result.stop_reason,
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent-crm", description="Agent CRM tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -110,6 +165,25 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("report", help="Print the weekly report").set_defaults(
         func=_cmd_report
     )
+
+    hunt = sub.add_parser("hunt", help="One-shot outbound hunt")
+    hunt.add_argument("query", help="Search query")
+    hunt.add_argument("--brand", help="Brand slug (midnightsatin, celestial-nexus, heybuddy)")
+    hunt.add_argument("--max-pages", type=int, default=None, help="Pages to scrape")
+    hunt.set_defaults(func=_cmd_hunt)
+
+    hunt_loop = sub.add_parser("hunt-loop", help="Bounded branching hunt loop")
+    hunt_loop.add_argument("query", nargs="?", default=None, help="Seed query (optional)")
+    hunt_loop.add_argument("--brand", help="Brand slug; uses seed pack when no query")
+    hunt_loop.add_argument("--max-queries", type=int, default=20)
+    hunt_loop.add_argument("--max-minutes", type=int, default=25)
+    hunt_loop.add_argument("--max-pages-per-query", type=int, default=8)
+    hunt_loop.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Do not resume pending queries from prior runs",
+    )
+    hunt_loop.set_defaults(func=_cmd_hunt_loop)
 
     args = parser.parse_args(argv)
     return args.func(args)

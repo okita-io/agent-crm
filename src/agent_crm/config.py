@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     # Behavior
     hot_lead_threshold: int = 80
 
+    # Outbound Hunter integrations
+    searxng_base_url: str = "http://localhost:8080"
+    firecrawl_base_url: str = "http://localhost:3002"
+    llm_base_url: str = "http://localhost:8001/v1"
+    llm_model: str = "qwen3.8-27b-sglang"
+    hunter_max_pages_per_run: int = 8
+    hunter_max_queries_default: int = 20
+    hunter_max_minutes_default: int = 25
+    hunter_max_branch_terms: int = 5
+    hunter_enable_llm: bool = True
+    hunter_request_timeout: float = 60.0
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")

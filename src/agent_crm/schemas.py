@@ -13,7 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .enums import (
     ActivityType,
+    AgentHeartbeatStatus,
     Brand,
+    HuntResourceKind,
     JourneyStatus,
     LeadSource,
     LeadStatus,
@@ -114,3 +116,58 @@ class JourneyOut(ORMModel):
     next_run_at: datetime | None
     status: JourneyStatus
     stop_reason: str | None
+
+
+# ---- Hunter ----------------------------------------------------------------
+
+
+class HuntRequest(BaseModel):
+    query: str
+    brand: Brand = Brand.UNASSIGNED
+    max_pages: int | None = Field(default=None, ge=0, le=50)
+    params: dict | None = None
+
+
+class HuntLoopRequest(BaseModel):
+    query: str | None = None
+    brand: Brand = Brand.UNASSIGNED
+    max_queries: int = Field(default=20, ge=1, le=200)
+    max_minutes: int = Field(default=25, ge=1, le=240)
+    max_pages_per_query: int | None = Field(default=None, ge=0, le=50)
+    resume: bool = True
+
+
+class HuntResourceOut(ORMModel):
+    id: int
+    url: str
+    domain: str
+    title: str | None
+    brand: Brand
+    kind: HuntResourceKind
+    found_via_query: str | None
+    first_seen: datetime
+    last_seen: datetime
+    hit_count: int
+    notes: str | None
+
+
+class HuntQueueStatusOut(BaseModel):
+    pending: int
+    by_status: dict[str, int]
+    total_resources: int
+
+
+class HuntLoopResultOut(BaseModel):
+    run_id: str
+    queries_run: int
+    resources_found: int
+    leads_created: int
+    branch_terms_enqueued: int
+    stop_reason: str
+
+
+class AgentHeartbeatOut(ORMModel):
+    actor: str
+    status: AgentHeartbeatStatus
+    message: str | None
+    updated_at: datetime
