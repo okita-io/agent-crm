@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # LLM (Spark queue proxy — never point agents at Spark directly)
     llm_base_url: str = "http://spark-queue:8088/v1"
 
+    # Local ranch search + scrape (SearXNG + Firecrawl on the host)
+    searxng_url: str = "http://host.docker.internal:8080"
+    firecrawl_url: str = "http://host.docker.internal:3002"
+
+    # Outbound Hunter defaults
+    hunter_max_pages_per_run: int = 8
+    hunter_search_result_limit: int = 15
+
     # Observer / presence
     api_base_url: str = "http://api:8000"
     observer_refresh_seconds: int = 3

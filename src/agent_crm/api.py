@@ -23,6 +23,7 @@ from .db import database_kind, init_db
 from .enums import Stage
 from .errors import InvalidStageTransition, NotFoundError
 from .heartbeat import list_heartbeats, record_heartbeat
+from .outbound_hunter import run_hunt
 from .pipeline import PipelineManager
 from .presence import build_observer_rows, fetch_spark_queue_health, spark_slot_summary
 from .schemas import (
@@ -30,6 +31,8 @@ from .schemas import (
     AgentObserverOut,
     HeartbeatIn,
     HeartbeatOut,
+    HuntRequest,
+    HuntResult,
     LeadCreate,
     LeadOut,
     OpportunityOut,
@@ -83,6 +86,15 @@ def intake_webhook(payload: LeadCreate) -> LeadOut:
     """
     crm = CRMToolkit(actor="lead_intake")
     return crm.create_lead(payload)
+
+
+# ---- outbound hunter -------------------------------------------------------
+
+
+@app.post("/hunt", response_model=HuntResult, tags=["hunter"])
+def hunt(payload: HuntRequest) -> HuntResult:
+    """Run one bounded Outbound Hunter search + scrape cycle."""
+    return run_hunt(payload)
 
 
 # ---- reads -----------------------------------------------------------------
