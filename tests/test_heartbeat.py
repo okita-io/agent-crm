@@ -2,13 +2,87 @@
 
 from __future__ import annotations
 
+import enum
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects.postgresql import dialect as pg_dialect
 
 from agent_crm.api import app
 from agent_crm.db import init_db, reset_engine
-from agent_crm.enums import AgentStatus
+from agent_crm.enums import (
+    ActivityType,
+    AgentStatus,
+    Brand,
+    JourneyStatus,
+    LeadSource,
+    LeadStatus,
+    Priority,
+    Stage,
+)
 from agent_crm.heartbeat import list_heartbeats, record_heartbeat
+from agent_crm.models import Activity, AgentHeartbeat, Journey, Lead, Opportunity, str_enum
+
+
+def _postgres_bind(enum_type, member: enum.Enum) -> object:
+    processor = enum_type.bind_processor(pg_dialect())
+    assert processor is not None
+    return processor(member)
+
+
+@pytest.mark.parametrize(
+    ("enum_cls", "member"),
+    [
+        (AgentStatus, AgentStatus.THINKING),
+        (AgentStatus, AgentStatus.WORKING),
+        (AgentStatus, AgentStatus.BLOCKED),
+        (AgentStatus, AgentStatus.IDLE),
+    ],
+)
+def test_agent_status_postgres_bind_uses_enum_values(
+    enum_cls: type[enum.Enum],
+    member: enum.Enum,
+) -> None:
+    """Agent heartbeats must persist lowercase values for the Postgres agentstatus enum."""
+    enum_type = str_enum(enum_cls)
+    bound = _postgres_bind(enum_type, member)
+    assert bound == member.value
+    assert bound != member.name
+
+
+def test_agent_heartbeat_model_column_persists_values() -> None:
+    """The mapped AgentHeartbeat.status column must bind enum values for Postgres."""
+    status_type = AgentHeartbeat.__mapper__.columns["status"].type
+    bound = _postgres_bind(status_type, AgentStatus.THINKING)
+    assert bound == "thinking"
+    assert bound != "THINKING"
+
+
+@pytest.mark.parametrize(
+    ("model", "column", "enum_cls", "member"),
+    [
+        (Lead, "source", LeadSource, LeadSource.HUNTER),
+        (Lead, "brand", Brand, Brand.MIDNIGHTSATIN),
+        (Lead, "status", LeadStatus, LeadStatus.ACTIVE),
+        (Lead, "priority", Priority, Priority.HIGH),
+        (Opportunity, "stage", Stage, Stage.PROSPECT),
+        (Activity, "type", ActivityType, ActivityType.SCRAPE),
+        (Journey, "status", JourneyStatus, JourneyStatus.PAUSED),
+    ],
+)
+def test_legacy_enums_postgres_bind_uses_member_names(
+    model,
+    column: str,
+    enum_cls: type[enum.Enum],
+    member: enum.Enum,
+) -> None:
+    """Initial Alembic schema created Postgres enums from member names (e.g. HUNTER)."""
+    from sqlalchemy import Enum as SAEnum
+
+    enum_type = SAEnum(enum_cls)
+    bound = _postgres_bind(enum_type, member)
+    assert bound == member.name
+    assert bound != member.value
 
 
 @pytest.fixture()
