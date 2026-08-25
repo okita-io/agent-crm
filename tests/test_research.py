@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_crm.api import app
+from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import AgentStatus, Brand, ResearchFindingKind
 from agent_crm.heartbeat import list_heartbeats
@@ -20,14 +21,24 @@ from agent_crm.research_utils import canonical_url, is_junk_finding
 from agent_crm.schemas import ResearchFindingOut, ResearchRequest, ResearchResult
 
 
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    db_path = tmp_path / "research-api.db"
+def _setup_db(tmp_path, monkeypatch, name: str) -> None:
+    db_path = tmp_path / name
     monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    get_settings.cache_clear()
     reset_engine()
     init_db()
-    yield TestClient(app)
+
+
+def _teardown_db() -> None:
     reset_engine()
+    get_settings.cache_clear()
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    _setup_db(tmp_path, monkeypatch, "research-api.db")
+    yield TestClient(app)
+    _teardown_db()
 
 
 def _mock_transport(handlers: dict[str, callable]) -> httpx.MockTransport:
@@ -151,10 +162,7 @@ def test_is_junk_finding_skips_cloudflare() -> None:
 def test_run_research_competitor_writes_celestial_nexus_findings(
     tmp_path, monkeypatch
 ) -> None:
-    db_path = tmp_path / "research-competitor.db"
-    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
-    reset_engine()
-    init_db()
+    _setup_db(tmp_path, monkeypatch, "research-competitor.db")
 
     http = _research_http_client()
     with patch("agent_crm.research.chat_completions") as mock_llm:
@@ -196,16 +204,13 @@ def test_run_research_competitor_writes_celestial_nexus_findings(
 
     heartbeats = {hb.agent_name: hb for hb in list_heartbeats()}
     assert heartbeats["research"].status == AgentStatus.IDLE
-    reset_engine()
+    _teardown_db()
 
 
 def test_run_research_competitor_writes_midnightsatin_findings(
     tmp_path, monkeypatch
 ) -> None:
-    db_path = tmp_path / "research-ms.db"
-    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
-    reset_engine()
-    init_db()
+    _setup_db(tmp_path, monkeypatch, "research-ms.db")
 
     payload = {
         "results": [
@@ -247,16 +252,13 @@ def test_run_research_competitor_writes_midnightsatin_findings(
     assert result.findings_written
     findings = list_findings(brand=Brand.MIDNIGHTSATIN, kind=ResearchFindingKind.COMPETITOR)
     assert findings[0].domain == "galatea.com"
-    reset_engine()
+    _teardown_db()
 
 
 def test_run_research_nonprofit_writes_heybuddy_without_invented_ein(
     tmp_path, monkeypatch
 ) -> None:
-    db_path = tmp_path / "research-nonprofit.db"
-    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
-    reset_engine()
-    init_db()
+    _setup_db(tmp_path, monkeypatch, "research-nonprofit.db")
 
     http = _nonprofit_http_client()
     with patch("agent_crm.research.chat_completions") as mock_llm:
@@ -294,16 +296,13 @@ def test_run_research_nonprofit_writes_heybuddy_without_invented_ein(
     assert findings[0].extra is not None
     assert findings[0].extra.get("ein") == "12-3456789"
     assert findings[0].extra.get("ein") != "99-9999999"
-    reset_engine()
+    _teardown_db()
 
 
 def test_run_research_skips_junk_and_respects_page_budget(
     tmp_path, monkeypatch
 ) -> None:
-    db_path = tmp_path / "research-junk.db"
-    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
-    reset_engine()
-    init_db()
+    _setup_db(tmp_path, monkeypatch, "research-junk.db")
 
     http = _research_http_client(include_junk=True)
     with patch("agent_crm.research.chat_completions") as mock_llm:
@@ -327,14 +326,11 @@ def test_run_research_skips_junk_and_respects_page_budget(
     findings = list_findings(brand=Brand.CELESTIAL_NEXUS)
     assert len(findings) == 1
     assert findings[0].domain == "co-star.app"
-    reset_engine()
+    _teardown_db()
 
 
 def test_run_research_stops_on_query_budget(tmp_path, monkeypatch) -> None:
-    db_path = tmp_path / "research-budget.db"
-    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
-    reset_engine()
-    init_db()
+    _setup_db(tmp_path, monkeypatch, "research-budget.db")
 
     call_count = {"searches": 0}
 
@@ -384,7 +380,7 @@ def test_run_research_stops_on_query_budget(tmp_path, monkeypatch) -> None:
 
     assert result.queries_run == 2
     assert call_count["searches"] == 2
-    reset_engine()
+    _teardown_db()
 
 
 def test_research_api_endpoint(client: TestClient) -> None:
