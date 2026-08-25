@@ -48,6 +48,12 @@ case "$role" in
       --server.port "${CRM_DASHBOARD_PORT:-8501}" \
       --server.headless true
     ;;
+  spark-queue)
+    echo "[entrypoint] Starting Spark queue on ${SPARK_LLM_HOST:-0.0.0.0}:${SPARK_LLM_PORT:-8088}"
+    exec uvicorn agent_crm.spark_queue.app:app \
+      --host "${SPARK_LLM_HOST:-0.0.0.0}" \
+      --port "${SPARK_LLM_PORT:-8088}"
+    ;;
   migrate)
     run_migrations
     ;;

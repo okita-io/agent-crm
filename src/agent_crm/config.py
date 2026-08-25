@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Dashboard
     dashboard_port: int = 8501
 
+    # LLM (Spark queue proxy — never point agents at Spark directly)
+    llm_base_url: str = "http://spark-queue:8088/v1"
+
     # Behavior
     hot_lead_threshold: int = 80
 
