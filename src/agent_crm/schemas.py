@@ -55,6 +55,28 @@ class EnrichmentInput(BaseModel):
     socials: dict | None = None
 
 
+class HuntRequest(BaseModel):
+    """Outbound Hunter run configuration."""
+
+    query: str = Field(min_length=1, max_length=500)
+    brand: Brand | None = None
+    max_pages: int = Field(default=8, ge=1, le=10)
+    search_limit: int = Field(default=15, ge=1, le=25)
+    transition_to_prospect: bool = True
+    summarize: bool = True
+
+
+class HuntResult(BaseModel):
+    """Summary of one hunt execution."""
+
+    query: str
+    brand: Brand | None
+    search_results: int
+    scraped: int
+    leads_created: list[int]
+    errors: list[str]
+
+
 # ---- Outputs ---------------------------------------------------------------
 
 

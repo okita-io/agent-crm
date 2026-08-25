@@ -46,6 +46,12 @@ services:
       CRM_API_HOST: 0.0.0.0
       CRM_API_PORT: "8000"
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_SEARXNG_URL: http://host.docker.internal:8080
+      CRM_FIRECRAWL_URL: http://host.docker.internal:3002
+      CRM_HUNTER_MAX_PAGES_PER_RUN: "8"
+      CRM_HUNTER_SEARCH_RESULT_LIMIT: "15"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     depends_on:

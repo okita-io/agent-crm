@@ -96,6 +96,27 @@ def _cmd_report(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_hunt(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .enums import Brand
+    from .outbound_hunter import run_hunt
+    from .schemas import HuntRequest
+
+    init_db()
+    brand = Brand(args.brand) if args.brand else None
+    request = HuntRequest(
+        query=args.query,
+        brand=brand,
+        max_pages=args.max_pages,
+        search_limit=args.search_limit,
+        transition_to_prospect=not args.no_prospect,
+        summarize=not args.no_summarize,
+    )
+    result = run_hunt(request)
+    print(json.dumps(result.model_dump(mode="json"), indent=2))
+    return 0 if not result.errors or result.leads_created else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent-crm", description="Agent CRM tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -110,6 +131,31 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("report", help="Print the weekly report").set_defaults(
         func=_cmd_report
     )
+    hunt = sub.add_parser("hunt", help="Run one Outbound Hunter search cycle")
+    hunt.add_argument("query", help="Search query (e.g. boutique design studio NYC)")
+    hunt.add_argument(
+        "--brand",
+        choices=["midnightsatin", "celestial-nexus", "heybuddy"],
+        help="Optional brand to route discovered leads",
+    )
+    hunt.add_argument("--max-pages", type=int, default=8, help="Max pages to scrape (1-10)")
+    hunt.add_argument(
+        "--search-limit",
+        type=int,
+        default=15,
+        help="Max SearXNG results to consider",
+    )
+    hunt.add_argument(
+        "--no-prospect",
+        action="store_true",
+        help="Do not move new leads to the prospect stage",
+    )
+    hunt.add_argument(
+        "--no-summarize",
+        action="store_true",
+        help="Skip Spark LLM summarization",
+    )
+    hunt.set_defaults(func=_cmd_hunt)
 
     args = parser.parse_args(argv)
     return args.func(args)
