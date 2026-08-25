@@ -60,6 +60,11 @@ def str_enum(enum_cls: type[enum.Enum], **kwargs) -> SAEnum:
     return SAEnum(enum_cls, values_callable=_str_enum_values, **kwargs)
 
 
+def existing_brand_enum(**kwargs) -> SAEnum:
+    """Reuse the Postgres ``brand`` enum created by the initial schema."""
+    return SAEnum(Brand, name="brand", create_type=False, **kwargs)
+
+
 class Base(DeclarativeBase):
     """Declarative base for all CRM tables."""
 
@@ -215,7 +220,7 @@ class HuntQuery(Base, TimestampMixin):
     query: Mapped[str] = mapped_column(Text, nullable=False)
     params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     origin: Mapped[str] = mapped_column(String(128), nullable=False, default="seed")
-    brand: Mapped[Brand] = mapped_column(SAEnum(Brand), nullable=False)
+    brand: Mapped[Brand] = mapped_column(existing_brand_enum(), nullable=False)
     status: Mapped[HuntQueryStatus] = mapped_column(
         str_enum(HuntQueryStatus),
         default=HuntQueryStatus.PENDING,
@@ -239,7 +244,9 @@ class HuntResource(Base, TimestampMixin):
     url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
     domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    brand: Mapped[Brand] = mapped_column(SAEnum(Brand), nullable=False, index=True)
+    brand: Mapped[Brand] = mapped_column(
+        existing_brand_enum(), nullable=False, index=True
+    )
     kind: Mapped[HuntResourceKind] = mapped_column(
         str_enum(HuntResourceKind),
         default=HuntResourceKind.OTHER,

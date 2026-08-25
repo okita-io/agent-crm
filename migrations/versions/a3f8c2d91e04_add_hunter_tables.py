@@ -10,11 +10,22 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "a3f8c2d91e04"
 down_revision: str | None = "a1b2c3d4e5f6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+# Reuse the ``brand`` enum from the initial schema; do not CREATE TYPE again.
+brand_enum = postgresql.ENUM(
+    "MIDNIGHTSATIN",
+    "CELESTIAL_NEXUS",
+    "HEYBUDDY",
+    "UNASSIGNED",
+    name="brand",
+    create_type=False,
+)
 
 
 def upgrade() -> None:
@@ -24,17 +35,7 @@ def upgrade() -> None:
         sa.Column("query", sa.Text(), nullable=False),
         sa.Column("params", sa.JSON(), nullable=True),
         sa.Column("origin", sa.String(length=128), nullable=False),
-        sa.Column(
-            "brand",
-            sa.Enum(
-                "MIDNIGHTSATIN",
-                "CELESTIAL_NEXUS",
-                "HEYBUDDY",
-                "UNASSIGNED",
-                name="brand",
-            ),
-            nullable=False,
-        ),
+        sa.Column("brand", brand_enum, nullable=False),
         sa.Column(
             "status",
             sa.Enum(
@@ -65,17 +66,7 @@ def upgrade() -> None:
         sa.Column("url", sa.String(length=2048), nullable=False),
         sa.Column("domain", sa.String(length=255), nullable=False),
         sa.Column("title", sa.String(length=512), nullable=True),
-        sa.Column(
-            "brand",
-            sa.Enum(
-                "MIDNIGHTSATIN",
-                "CELESTIAL_NEXUS",
-                "HEYBUDDY",
-                "UNASSIGNED",
-                name="brand",
-            ),
-            nullable=False,
-        ),
+        sa.Column("brand", brand_enum, nullable=False),
         sa.Column(
             "kind",
             sa.Enum(
