@@ -107,3 +107,12 @@ class JourneyStatus(str, enum.Enum):
     PAUSED = "paused"
     STOPPED = "stopped"
     COMPLETED = "completed"
+
+
+class AgentStatus(str, enum.Enum):
+    """Live observer status for CRM agents."""
+
+    IDLE = "idle"
+    THINKING = "thinking"
+    WORKING = "working"
+    BLOCKED = "blocked"

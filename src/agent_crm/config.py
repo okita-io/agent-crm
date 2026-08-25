@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # LLM (Spark queue proxy — never point agents at Spark directly)
     llm_base_url: str = "http://spark-queue:8088/v1"
 
+    # Observer / presence
+    api_base_url: str = "http://api:8000"
+    observer_refresh_seconds: int = 3
+
     # Behavior
     hot_lead_threshold: int = 80
 

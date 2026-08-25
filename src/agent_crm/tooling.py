@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import session_scope
-from .enums import ActivityType, Brand, LeadStatus, Priority, Stage
+from .enums import ActivityType, AgentStatus, Brand, LeadStatus, Priority, Stage
 from .errors import NotFoundError
 from .models import Account, Activity, Journey, Lead, Opportunity
 from .schemas import (
@@ -290,3 +290,22 @@ class CRMToolkit:
                 .limit(limit)
             )
             return [ActivityOut.model_validate(row) for row in session.scalars(stmt)]
+
+    def record_heartbeat(
+        self,
+        *,
+        status: AgentStatus,
+        task: str | None = None,
+        resource: str | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        """Publish liveness for the live agent observer."""
+        from .heartbeat import record_heartbeat
+
+        record_heartbeat(
+            self.actor,
+            status=status,
+            task=task,
+            resource=resource,
+            metadata=metadata,
+        )

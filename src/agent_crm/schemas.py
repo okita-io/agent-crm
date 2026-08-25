@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .enums import (
     ActivityType,
+    AgentStatus,
     Brand,
     JourneyStatus,
     LeadSource,
@@ -114,3 +115,28 @@ class JourneyOut(ORMModel):
     next_run_at: datetime | None
     status: JourneyStatus
     stop_reason: str | None
+
+
+class HeartbeatIn(BaseModel):
+    status: AgentStatus
+    task: str | None = None
+    resource: str | None = None
+    metadata: dict | None = None
+
+
+class HeartbeatOut(BaseModel):
+    agent_name: str
+    status: AgentStatus
+    task: str | None
+    resource: str | None
+    metadata: dict | None = None
+    last_seen_at: datetime
+
+
+class AgentObserverOut(BaseModel):
+    name: str
+    display_name: str
+    status: AgentStatus
+    task: str | None
+    resource: str | None
+    last_heartbeat: datetime | None

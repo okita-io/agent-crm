@@ -200,3 +200,37 @@ async def test_upstream_full_blocks_even_with_zero_local_in_flight() -> None:
     elapsed = time.monotonic() - start
     assert elapsed >= 0.4
     assert gate.local_in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_gate_tracks_actor_names_for_waiters_and_in_flight() -> None:
+    backend = FakeOccupancyBackend(running_count=4)
+    occupancy = SparkOccupancyClient(backend)
+    gate = GlobalConcurrencyGate(
+        occupancy_client=occupancy,
+        max_concurrency=4,
+        queue_timeout=2.0,
+        poll_interval=0.05,
+    )
+
+    started = asyncio.Event()
+    release_upstream = asyncio.Event()
+
+    async def waiter() -> None:
+        started.set()
+        await gate.acquire("lead_scoring")
+        await release_upstream.wait()
+        await gate.release("lead_scoring")
+
+    task = asyncio.create_task(waiter())
+    await started.wait()
+    await asyncio.sleep(0.1)
+    assert any(entry.actor == "lead_scoring" for entry in gate.waiters)
+
+    backend.set_running_count(2)
+    await asyncio.sleep(0.2)
+    assert any(entry.actor == "lead_scoring" for entry in gate.in_flight)
+
+    release_upstream.set()
+    await task
+    assert gate.local_in_flight == 0

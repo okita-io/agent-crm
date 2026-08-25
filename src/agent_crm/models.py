@@ -32,6 +32,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from .enums import (
     ActivityType,
+    AgentStatus,
     Brand,
     JourneyStatus,
     LeadSource,
@@ -173,6 +174,23 @@ class Activity(Base, TimestampMixin):
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     lead: Mapped[Lead | None] = relationship(back_populates="activities")
+
+
+class AgentHeartbeat(Base):
+    """Last-known liveness and task state for a CRM agent actor."""
+
+    __tablename__ = "agent_heartbeats"
+
+    agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[AgentStatus] = mapped_column(
+        SAEnum(AgentStatus), default=AgentStatus.IDLE, nullable=False
+    )
+    task: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resource: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
 
 
 class Journey(Base, TimestampMixin):
