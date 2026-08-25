@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .config import get_settings
+from .contact_store import list_contact_profiles
 from .db import database_kind, init_db
 from .enums import Brand, ResearchFindingKind, Stage
 from .errors import InvalidStageTransition, NotFoundError
@@ -37,6 +38,7 @@ from .schemas import (
     BatchVerifyRequest,
     BatchVerifyResult,
     ContactVerificationOut,
+    ContactProfileOut,
     HeartbeatIn,
     HeartbeatOut,
     HuntLoopRequest,
@@ -169,6 +171,19 @@ def research_findings(
     limit: int = 200,
 ) -> list[ResearchFindingOut]:
     return list_findings(brand=brand, kind=kind, limit=limit)
+
+
+# ---- contacts --------------------------------------------------------------
+
+
+@app.get("/contacts", response_model=list[ContactProfileOut], tags=["contacts"])
+def list_contacts(
+    brand: Brand | None = None,
+    email: str | None = None,
+    limit: int = 500,
+) -> list[ContactProfileOut]:
+    """List contact profiles keyed by email."""
+    return list_contact_profiles(brand=brand, email=email, limit=limit)
 
 
 # ---- lead verifier ---------------------------------------------------------

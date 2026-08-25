@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # Behavior
     hot_lead_threshold: int = 80
 
+    # Contact extraction / social lookup
+    contact_social_queries_per_profile: int = 4
+    contact_social_lookups_per_run: int = 40
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")

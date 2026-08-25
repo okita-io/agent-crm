@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from agent_crm.config import get_settings
+from agent_crm.contact_store import list_contact_profiles
 from agent_crm.db import database_kind, init_db
 from agent_crm.enums import AgentStatus, Brand, ContactVerificationStatus, ResearchFindingKind, Stage
 from agent_crm.heartbeat import list_heartbeats
@@ -326,6 +327,43 @@ def _render_research_tab() -> None:
     )
 
 
+def _render_contacts_tab() -> None:
+    st.subheader("Contact profiles")
+    st.caption("People found on scraped hunter/research pages, keyed by email.")
+
+    brand_filter = st.selectbox(
+        "Brand filter",
+        options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
+        key="contacts_brand",
+    )
+    brand = None if brand_filter == "all" else Brand(brand_filter)
+    profiles = list_contact_profiles(brand=brand, limit=500)
+
+    if not profiles:
+        st.info("No contact profiles yet. Run hunter or research scrapes to extract emails.")
+        return
+
+    st.metric("Profiles", len(profiles))
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "name": row.name,
+                    "email": row.email,
+                    "brand": row.brand.value,
+                    "socials": json.dumps(row.socials) if row.socials else None,
+                    "source pages": ", ".join(row.source_urls or []),
+                    "lead_id": row.lead_id,
+                    "updated": row.updated_at,
+                }
+                for row in profiles
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 def _render_verifier_tab() -> None:
     st.subheader("Lead verifier")
     st.caption("Defensive DNS/MX/HTTP checks — no mail is ever sent.")
@@ -408,8 +446,8 @@ def main() -> None:
     st.title("Agent CRM")
     st.caption(f"Store: {database_kind()}")
 
-    observer_tab, pipeline_tab, hunter_tab, research_tab, verifier_tab = st.tabs(
-        ["Live agents", "Pipeline & leads", "Hunter", "Research", "Verifier"]
+    observer_tab, pipeline_tab, hunter_tab, research_tab, contacts_tab, verifier_tab = st.tabs(
+        ["Live agents", "Pipeline & leads", "Hunter", "Research", "Contacts", "Verifier"]
     )
 
     with observer_tab:
@@ -423,6 +461,9 @@ def main() -> None:
 
     with research_tab:
         _render_research_tab()
+
+    with contacts_tab:
+        _render_contacts_tab()
 
     with verifier_tab:
         _render_verifier_tab()

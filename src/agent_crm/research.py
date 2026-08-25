@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from .config import get_settings
+from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
 from .enums import ActivityType, AgentStatus, Brand, ResearchFindingKind
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
 from .llm_client import chat_completions
@@ -65,6 +66,7 @@ def run_research(
     queries_run = 0
     pages_scraped = 0
     seen_urls: set[str] = set()
+    contact_budget = ContactExtractionBudget.from_settings()
 
     crm.log_note(
         f"Research run started for {request.brand.value} ({kind.value})",
@@ -166,6 +168,17 @@ def run_research(
 
             if request.write_accounts and _is_strong_hit(summary, extra):
                 _maybe_write_account_note(crm, normalized, title, summary, extra)
+
+            try:
+                process_scraped_page_contacts(
+                    markdown=page.markdown,
+                    source_url=normalized,
+                    brand=request.brand,
+                    searx_client=searx_client,
+                    budget=contact_budget,
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
     crm.record_heartbeat(status=AgentStatus.IDLE)
     return ResearchResult(

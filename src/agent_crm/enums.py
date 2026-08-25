@@ -26,6 +26,7 @@ class LeadSource(str, enum.Enum):
     EMAIL = "email"
     DM = "dm"
     HUNTER = "hunter"
+    CONTACT = "contact"
     MANUAL = "manual"
 
 
