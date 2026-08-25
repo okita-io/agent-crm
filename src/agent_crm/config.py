@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # Outbound Hunter defaults
     hunter_max_pages_per_run: int = 8
     hunter_search_result_limit: int = 15
+    hunter_max_queries_default: int = 20
+    hunter_max_minutes_default: int = 25
+    hunter_max_branch_terms: int = 5
+    hunter_request_timeout: float = 60.0
 
     # Observer / presence
     api_base_url: str = "http://api:8000"

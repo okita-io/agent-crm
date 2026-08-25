@@ -19,10 +19,13 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from . import __version__
+from .config import get_settings
 from .db import database_kind, init_db
-from .enums import Stage
+from .enums import Brand, Stage
 from .errors import InvalidStageTransition, NotFoundError
 from .heartbeat import list_heartbeats, record_heartbeat
+from .hunt_loop import HuntBudget, run_hunt_loop
+from .hunt_store import HuntStore
 from .outbound_hunter import run_hunt
 from .pipeline import PipelineManager
 from .presence import build_observer_rows, fetch_spark_queue_health, spark_slot_summary
@@ -31,7 +34,11 @@ from .schemas import (
     AgentObserverOut,
     HeartbeatIn,
     HeartbeatOut,
+    HuntLoopRequest,
+    HuntLoopResultOut,
+    HuntQueueStatusOut,
     HuntRequest,
+    HuntResourceOut,
     HuntResult,
     LeadCreate,
     LeadOut,
@@ -95,6 +102,45 @@ def intake_webhook(payload: LeadCreate) -> LeadOut:
 def hunt(payload: HuntRequest) -> HuntResult:
     """Run one bounded Outbound Hunter search + scrape cycle."""
     return run_hunt(payload)
+
+
+@app.post("/hunt/loop", response_model=HuntLoopResultOut, tags=["hunter"])
+def hunt_loop(payload: HuntLoopRequest) -> HuntLoopResultOut:
+    """Run a bounded branching hunt loop (sync)."""
+    settings = get_settings()
+    budget = HuntBudget(
+        max_queries=payload.max_queries,
+        max_minutes=payload.max_minutes,
+        max_pages_per_query=payload.max_pages_per_query or settings.hunter_max_pages_per_run,
+    )
+    result = run_hunt_loop(
+        query=payload.query,
+        brand=payload.brand,
+        budget=budget,
+        resume=payload.resume,
+        summarize_branches=payload.summarize_branches,
+    )
+    return HuntLoopResultOut(
+        run_id=result.run_id,
+        queries_run=result.queries_run,
+        resources_found=result.resources_found,
+        branch_terms_enqueued=result.branch_terms_enqueued,
+        stop_reason=result.stop_reason,
+    )
+
+
+@app.get("/hunt/resources", response_model=list[HuntResourceOut], tags=["hunter"])
+def list_hunt_resources(
+    brand: Brand | None = None,
+    limit: int = 500,
+) -> list[HuntResourceOut]:
+    rows = HuntStore().list_resources(brand=brand, limit=limit)
+    return [HuntResourceOut.model_validate(row) for row in rows]
+
+
+@app.get("/hunt/queue", response_model=HuntQueueStatusOut, tags=["hunter"])
+def hunt_queue_status() -> HuntQueueStatusOut:
+    return HuntQueueStatusOut(**HuntStore().queue_status())
 
 
 # ---- reads -----------------------------------------------------------------

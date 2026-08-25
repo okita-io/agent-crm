@@ -116,3 +116,24 @@ class AgentStatus(str, enum.Enum):
     THINKING = "thinking"
     WORKING = "working"
     BLOCKED = "blocked"
+
+
+class HuntQueryStatus(str, enum.Enum):
+    """Lifecycle of a queued hunter search term."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class HuntResourceKind(str, enum.Enum):
+    """What kind of site/resource the hunter discovered."""
+
+    DIRECTORY = "directory"
+    COMMUNITY = "community"
+    NEWSLETTER = "newsletter"
+    FORUM = "forum"
+    LIST = "list"
+    SOCIAL = "social"
+    OTHER = "other"

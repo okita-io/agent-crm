@@ -1,10 +1,4 @@
-"""Streamlit dashboard: a readable view of the pipeline.
-
-Run with:  streamlit run src/agent_crm/dashboard.py
-
-The dashboard reads through the same tooling the agents use, so what you see is
-exactly the store's state, not a separate query path.
-"""
+"""Streamlit dashboard: live agents, pipeline, and hunter resources."""
 
 from __future__ import annotations
 
@@ -16,8 +10,9 @@ import streamlit as st
 
 from agent_crm.config import get_settings
 from agent_crm.db import database_kind, init_db
-from agent_crm.enums import AgentStatus, Stage
+from agent_crm.enums import AgentStatus, Brand, Stage
 from agent_crm.heartbeat import list_heartbeats
+from agent_crm.hunt_store import HuntStore
 from agent_crm.pipeline import PipelineManager
 from agent_crm.presence import (
     build_observer_rows,
@@ -54,6 +49,27 @@ def _lead_rows() -> pd.DataFrame:
                 "created": lead.created_at,
             }
             for lead in leads
+        ]
+    )
+
+
+def _resource_rows(brand: Brand | None) -> pd.DataFrame:
+    resources = HuntStore().list_resources(brand=brand, limit=500)
+    if not resources:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "domain": r.domain,
+                "title": r.title,
+                "kind": r.kind.value,
+                "brand": r.brand.value,
+                "hits": r.hit_count,
+                "found_via": (r.found_via_query or "")[:80],
+                "url": r.url,
+                "last_seen": r.last_seen,
+            }
+            for r in resources
         ]
     )
 
@@ -195,6 +211,28 @@ def _render_pipeline_tab() -> None:
             )
 
 
+def _render_hunter_tab() -> None:
+    st.subheader("Hunter resources")
+    status = HuntStore().queue_status()
+
+    cols = st.columns(3)
+    cols[0].metric("Pending queries", status["pending"])
+    cols[1].metric("Total resources", status["total_resources"])
+    cols[2].metric("Completed queries", status["by_status"].get("completed", 0))
+
+    brand_filter = st.selectbox(
+        "Brand filter",
+        options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
+        key="resource_brand",
+    )
+    brand = None if brand_filter == "all" else Brand(brand_filter)
+    df = _resource_rows(brand)
+    if df.empty:
+        st.info("No hunter resources yet. Run `agent-crm hunt-loop --brand midnightsatin`.")
+    else:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+
 def _observer_fragment(refresh_seconds: int) -> None:
     try:
         fragment = st.fragment(run_every=timedelta(seconds=refresh_seconds))
@@ -218,13 +256,18 @@ def main() -> None:
     st.title("Agent CRM")
     st.caption(f"Store: {database_kind()}")
 
-    observer_tab, pipeline_tab = st.tabs(["Live agents", "Pipeline & leads"])
+    observer_tab, pipeline_tab, hunter_tab = st.tabs(
+        ["Live agents", "Pipeline & leads", "Hunter"]
+    )
 
     with observer_tab:
         _observer_fragment(refresh_seconds)
 
     with pipeline_tab:
         _render_pipeline_tab()
+
+    with hunter_tab:
+        _render_hunter_tab()
 
 
 if __name__ == "__main__":

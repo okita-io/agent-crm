@@ -15,6 +15,7 @@ from .enums import (
     ActivityType,
     AgentStatus,
     Brand,
+    HuntResourceKind,
     JourneyStatus,
     LeadSource,
     LeadStatus,
@@ -75,6 +76,46 @@ class HuntResult(BaseModel):
     scraped: int
     leads_created: list[int]
     errors: list[str]
+
+
+class HuntLoopRequest(BaseModel):
+    """Bounded branching hunt loop configuration."""
+
+    query: str | None = None
+    brand: Brand = Brand.UNASSIGNED
+    max_queries: int = Field(default=20, ge=1, le=200)
+    max_minutes: int = Field(default=25, ge=1, le=240)
+    max_pages_per_query: int | None = Field(default=None, ge=1, le=10)
+    resume: bool = True
+    summarize_branches: bool = True
+
+
+class HuntLoopResultOut(BaseModel):
+    run_id: str
+    queries_run: int
+    resources_found: int
+    branch_terms_enqueued: int
+    stop_reason: str
+
+
+class HuntResourceOut(ORMModel):
+    id: int
+    url: str
+    domain: str
+    title: str | None
+    brand: Brand
+    kind: HuntResourceKind
+    found_via_query: str | None
+    first_seen: datetime
+    last_seen: datetime
+    hit_count: int
+    notes: str | None
+
+
+class HuntQueueStatusOut(BaseModel):
+    pending: int
+    by_status: dict[str, int]
+    total_resources: int
 
 
 # ---- Outputs ---------------------------------------------------------------

@@ -35,6 +35,8 @@ from .enums import (
     ActivityType,
     AgentStatus,
     Brand,
+    HuntQueryStatus,
+    HuntResourceKind,
     JourneyStatus,
     LeadSource,
     LeadStatus,
@@ -202,6 +204,56 @@ class AgentHeartbeat(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
+
+
+class HuntQuery(Base, TimestampMixin):
+    """FIFO queue of search terms for the outbound hunter loop."""
+
+    __tablename__ = "hunt_queries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    origin: Mapped[str] = mapped_column(String(128), nullable=False, default="seed")
+    brand: Mapped[Brand] = mapped_column(SAEnum(Brand), nullable=False)
+    status: Mapped[HuntQueryStatus] = mapped_column(
+        str_enum(HuntQueryStatus),
+        default=HuntQueryStatus.PENDING,
+        nullable=False,
+        index=True,
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class HuntResource(Base, TimestampMixin):
+    """Discovered sites where potential users might be found."""
+
+    __tablename__ = "hunt_resources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    brand: Mapped[Brand] = mapped_column(SAEnum(Brand), nullable=False, index=True)
+    kind: Mapped[HuntResourceKind] = mapped_column(
+        str_enum(HuntResourceKind),
+        default=HuntResourceKind.OTHER,
+        nullable=False,
+    )
+    found_via_query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    hit_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Journey(Base, TimestampMixin):

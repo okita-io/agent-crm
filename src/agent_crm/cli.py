@@ -117,6 +117,40 @@ def _cmd_hunt(args: argparse.Namespace) -> int:
     return 0 if not result.errors or result.leads_created else 1
 
 
+def _cmd_hunt_loop(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .enums import Brand
+    from .hunt_loop import HuntBudget, run_hunt_loop
+
+    init_db()
+    brand = Brand(args.brand) if args.brand else Brand.UNASSIGNED
+    budget = HuntBudget(
+        max_queries=args.max_queries,
+        max_minutes=args.max_minutes,
+        max_pages_per_query=args.max_pages_per_query,
+    )
+    result = run_hunt_loop(
+        query=args.query,
+        brand=brand,
+        budget=budget,
+        resume=not args.no_resume,
+        summarize_branches=not args.no_summarize,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": result.run_id,
+                "queries_run": result.queries_run,
+                "resources_found": result.resources_found,
+                "branch_terms_enqueued": result.branch_terms_enqueued,
+                "stop_reason": result.stop_reason,
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent-crm", description="Agent CRM tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -131,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("report", help="Print the weekly report").set_defaults(
         func=_cmd_report
     )
+
     hunt = sub.add_parser("hunt", help="Run one Outbound Hunter search cycle")
     hunt.add_argument("query", help="Search query (e.g. boutique design studio NYC)")
     hunt.add_argument(
@@ -156,6 +191,28 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip Spark LLM summarization",
     )
     hunt.set_defaults(func=_cmd_hunt)
+
+    hunt_loop = sub.add_parser("hunt-loop", help="Bounded branching hunt loop")
+    hunt_loop.add_argument("query", nargs="?", default=None, help="Seed query (optional)")
+    hunt_loop.add_argument(
+        "--brand",
+        choices=["midnightsatin", "celestial-nexus", "heybuddy"],
+        help="Brand slug; uses seed pack when no query",
+    )
+    hunt_loop.add_argument("--max-queries", type=int, default=20)
+    hunt_loop.add_argument("--max-minutes", type=int, default=25)
+    hunt_loop.add_argument("--max-pages-per-query", type=int, default=8)
+    hunt_loop.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Do not resume pending queries from prior runs",
+    )
+    hunt_loop.add_argument(
+        "--no-summarize",
+        action="store_true",
+        help="Skip Spark LLM branch-term extraction",
+    )
+    hunt_loop.set_defaults(func=_cmd_hunt_loop)
 
     args = parser.parse_args(argv)
     return args.func(args)

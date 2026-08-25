@@ -1,0 +1,37 @@
+"""Per-brand seed query packs for the outbound hunter loop.
+
+Seeds are data, not hardcoded logic — add packs here or load from config later.
+"""
+
+from __future__ import annotations
+
+from agent_crm.enums import Brand
+
+SEED_PACKS: dict[str, list[str]] = {
+    Brand.MIDNIGHTSATIN.value: [
+        "romance booktok communities",
+        "dark romance reader newsletter list",
+        "book blog directories romance",
+        "romance author discord servers",
+        "best romance book review blogs",
+    ],
+    Brand.CELESTIAL_NEXUS.value: [
+        "astrology natal chart community forums",
+        "birth chart discord servers",
+        "astrology newsletter directories",
+        "zodiac community reddit lists",
+        "spiritual astrology blog roundups",
+    ],
+    Brand.HEYBUDDY.value: [
+        "ai companion app communities",
+        "virtual friend discord servers",
+        "ai chatbot user forums",
+        "loneliness support community lists",
+        "ai girlfriend reddit communities",
+    ],
+}
+
+
+def seeds_for_brand(brand: Brand) -> list[str]:
+    """Return seed queries for a brand, or an empty list if none configured."""
+    return list(SEED_PACKS.get(brand.value, []))

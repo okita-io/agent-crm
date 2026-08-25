@@ -36,9 +36,23 @@ def search(
     limit: int = 15,
     timeout: float = 30.0,
     client: httpx.Client | None = None,
+    categories: str | None = None,
+    pageno: int | None = None,
+    time_range: str | None = None,
+    language: str | None = None,
+    engines: str | None = None,
 ) -> list[SearchResult]:
     """Run a JSON search against the ranch SearXNG instance."""
-    params = {"q": query, "format": "json"}
+    params: dict[str, Any] = {"q": query, "format": "json"}
+    for key, value in (
+        ("categories", categories),
+        ("pageno", pageno),
+        ("time_range", time_range),
+        ("language", language),
+        ("engines", engines),
+    ):
+        if value is not None:
+            params[key] = value
     url = f"{get_searxng_base_url()}/search?{urlencode(params)}"
 
     owns_client = client is None
