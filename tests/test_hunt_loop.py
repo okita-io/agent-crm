@@ -141,6 +141,56 @@ def test_loop_stops_at_max_queries(loop_db, mock_pages):
     assert result.stop_reason == "max_queries"
 
 
+def test_loop_unlimited_max_minutes_does_not_stop_for_time(loop_db, mock_pages):
+    calls: list[dict] = []
+    http = httpx.Client(transport=_searx_transport(mock_pages, calls))
+    clock = {"value": 0.0}
+
+    def advance_clock() -> float:
+        clock["value"] += 3600.0
+        return clock["value"]
+
+    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm, patch(
+        "agent_crm.hunt_loop.time.monotonic", side_effect=advance_clock
+    ):
+        mock_llm.return_value = {
+            "choices": [{"message": {"content": '{"terms": ["best booktok communities"]}'}}]
+        }
+        result = run_hunt_loop(
+            query="seed query",
+            brand=Brand.MIDNIGHTSATIN,
+            budget=HuntBudget(max_queries=2, max_minutes=0, max_pages_per_query=0),
+            resume=False,
+            searx_client=http,
+            firecrawl_client=http,
+        )
+    assert result.queries_run == 2
+    assert result.stop_reason == "max_queries"
+
+
+def test_loop_max_minutes_stops_for_time(loop_db, mock_pages):
+    calls: list[dict] = []
+    http = httpx.Client(transport=_searx_transport(mock_pages, calls))
+    times = iter([0.0, 0.0, 61.0, 61.0, 61.0])
+
+    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm, patch(
+        "agent_crm.hunt_loop.time.monotonic", side_effect=lambda: next(times)
+    ):
+        mock_llm.return_value = {
+            "choices": [{"message": {"content": '{"terms": ["best booktok communities"]}'}}]
+        }
+        result = run_hunt_loop(
+            query="seed query",
+            brand=Brand.MIDNIGHTSATIN,
+            budget=HuntBudget(max_queries=10, max_minutes=1, max_pages_per_query=0),
+            resume=False,
+            searx_client=http,
+            firecrawl_client=http,
+        )
+    assert result.queries_run == 1
+    assert result.stop_reason == "max_minutes"
+
+
 def test_param_variation_hits_searxng(loop_db, mock_pages):
     calls: list[dict] = []
     http = httpx.Client(transport=_searx_transport(mock_pages, calls))

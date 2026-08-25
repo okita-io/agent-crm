@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .enums import (
     ActivityType,
@@ -87,10 +87,21 @@ class HuntLoopRequest(BaseModel):
     query: str | None = None
     brand: Brand = Brand.UNASSIGNED
     max_queries: int = Field(default=40, ge=1, le=200)
-    max_minutes: int = Field(default=60, ge=1, le=240)
+    max_minutes: int | None = Field(
+        default=0,
+        ge=0,
+        description="Wall-clock budget in minutes; 0 or null means unlimited.",
+    )
     max_pages_per_query: int | None = Field(default=None, ge=1, le=250)
     resume: bool = True
     summarize_branches: bool = True
+
+    @field_validator("max_minutes", mode="before")
+    @classmethod
+    def _coerce_unlimited_max_minutes(cls, value: object) -> int:
+        if value is None:
+            return 0
+        return int(value)  # type: ignore[arg-type]
 
 
 class HuntLoopResultOut(BaseModel):
