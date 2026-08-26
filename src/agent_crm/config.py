@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     contact_social_queries_per_profile: int = 4
     contact_social_lookups_per_run: int = 40
 
+    # Contact people-enrichment (SERP + public pages + Spark)
+    contact_enrichment_queries_per_profile: int = 6
+    contact_enrichments_per_run: int = 20
+    contact_enrichment_spark_per_run: int = 10
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
