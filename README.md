@@ -91,6 +91,7 @@ Each search hit can be scraped to markdown via the host Firecrawl API. Hunter de
 - LLM branch-term extraction to enqueue new queries
 - **Community/person feedback**: newly catalogued communities and extracted contact names enqueue deterministic follow-up queries (`origin` prefix `community:` / `person:`)
 - Defaults: **40 queries**, **unlimited wall clock**, **50 pages per query** (still capped by community/person term limits per run)
+- Per-brand **seed packs** include AI-generated-content readers and promoters (communities, BookTok/TikTok creators, influencers) in addition to generic discovery terms; on resume, missing seed-pack queries are merged into the queue without clearing pending work
 
 | Entry | Command / API |
 |-------|---------------|
@@ -112,7 +113,7 @@ Competitor and nonprofit prospecting with the same SearXNG + Firecrawl + Spark s
 | `celestial-nexus`, `midnightsatin` | `competitor` | Competitor site scans |
 | `heybuddy` | `nonprofit` | 501(c)(3) partnership / grant prospects (HeyBuddy itself is **not** a nonprofit) |
 
-Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`.
+Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`. Seed packs include AI-generated-content audiences and promoters alongside competitor/nonprofit discovery terms.
 
 | Entry | Command / API |
 |-------|---------------|

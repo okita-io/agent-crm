@@ -362,3 +362,34 @@ def test_community_and_person_feedback_enqueue(loop_db, monkeypatch):
     assert all("invented" not in row.query.lower() for row in feedback)
     assert not any(row.query.lower().startswith("ada.vega@") for row in feedback)
 
+
+def test_resume_with_pending_still_enqueues_missing_seed_pack(loop_db) -> None:
+    """Resume should merge new seed-pack queries without clearing the queue."""
+    store = HuntStore()
+    store.enqueue_query(
+        query="existing branch term",
+        brand=Brand.MIDNIGHTSATIN,
+        origin="branch:seed",
+    )
+    store.enqueue_query(
+        query="romance booktok communities",
+        brand=Brand.MIDNIGHTSATIN,
+        origin="seed_pack",
+    )
+
+    with patch("agent_crm.hunt_loop.search"):
+        run_hunt_loop(
+            brand=Brand.MIDNIGHTSATIN,
+            budget=HuntBudget(max_queries=0, max_minutes=0, max_pages_per_query=0),
+            resume=True,
+        )
+
+    seed_pack = store.list_queries(
+        brand=Brand.MIDNIGHTSATIN,
+        origin_prefix="seed_pack",
+        limit=50,
+    )
+    seed_text = " ".join(row.query for row in seed_pack).lower()
+    assert "ai generated romance novel communities" in seed_text
+    assert store.count_pending(Brand.MIDNIGHTSATIN) >= 2
+

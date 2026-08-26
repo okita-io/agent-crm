@@ -18,6 +18,8 @@ COMPETITOR_QUERIES: dict[Brand, list[str]] = {
         "psychic reading app online",
         "astrology SaaS platform API",
         "cosmic guidance app wellness astrology",
+        "ai generated astrology content app",
+        "AI tarot influencer platforms",
     ],
     Brand.MIDNIGHTSATIN: [
         "romance reading app serial fiction",
@@ -32,6 +34,10 @@ COMPETITOR_QUERIES: dict[Brand, list[str]] = {
         "romance audiobook serial app",
         "booktok romance reading platform",
         "spicy romance serial app subscription",
+        "ai generated romance fiction app",
+        "AI-authored romance readers",
+        "booktok ai generated stories",
+        "influencers promoting AI novels",
     ],
 }
 
@@ -49,6 +55,8 @@ NONPROFIT_QUERIES: dict[Brand, list[str]] = {
         "501c3 caregiver support nonprofit",
         "digital mental health nonprofit youth",
         "nonprofit veteran peer support organization",
+        "501c3 nonprofit AI generated companionship content",
+        "nonprofit digital storytelling companionship AI program",
     ],
 }
 
