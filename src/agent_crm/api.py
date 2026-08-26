@@ -15,12 +15,17 @@ business logic so the same operations work from an agent process without HTTP.
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 
 from . import __version__
 from .config import get_settings
-from .contact_store import backfill_contact_quality, list_contact_profiles
+from .contact_store import (
+    backfill_contact_quality,
+    count_contact_profiles,
+    count_contact_profiles_by_brand,
+    list_contact_profiles,
+)
 from .db import database_kind, init_db
 from .enums import Brand, ContactAudience, ResearchFindingKind, Stage
 from .errors import InvalidStageTransition, NotFoundError
@@ -42,6 +47,7 @@ from .schemas import (
     ContactBackfillResultOut,
     ContactVerificationOut,
     ContactProfileOut,
+    ContactProfilesSummaryOut,
     HeartbeatIn,
     HeartbeatOut,
     HuntLoopRequest,
@@ -190,13 +196,40 @@ def research_findings(
 
 @app.get("/contacts", response_model=list[ContactProfileOut], tags=["contacts"])
 def list_contacts(
+    response: Response,
     brand: Brand | None = None,
     audience: ContactAudience | None = None,
     email: str | None = None,
+    offset: int = 0,
     limit: int = 500,
 ) -> list[ContactProfileOut]:
     """List contact profiles keyed by email."""
-    return list_contact_profiles(brand=brand, audience=audience, email=email, limit=limit)
+    total = count_contact_profiles(brand=brand, audience=audience, email=email)
+    response.headers["X-Total-Count"] = str(total)
+    return list_contact_profiles(
+        brand=brand,
+        audience=audience,
+        email=email,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@app.get("/contacts/summary", response_model=ContactProfilesSummaryOut, tags=["contacts"])
+def contacts_summary(
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+) -> ContactProfilesSummaryOut:
+    """Return total and per-brand counts for contact profile filters."""
+    total = count_contact_profiles(brand=brand, audience=audience)
+    if brand is None:
+        by_brand = [
+            {"brand": row["brand"], "count": row["count"]}
+            for row in count_contact_profiles_by_brand(audience=audience)
+        ]
+    else:
+        by_brand = [{"brand": brand, "count": total}]
+    return ContactProfilesSummaryOut(total=total, by_brand=by_brand)
 
 
 @app.post("/contacts/backfill", response_model=ContactBackfillResultOut, tags=["contacts"])

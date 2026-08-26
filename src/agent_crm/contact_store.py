@@ -175,6 +175,59 @@ def upsert_contact_profile(
         return ContactProfileOut.model_validate(row)
 
 
+def _apply_contact_profile_filters(
+    stmt,
+    *,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+    email: str | None = None,
+):
+    if brand is not None:
+        stmt = stmt.where(ContactProfile.brand == brand)
+    if audience is not None:
+        stmt = stmt.where(ContactProfile.audience == audience)
+    if email is not None:
+        stmt = stmt.where(ContactProfile.email == email.strip().lower())
+    return stmt
+
+
+def count_contact_profiles(
+    *,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+    email: str | None = None,
+) -> int:
+    """Count contact profiles matching optional brand/audience/email filters."""
+    with session_scope() as session:
+        stmt = select(func.count()).select_from(ContactProfile)
+        stmt = _apply_contact_profile_filters(
+            stmt,
+            brand=brand,
+            audience=audience,
+            email=email,
+        )
+        return int(session.scalar(stmt) or 0)
+
+
+def count_contact_profiles_by_brand(
+    *,
+    audience: ContactAudience | None = None,
+) -> list[dict]:
+    """Count contact profiles grouped by brand, optionally filtered by audience."""
+    with session_scope() as session:
+        stmt = (
+            select(ContactProfile.brand, func.count())
+            .group_by(ContactProfile.brand)
+            .order_by(ContactProfile.brand.asc())
+        )
+        if audience is not None:
+            stmt = stmt.where(ContactProfile.audience == audience)
+        return [
+            {"brand": brand.value, "count": count}
+            for brand, count in session.execute(stmt)
+        ]
+
+
 def count_contact_emails_by_brand_audience() -> list[dict]:
     """Count contact profiles with non-empty email, grouped by brand and audience."""
     with session_scope() as session:
@@ -204,17 +257,18 @@ def list_contact_profiles(
     brand: Brand | None = None,
     audience: ContactAudience | None = None,
     email: str | None = None,
+    offset: int = 0,
     limit: int = 500,
 ) -> list[ContactProfileOut]:
     with session_scope() as session:
         stmt = select(ContactProfile).order_by(ContactProfile.updated_at.desc())
-        if brand is not None:
-            stmt = stmt.where(ContactProfile.brand == brand)
-        if audience is not None:
-            stmt = stmt.where(ContactProfile.audience == audience)
-        if email is not None:
-            stmt = stmt.where(ContactProfile.email == email.strip().lower())
-        stmt = stmt.limit(limit)
+        stmt = _apply_contact_profile_filters(
+            stmt,
+            brand=brand,
+            audience=audience,
+            email=email,
+        )
+        stmt = stmt.offset(max(offset, 0)).limit(limit)
         return [ContactProfileOut.model_validate(row) for row in session.scalars(stmt)]
 
 

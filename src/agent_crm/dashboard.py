@@ -10,7 +10,11 @@ import pandas as pd
 import streamlit as st
 
 from agent_crm.config import get_settings
-from agent_crm.contact_store import list_contact_profiles
+from agent_crm.contact_store import (
+    count_contact_profiles,
+    count_contact_profiles_by_brand,
+    list_contact_profiles,
+)
 from agent_crm.db import database_kind, init_db
 from agent_crm.enums import (
     AgentStatus,
@@ -498,6 +502,7 @@ def _render_research_tab() -> None:
         "Brand filter",
         options=["all", "celestial-nexus", "midnightsatin", "heybuddy", "tactic-studio"],
         index=0,
+        key="research_brand",
     )
     kind_filter = st.selectbox(
         "Kind filter",
@@ -544,6 +549,8 @@ def _render_contacts_tab() -> None:
     st.subheader("Contact profiles")
     st.caption("People found on scraped hunter/research pages, keyed by email.")
 
+    CONTACTS_PAGE_SIZE = 100
+
     brand_filter = st.selectbox(
         "Brand filter",
         options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
@@ -560,13 +567,55 @@ def _render_contacts_tab() -> None:
         if audience_filter == "all"
         else ContactAudience(audience_filter)
     )
-    profiles = list_contact_profiles(brand=brand, audience=audience, limit=500)
 
-    if not profiles:
+    filter_key = f"{brand_filter}:{audience_filter}"
+    if st.session_state.get("contacts_filter_key") != filter_key:
+        st.session_state.contacts_filter_key = filter_key
+        st.session_state.contacts_page = 0
+    if "contacts_page" not in st.session_state:
+        st.session_state.contacts_page = 0
+
+    total = count_contact_profiles(brand=brand, audience=audience)
+    if total == 0:
         st.info("No contact profiles yet. Run hunter or research scrapes to extract emails.")
         return
 
-    st.metric("Profiles", len(profiles))
+    if brand is None:
+        by_brand = count_contact_profiles_by_brand(audience=audience)
+        brand_cols = st.columns(max(len(by_brand), 1))
+        for col, row in zip(brand_cols, by_brand, strict=False):
+            col.metric(row["brand"], row["count"])
+    else:
+        st.metric("Profiles", total)
+
+    page = st.session_state.contacts_page
+    max_page = max((total - 1) // CONTACTS_PAGE_SIZE, 0)
+    page = min(page, max_page)
+    st.session_state.contacts_page = page
+    offset = page * CONTACTS_PAGE_SIZE
+
+    profiles = list_contact_profiles(
+        brand=brand,
+        audience=audience,
+        limit=CONTACTS_PAGE_SIZE,
+        offset=offset,
+    )
+
+    if profiles:
+        showing_start = offset + 1
+        showing_end = offset + len(profiles)
+        st.caption(f"Showing {showing_start}–{showing_end} of {total} matching")
+    else:
+        st.caption(f"Showing 0 of {total} matching")
+
+    nav_prev, nav_next, _ = st.columns([1, 1, 6])
+    if nav_prev.button("Previous", disabled=page <= 0, key="contacts_prev"):
+        st.session_state.contacts_page = max(page - 1, 0)
+        st.rerun()
+    if nav_next.button("Next", disabled=page >= max_page, key="contacts_next"):
+        st.session_state.contacts_page = min(page + 1, max_page)
+        st.rerun()
+
     st.dataframe(
         pd.DataFrame(
             [
