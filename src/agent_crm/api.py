@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from . import __version__
 from .config import get_settings
 from .contact_store import (
+    backfill_contact_enrichment,
     backfill_contact_quality,
     count_contact_profiles,
     count_contact_profiles_by_brand,
@@ -45,6 +46,8 @@ from .schemas import (
     BatchVerifyResult,
     ContactBackfillRequest,
     ContactBackfillResultOut,
+    ContactEnrichRequest,
+    ContactEnrichResultOut,
     ContactVerificationOut,
     ContactProfileOut,
     ContactProfilesSummaryOut,
@@ -260,6 +263,12 @@ def contacts_summary(
 def contacts_backfill(body: ContactBackfillRequest) -> ContactBackfillResultOut:
     """Re-apply contact-quality filters to existing profiles and hunt notes."""
     return backfill_contact_quality(limit=body.limit, dry_run=body.dry_run)
+
+
+@app.post("/contacts/enrich", response_model=ContactEnrichResultOut, tags=["contacts"])
+def contacts_enrich(body: ContactEnrichRequest) -> ContactEnrichResultOut:
+    """Backfill public people-enrichment for profiles missing enrichment data."""
+    return backfill_contact_enrichment(limit=body.limit, dry_run=body.dry_run)
 
 
 # ---- lead verifier ---------------------------------------------------------

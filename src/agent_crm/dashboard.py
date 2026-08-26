@@ -552,7 +552,11 @@ def _render_research_tab() -> None:
 
 def _render_contacts_tab() -> None:
     st.subheader("Contact profiles")
-    st.caption("People found on scraped hunter/research pages, keyed by email.")
+    st.caption(
+        "People found on scraped hunter/research pages, keyed by email. "
+        "Title, organization, and location come from public-web enrichment "
+        "(search snippets and public pages — not logged-in social scraping)."
+    )
 
     CONTACTS_PAGE_SIZE = 100
 
@@ -641,6 +645,9 @@ def _render_contacts_tab() -> None:
             [
                 {
                     "name": row.name,
+                    "title": row.title,
+                    "organization": row.organization,
+                    "location": row.location,
                     "email": row.email,
                     "brand": row.brand.value,
                     "audience": row.audience.value if row.audience else None,
@@ -712,7 +719,8 @@ def _render_verifier_tab() -> None:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     st.caption(
-        "CLI: `agent-crm verify --lead-id N` or `agent-crm verify --unverified`"
+        "CLI: `agent-crm verify --lead-id N` or `agent-crm verify --unverified`. "
+        "Contact title/org enrichment runs separately via public-web search on the Contacts tab."
     )
 
 

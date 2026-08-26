@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     contact_spark_decode_per_run: int = 20
     contact_spark_decode_per_page: int = 5
 
+    # Contact people-enrichment (SERP + public pages + Spark)
+    contact_enrichment_queries_per_profile: int = 6
+    contact_enrichments_per_run: int = 20
+    contact_enrichment_spark_per_run: int = 10
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")

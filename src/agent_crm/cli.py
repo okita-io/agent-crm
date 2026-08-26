@@ -183,13 +183,23 @@ def _cmd_research(args: argparse.Namespace) -> int:
 
 
 def _cmd_contacts(args: argparse.Namespace) -> int:
-    from .contact_store import backfill_contact_quality, list_contact_profiles
+    from .contact_store import (
+        backfill_contact_enrichment,
+        backfill_contact_quality,
+        list_contact_profiles,
+    )
     from .db import init_db
     from .enums import Brand, ContactAudience
 
     init_db()
-    if getattr(args, "contacts_command", None) == "backfill":
+    command = getattr(args, "contacts_command", None)
+    if command == "backfill":
         result = backfill_contact_quality(limit=args.limit, dry_run=args.dry_run)
+        print(json.dumps(result.model_dump(mode="json"), indent=2))
+        return 0 if not result.errors else 1
+
+    if command == "enrich":
+        result = backfill_contact_enrichment(limit=args.limit, dry_run=args.dry_run)
         print(json.dumps(result.model_dump(mode="json"), indent=2))
         return 0 if not result.errors else 1
 
@@ -377,6 +387,23 @@ def main(argv: list[str] | None = None) -> int:
         help="Report changes without writing",
     )
     contacts_backfill.set_defaults(func=_cmd_contacts)
+
+    contacts_enrich = contacts_sub.add_parser(
+        "enrich",
+        help="Backfill public people-enrichment for existing profiles",
+    )
+    contacts_enrich.add_argument(
+        "--limit",
+        type=int,
+        default=500,
+        help="Max profiles to scan (default 500)",
+    )
+    contacts_enrich.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report enrichment without writing",
+    )
+    contacts_enrich.set_defaults(func=_cmd_contacts)
 
     verify = sub.add_parser("verify", help="Verify lead contacts (DNS/MX/HTTP, no mail)")
     verify.add_argument("--lead-id", type=int, help="Verify a single lead by id")

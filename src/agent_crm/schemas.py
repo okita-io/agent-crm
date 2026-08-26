@@ -284,6 +284,28 @@ class ContactBackfillResultOut(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class ContactEnrichRequest(BaseModel):
+    """Backfill public people-enrichment for existing contact profiles."""
+
+    limit: int = Field(default=500, ge=1, le=5000)
+    dry_run: bool = False
+
+
+class ContactEnrichDetailOut(BaseModel):
+    email: str
+    enriched: bool
+    spark_used: bool = False
+    fields_filled: list[str] = Field(default_factory=list)
+
+
+class ContactEnrichResultOut(BaseModel):
+    profiles_scanned: int
+    profiles_enriched: int
+    spark_calls: int
+    details: list[ContactEnrichDetailOut] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
 class VerifyRawResult(BaseModel):
     results: list[ContactVerificationOut]
 
@@ -384,6 +406,11 @@ class ContactProfileOut(ORMModel):
     audience: ContactAudience | None
     socials: dict | None
     source_urls: list[str] | None
+    title: str | None
+    organization: str | None
+    location: str | None
+    bio: str | None
+    enrichment: dict | None
     lead_id: int | None
     created_at: datetime
     updated_at: datetime

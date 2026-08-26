@@ -321,6 +321,11 @@ class ContactProfile(Base, TimestampMixin):
     )
     socials: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bio: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    enrichment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     lead_id: Mapped[int | None] = mapped_column(
         ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True
     )
