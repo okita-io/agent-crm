@@ -15,31 +15,62 @@ from .contact_quality import (
     clean_contact_data,
     filter_socials,
     is_relevant_contact,
+    is_role_inbox_email,
     scrub_notes_value,
+)
+from .contact_people_enrichment import (
+    build_enrichment_metadata,
+    enrich_contact_person,
+    PeopleEnrichmentResult,
 )
 from .contact_social_lookup import lookup_social_profiles
 from .db import session_scope
 from .enums import Brand, ContactAudience, LeadSource, LeadStatus
 from .models import ContactProfile, HuntResource, Lead, Opportunity
-from .schemas import ContactBackfillResultOut, ContactProfileOut, ContactQualityCleanupOut
+from .schemas import (
+    ContactBackfillResultOut,
+    ContactEnrichDetailOut,
+    ContactEnrichResultOut,
+    ContactProfileOut,
+    ContactQualityCleanupOut,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ContactExtractionBudget:
-    """Per-run cap on how many profiles get SearXNG social lookup."""
+    """Per-run cap on SearXNG social lookup and people-enrichment."""
 
     social_lookups_remaining: int
+    enrichments_remaining: int
+    spark_enrichments_remaining: int
 
     @classmethod
     def from_settings(cls) -> ContactExtractionBudget:
-        return cls(social_lookups_remaining=get_settings().contact_social_lookups_per_run)
+        settings = get_settings()
+        return cls(
+            social_lookups_remaining=settings.contact_social_lookups_per_run,
+            enrichments_remaining=settings.contact_enrichments_per_run,
+            spark_enrichments_remaining=settings.contact_enrichment_spark_per_run,
+        )
 
     def consume_profile_lookup(self) -> bool:
         if self.social_lookups_remaining <= 0:
             return False
         self.social_lookups_remaining -= 1
+        return True
+
+    def consume_enrichment(self) -> bool:
+        if self.enrichments_remaining <= 0:
+            return False
+        self.enrichments_remaining -= 1
+        return True
+
+    def consume_spark(self) -> bool:
+        if self.spark_enrichments_remaining <= 0:
+            return False
+        self.spark_enrichments_remaining -= 1
         return True
 
 
@@ -173,6 +204,93 @@ def upsert_contact_profile(
 
         session.flush()
         return ContactProfileOut.model_validate(row)
+
+
+def _persist_enrichment(
+    *,
+    email: str,
+    result: PeopleEnrichmentResult,
+) -> ContactProfileOut:
+    """Write enrichment fields and evidence onto an existing contact profile."""
+    normalized_email = email.strip().lower()
+    fields = result.fields
+    enrichment_meta = build_enrichment_metadata(result)
+
+    with session_scope() as session:
+        row = session.scalar(
+            select(ContactProfile).where(ContactProfile.email == normalized_email)
+        )
+        if row is None:
+            raise ValueError(f"contact profile not found for {normalized_email}")
+
+        if fields.name and not row.name:
+            row.name = fields.name
+        if fields.title and not row.title:
+            row.title = fields.title
+        if fields.organization and not row.organization:
+            row.organization = fields.organization
+        if fields.location and not row.location:
+            row.location = fields.location
+        if fields.bio and not row.bio:
+            row.bio = fields.bio
+        if fields.socials:
+            row.socials = merge_socials(row.socials, fields.socials)
+        row.enrichment = enrichment_meta
+
+        if row.lead_id and fields.name:
+            lead = session.get(Lead, row.lead_id)
+            if lead is not None and not lead.name:
+                lead.name = fields.name
+
+        session.flush()
+        return ContactProfileOut.model_validate(row)
+
+
+def _needs_people_enrichment(profile: ContactProfileOut) -> bool:
+    return (
+        profile.enrichment is None
+        and profile.title is None
+        and profile.organization is None
+    )
+
+
+def _maybe_enrich_contact(
+    *,
+    profile: ContactProfileOut,
+    name: str | None,
+    searx_client: httpx.Client | None,
+    budget: ContactExtractionBudget,
+) -> ContactProfileOut:
+    if is_role_inbox_email(profile.email):
+        return profile
+    if not _needs_people_enrichment(profile):
+        return profile
+    if not budget.consume_enrichment():
+        return profile
+
+    allow_spark = budget.spark_enrichments_remaining > 0
+    try:
+        result = enrich_contact_person(
+            email=profile.email,
+            name=name or profile.name,
+            searx_client=searx_client,
+            allow_spark=allow_spark,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("People enrichment failed for %s", profile.email)
+        return profile
+
+    if result is None:
+        return profile
+
+    if result.spark_used and allow_spark:
+        budget.consume_spark()
+
+    try:
+        return _persist_enrichment(email=profile.email, result=result)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to persist enrichment for %s", profile.email)
+        return profile
 
 
 def _apply_contact_profile_filters(
@@ -318,6 +436,13 @@ def process_scraped_page_contacts(
             continue
 
         page_had_socials = bool(contact.socials)
+        profile = _maybe_enrich_contact(
+            profile=profile,
+            name=contact.name,
+            searx_client=searx_client,
+            budget=budget,
+        )
+
         needs_lookup = not profile.socials
         if needs_lookup and not page_had_socials and budget.consume_profile_lookup():
             try:
@@ -427,4 +552,112 @@ def backfill_contact_quality(
         resource_notes_scrubbed=result.resource_notes_scrubbed,
         details=result.details,
         errors=result.errors,
+    )
+
+
+def backfill_contact_enrichment(
+    *,
+    limit: int = 500,
+    dry_run: bool = False,
+) -> ContactEnrichResultOut:
+    """Backfill public people-enrichment for profiles missing enrichment data."""
+    profiles_scanned = 0
+    profiles_enriched = 0
+    spark_calls = 0
+    details: list[ContactEnrichDetailOut] = []
+    errors: list[str] = []
+
+    with session_scope() as session:
+        rows = list(
+            session.scalars(
+                select(ContactProfile)
+                .where(
+                    ContactProfile.enrichment.is_(None),
+                )
+                .order_by(ContactProfile.updated_at.desc())
+                .limit(limit)
+            )
+        )
+
+    for row in rows:
+        profiles_scanned += 1
+        if is_role_inbox_email(row.email):
+            details.append(
+                ContactEnrichDetailOut(email=row.email, enriched=False, fields_filled=[])
+            )
+            continue
+
+        try:
+            result = enrich_contact_person(
+                email=row.email,
+                name=row.name,
+                allow_spark=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{row.email}: {exc}")
+            continue
+
+        if result is None:
+            details.append(
+                ContactEnrichDetailOut(email=row.email, enriched=False, fields_filled=[])
+            )
+            continue
+
+        fields_filled: list[str] = []
+        fields = result.fields
+        if fields.name and not row.name:
+            fields_filled.append("name")
+        if fields.title:
+            fields_filled.append("title")
+        if fields.organization:
+            fields_filled.append("organization")
+        if fields.location:
+            fields_filled.append("location")
+        if fields.bio:
+            fields_filled.append("bio")
+        if fields.socials:
+            fields_filled.append("socials")
+
+        if not fields_filled and not dry_run:
+            details.append(
+                ContactEnrichDetailOut(email=row.email, enriched=False, fields_filled=[])
+            )
+            continue
+
+        if dry_run:
+            profiles_enriched += 1
+            if result.spark_used:
+                spark_calls += 1
+            details.append(
+                ContactEnrichDetailOut(
+                    email=row.email,
+                    enriched=True,
+                    spark_used=result.spark_used,
+                    fields_filled=fields_filled,
+                )
+            )
+            continue
+
+        try:
+            _persist_enrichment(email=row.email, result=result)
+            profiles_enriched += 1
+            if result.spark_used:
+                spark_calls += 1
+            details.append(
+                ContactEnrichDetailOut(
+                    email=row.email,
+                    enriched=True,
+                    spark_used=result.spark_used,
+                    fields_filled=fields_filled,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{row.email}: {exc}")
+
+    return ContactEnrichResultOut(
+        profiles_scanned=profiles_scanned,
+        profiles_enriched=profiles_enriched,
+        spark_calls=spark_calls,
+        details=details,
+        errors=errors,
     )

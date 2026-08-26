@@ -128,7 +128,11 @@ def test_process_scraped_page_contacts_creates_profiles_and_leads(db_url) -> Non
         html=FIXTURE_HTML,
         source_url="https://novastudio.com/team",
         brand=Brand.MIDNIGHTSATIN,
-        budget=ContactExtractionBudget(social_lookups_remaining=0),
+        budget=ContactExtractionBudget(
+            social_lookups_remaining=0,
+            enrichments_remaining=0,
+            spark_enrichments_remaining=0,
+        ),
     )
     # support@ is filtered as a generic support identity
     assert len(profiles) == 2
@@ -180,7 +184,11 @@ def test_build_social_queries_respects_cap(monkeypatch) -> None:
 def test_social_lookup_budget_skips_after_cap(db_url) -> None:
     with patch("agent_crm.contact_store.lookup_social_profiles") as mock_lookup:
         mock_lookup.return_value = ({"x": "https://x.com/found"}, 1)
-        budget = ContactExtractionBudget(social_lookups_remaining=1)
+        budget = ContactExtractionBudget(
+            social_lookups_remaining=1,
+            enrichments_remaining=0,
+            spark_enrichments_remaining=0,
+        )
         process_scraped_page_contacts(
             markdown="a@example.org\nb@example.org",
             source_url="https://example.org",
@@ -289,7 +297,11 @@ def test_process_scraped_page_does_not_invent_names(db_url) -> None:
         markdown=markdown,
         source_url="https://studio.test",
         brand=Brand.UNASSIGNED,
-        budget=ContactExtractionBudget(social_lookups_remaining=0),
+        budget=ContactExtractionBudget(
+            social_lookups_remaining=0,
+            enrichments_remaining=0,
+            spark_enrichments_remaining=0,
+        ),
     )
     assert len(profiles) == 1
     assert profiles[0].name is None

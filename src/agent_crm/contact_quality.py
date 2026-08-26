@@ -234,6 +234,29 @@ GENERIC_SUPPORT_LOCAL_PARTS: frozenset[str] = frozenset(
     }
 )
 
+ROLE_INBOX_LOCAL_PARTS: frozenset[str] = frozenset(
+    {
+        "info",
+        "hello",
+        "contact",
+        "inquiries",
+        "inquiry",
+        "general",
+        "sales",
+        "team",
+        "office",
+        "press",
+        "media",
+        "hr",
+        "jobs",
+        "careers",
+        "recruiting",
+        "marketing",
+        "partners",
+        "partner",
+    }
+)
+
 _TRACKING_PIXEL_URL_RE = re.compile(
     r"https?://[^\s<>\"')\]]+?"
     r"(?:pixel|beacon|/track(?:ing)?|/open\.gif|/sp\.gif|/imp\.|doubleclick|"
@@ -336,6 +359,22 @@ def is_generic_support_email(email: str) -> bool:
         return True
     for part in re.split(r"[._\-]", base_local):
         if part in GENERIC_SUPPORT_LOCAL_PARTS:
+            return True
+    return False
+
+
+def is_role_inbox_email(email: str) -> bool:
+    """True for generic role inboxes (info@, support@, etc.) — not individual people."""
+    if is_generic_support_email(email):
+        return True
+    local, _, domain = email.strip().lower().partition("@")
+    if not local or not domain:
+        return True
+    base_local = local.split("+", 1)[0]
+    if base_local in ROLE_INBOX_LOCAL_PARTS:
+        return True
+    for part in re.split(r"[._\-]", base_local):
+        if part in ROLE_INBOX_LOCAL_PARTS:
             return True
     return False
 
