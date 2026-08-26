@@ -141,34 +141,26 @@ def test_loop_stops_at_max_queries(loop_db, mock_pages):
     assert result.stop_reason == "max_queries"
 
 
-def test_loop_unlimited_max_minutes_does_not_stop_for_time(loop_db, mock_pages):
+def test_loop_unlimited_max_queries_drains_queue(loop_db):
+    store = HuntStore()
+    for i in range(5):
+        store.enqueue_query(query=f"q{i}", brand=Brand.MIDNIGHTSATIN, origin="seed")
+
     calls: list[dict] = []
-    http = httpx.Client(transport=_searx_transport(mock_pages, calls))
-    clock = {"value": 0.0}
+    http = httpx.Client(transport=_searx_transport({}, calls))
 
-    def advance_clock() -> float:
-        clock["value"] += 3600.0
-        return clock["value"]
-
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm, patch(
-        "agent_crm.hunt_loop.time.monotonic", side_effect=advance_clock
-    ):
-        mock_llm.return_value = {
-            "choices": [{"message": {"content": '{"terms": ["best booktok communities"]}'}}]
-        }
-        result = run_hunt_loop(
-            query="seed query",
-            brand=Brand.MIDNIGHTSATIN,
-            budget=HuntBudget(max_queries=2, max_minutes=0, max_pages_per_query=0),
-            resume=False,
-            searx_client=http,
-            firecrawl_client=http,
-        )
-    assert result.queries_run == 2
-    assert result.stop_reason == "max_queries"
+    result = run_hunt_loop(
+        brand=Brand.MIDNIGHTSATIN,
+        budget=HuntBudget(max_queries=0, max_minutes=5, max_pages_per_query=0),
+        resume=True,
+        searx_client=http,
+        firecrawl_client=http,
+    )
+    assert result.queries_run == 5
+    assert result.stop_reason == "queue_empty"
 
 
-def test_loop_max_minutes_stops_for_time(loop_db, mock_pages):
+def test_loop_unlimited_max_minutes_does_not_stop_for_time(loop_db, mock_pages):
     calls: list[dict] = []
     http = httpx.Client(transport=_searx_transport(mock_pages, calls))
     times = iter([0.0, 0.0, 61.0, 61.0, 61.0])

@@ -294,7 +294,7 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_LLM_BASE_URL` | Spark queue OpenAI-compatible endpoint (`http://spark-queue:8088/v1`) |
 | `CRM_HUNTER_MAX_PAGES_PER_RUN` | Max Firecrawl pages per hunt query (50) |
 | `CRM_HUNTER_SEARCH_RESULT_LIMIT` | Max SearXNG hits per query (50) |
-| `CRM_HUNTER_MAX_QUERIES_DEFAULT` | Hunt-loop query budget (40) |
+| `CRM_HUNTER_MAX_QUERIES_DEFAULT` | Hunt-loop query budget (`0` = unlimited) |
 | `CRM_HUNTER_MAX_MINUTES_DEFAULT` | Hunt-loop wall clock in minutes (`0` = unlimited) |
 | `CRM_HUNTER_COMMUNITY_TERMS_PER_RUN` | Max community feedback queries per loop run (30) |
 | `CRM_HUNTER_PERSON_TERMS_PER_RUN` | Max person-name feedback queries per loop run (20) |

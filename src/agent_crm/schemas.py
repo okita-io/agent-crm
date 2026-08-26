@@ -86,7 +86,11 @@ class HuntLoopRequest(BaseModel):
 
     query: str | None = None
     brand: Brand = Brand.UNASSIGNED
-    max_queries: int = Field(default=40, ge=1, le=200)
+    max_queries: int = Field(
+        default=0,
+        ge=0,
+        description="Query budget; 0 or null means unlimited (drain queue).",
+    )
     max_minutes: int | None = Field(
         default=0,
         ge=0,
@@ -95,6 +99,13 @@ class HuntLoopRequest(BaseModel):
     max_pages_per_query: int | None = Field(default=None, ge=1, le=250)
     resume: bool = True
     summarize_branches: bool = True
+
+    @field_validator("max_queries", mode="before")
+    @classmethod
+    def _coerce_unlimited_max_queries(cls, value: object) -> int:
+        if value is None:
+            return 0
+        return int(value)  # type: ignore[arg-type]
 
     @field_validator("max_minutes", mode="before")
     @classmethod
