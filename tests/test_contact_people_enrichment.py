@@ -14,6 +14,8 @@ from agent_crm.contact_people_enrichment import (
     enrich_contact_person,
     is_login_walled_url,
     parse_linkedin_serp_title,
+    PeopleEnrichmentFields,
+    PeopleEnrichmentResult,
     SerpEvidence,
 )
 from agent_crm.contact_quality import is_role_inbox_email
@@ -24,11 +26,8 @@ from agent_crm.contact_store import (
     upsert_contact_profile,
     _persist_enrichment,
 )
-from agent_crm.contact_people_enrichment import PeopleEnrichmentFields, PeopleEnrichmentResult
-from agent_crm.db import init_db, reset_engine, session_scope
+from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand
-from agent_crm.models import ContactProfile
-from sqlalchemy import select
 
 
 @pytest.fixture()
