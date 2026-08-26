@@ -41,7 +41,7 @@ PARAM_PALETTES: list[dict | None] = [
 
 @dataclass
 class HuntBudget:
-    max_queries: int = 40
+    max_queries: int = 0
     max_minutes: int | None = 0
     max_pages_per_query: int = 50
 
@@ -66,6 +66,13 @@ def _wall_clock_deadline(max_minutes: int | None) -> float | None:
     if max_minutes is None or max_minutes <= 0:
         return None
     return time.monotonic() + max_minutes * 60
+
+
+def _query_budget_exhausted(queries_run: int, max_queries: int | None) -> bool:
+    """Return True when the query budget is exhausted; 0/None means unlimited."""
+    if max_queries is None or max_queries <= 0:
+        return False
+    return queries_run >= max_queries
 
 
 def run_hunt_loop(
@@ -112,7 +119,7 @@ def run_hunt_loop(
     contact_budget = ContactExtractionBudget.from_settings()
     feedback_budget = HuntFeedbackBudget.from_settings()
 
-    while result.queries_run < budget.max_queries and (
+    while not _query_budget_exhausted(result.queries_run, budget.max_queries) and (
         deadline is None or time.monotonic() < deadline
     ):
         pending = store.next_pending_query(run_id=use_run_id, brand=brand_filter)
@@ -130,9 +137,14 @@ def run_hunt_loop(
         palette_index += 1
 
         store.mark_query_running(pending.id)
+        query_progress = (
+            f"query {result.queries_run + 1}/{budget.max_queries}"
+            if budget.max_queries > 0
+            else f"query {result.queries_run + 1}"
+        )
         store.set_heartbeat(
             AgentStatus.THINKING,
-            f"query {result.queries_run + 1}/{budget.max_queries}: {pending.query}",
+            f"{query_progress}: {pending.query}",
             resource=settings.searxng_url,
         )
 
@@ -166,11 +178,15 @@ def run_hunt_loop(
         if deadline is not None and time.monotonic() >= deadline:
             result.stop_reason = "max_minutes"
             break
-        if result.queries_run >= budget.max_queries:
+        if _query_budget_exhausted(result.queries_run, budget.max_queries):
             result.stop_reason = "max_queries"
             break
 
-    if result.stop_reason == "queue_empty" and result.queries_run >= budget.max_queries:
+    if (
+        result.stop_reason == "queue_empty"
+        and budget.max_queries > 0
+        and _query_budget_exhausted(result.queries_run, budget.max_queries)
+    ):
         result.stop_reason = "max_queries"
 
     store.set_heartbeat(

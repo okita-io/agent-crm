@@ -269,7 +269,12 @@ def main(argv: list[str] | None = None) -> int:
         choices=["midnightsatin", "celestial-nexus", "heybuddy"],
         help="Brand slug; uses seed pack when no query",
     )
-    hunt_loop.add_argument("--max-queries", type=int, default=40)
+    hunt_loop.add_argument(
+        "--max-queries",
+        type=int,
+        default=0,
+        help="Query budget (0 = unlimited)",
+    )
     hunt_loop.add_argument(
         "--max-minutes",
         type=int,
