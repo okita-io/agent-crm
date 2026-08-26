@@ -36,6 +36,7 @@ from .enums import (
     ActivityType,
     AgentStatus,
     Brand,
+    ContactAudience,
     ContactKind,
     ContactVerificationStatus,
     HuntQueryStatus,
@@ -120,6 +121,9 @@ class Lead(Base, TimestampMixin):
     # Routing (Brand Router)
     brand: Mapped[Brand] = mapped_column(
         SAEnum(Brand), default=Brand.UNASSIGNED, nullable=False
+    )
+    audience: Mapped[ContactAudience | None] = mapped_column(
+        str_enum(ContactAudience), nullable=True, index=True
     )
 
     # Enrichment (Research)
@@ -222,7 +226,7 @@ class AgentHeartbeat(Base):
 
 
 class HuntQuery(Base, TimestampMixin):
-    """FIFO queue of search terms for the outbound hunter loop."""
+    """Priority queue of search terms for the outbound hunter loop."""
 
     __tablename__ = "hunt_queries"
 
@@ -231,6 +235,7 @@ class HuntQuery(Base, TimestampMixin):
     params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     origin: Mapped[str] = mapped_column(String(128), nullable=False, default="seed")
     brand: Mapped[Brand] = mapped_column(existing_brand_enum(), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=30, nullable=False, index=True)
     status: Mapped[HuntQueryStatus] = mapped_column(
         str_enum(HuntQueryStatus),
         default=HuntQueryStatus.PENDING,
@@ -310,6 +315,9 @@ class ContactProfile(Base, TimestampMixin):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     brand: Mapped[Brand] = mapped_column(
         existing_brand_enum(), nullable=False, index=True
+    )
+    audience: Mapped[ContactAudience | None] = mapped_column(
+        str_enum(ContactAudience), nullable=True, index=True
     )
     socials: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)

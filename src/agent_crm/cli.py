@@ -43,7 +43,7 @@ def _cmd_serve(_args: argparse.Namespace) -> int:
 
 def _cmd_seed(_args: argparse.Namespace) -> int:
     from .db import init_db
-    from .enums import Brand, LeadSource, Priority, Stage
+    from .enums import Brand, ContactAudience, LeadSource, Priority, Stage
     from .pipeline import PipelineManager
     from .schemas import EnrichmentInput, LeadCreate, ScoreInput
     from .tooling import CRMToolkit
@@ -102,7 +102,7 @@ def _cmd_report(_args: argparse.Namespace) -> int:
 
 def _cmd_hunt(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .enums import Brand
+    from .enums import Brand, ContactAudience
     from .outbound_hunter import run_hunt
     from .schemas import HuntRequest
 
@@ -123,7 +123,7 @@ def _cmd_hunt(args: argparse.Namespace) -> int:
 
 def _cmd_hunt_loop(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .enums import Brand
+    from .enums import Brand, ContactAudience
     from .hunt_loop import HuntBudget, run_hunt_loop
 
     init_db()
@@ -159,7 +159,7 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
 
 def _cmd_research(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .enums import Brand, ResearchFindingKind
+    from .enums import Brand, ContactAudience, ResearchFindingKind
     from .research import run_research
     from .schemas import ResearchRequest
 
@@ -185,7 +185,7 @@ def _cmd_research(args: argparse.Namespace) -> int:
 def _cmd_contacts(args: argparse.Namespace) -> int:
     from .contact_store import backfill_contact_quality, list_contact_profiles
     from .db import init_db
-    from .enums import Brand
+    from .enums import Brand, ContactAudience
 
     init_db()
     if getattr(args, "contacts_command", None) == "backfill":
@@ -194,7 +194,8 @@ def _cmd_contacts(args: argparse.Namespace) -> int:
         return 0 if not result.errors else 1
 
     brand = Brand(args.brand) if args.brand else None
-    profiles = list_contact_profiles(brand=brand, email=args.email, limit=args.limit)
+    audience = ContactAudience(args.audience) if args.audience else None
+    profiles = list_contact_profiles(brand=brand, audience=audience, email=args.email, limit=args.limit)
     rows = [profile.model_dump(mode="json") for profile in profiles]
     print(json.dumps(rows, indent=2))
     return 0
@@ -245,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     hunt.add_argument("query", help="Search query (e.g. boutique design studio NYC)")
     hunt.add_argument(
         "--brand",
-        choices=["midnightsatin", "celestial-nexus", "heybuddy"],
+        choices=["midnightsatin", "celestial-nexus", "heybuddy", "tactic-studio"],
         help="Optional brand to route discovered leads",
     )
     hunt.add_argument("--max-pages", type=int, default=50, help="Max pages to scrape")
@@ -267,12 +268,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     hunt.set_defaults(func=_cmd_hunt)
 
-    hunt_loop = sub.add_parser("hunt-loop", help="Bounded branching hunt loop")
+    hunt_loop = sub.add_parser(
+        "hunt-loop",
+        help="Bounded branching hunt loop (no --brand drains all brands by priority)",
+    )
     hunt_loop.add_argument("query", nargs="?", default=None, help="Seed query (optional)")
     hunt_loop.add_argument(
         "--brand",
-        choices=["midnightsatin", "celestial-nexus", "heybuddy"],
-        help="Brand slug; uses seed pack when no query",
+        choices=["midnightsatin", "celestial-nexus", "heybuddy", "tactic-studio"],
+        help="Brand slug; omit for global priority queue across all brands",
     )
     hunt_loop.add_argument(
         "--max-queries",
@@ -306,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     research.add_argument(
         "--brand",
         required=True,
-        choices=["midnightsatin", "celestial-nexus", "heybuddy"],
+        choices=["midnightsatin", "celestial-nexus", "heybuddy", "tactic-studio"],
         help="Brand context for the research run",
     )
     research.add_argument(
@@ -345,8 +349,13 @@ def main(argv: list[str] | None = None) -> int:
     contacts_list = contacts_sub.add_parser("list", help="List contact profiles")
     contacts_list.add_argument(
         "--brand",
-        choices=["midnightsatin", "celestial-nexus", "heybuddy", "unassigned"],
+        choices=["midnightsatin", "celestial-nexus", "heybuddy", "tactic-studio", "unassigned"],
         help="Filter by brand",
+    )
+    contacts_list.add_argument(
+        "--audience",
+        choices=["marketing", "influencer", "user"],
+        help="Filter by outbound audience bucket (tactic.studio)",
     )
     contacts_list.add_argument("--email", help="Filter by exact email")
     contacts_list.add_argument("--limit", type=int, default=500, help="Max profiles to return")

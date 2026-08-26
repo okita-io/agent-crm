@@ -16,7 +16,16 @@ class Brand(str, enum.Enum):
     MIDNIGHTSATIN = "midnightsatin"
     CELESTIAL_NEXUS = "celestial-nexus"
     HEYBUDDY = "heybuddy"
+    TACTIC_STUDIO = "tactic-studio"
     UNASSIGNED = "unassigned"
+
+
+class ContactAudience(str, enum.Enum):
+    """Outbound audience bucket for tactic.studio contacts (null for other brands)."""
+
+    MARKETING = "marketing"
+    INFLUENCER = "influencer"
+    USER = "user"
 
 
 class LeadSource(str, enum.Enum):

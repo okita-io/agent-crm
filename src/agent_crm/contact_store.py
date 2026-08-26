@@ -19,7 +19,7 @@ from .contact_quality import (
 )
 from .contact_social_lookup import lookup_social_profiles
 from .db import session_scope
-from .enums import Brand, LeadSource, LeadStatus
+from .enums import Brand, ContactAudience, LeadSource, LeadStatus
 from .models import ContactProfile, HuntResource, Lead, Opportunity
 from .schemas import ContactBackfillResultOut, ContactProfileOut, ContactQualityCleanupOut
 
@@ -85,6 +85,7 @@ def _upsert_lead_for_contact(
     brand: Brand,
     source_url: str,
     socials: dict | None,
+    audience: ContactAudience | None = None,
 ) -> Lead:
     lead = _find_lead_by_email(session, email)
     payload_fragment = {
@@ -97,6 +98,7 @@ def _upsert_lead_for_contact(
             email=email,
             source=LeadSource.CONTACT,
             brand=brand,
+            audience=audience,
             status=LeadStatus.NEW,
             raw_payload=payload_fragment,
         )
@@ -109,6 +111,8 @@ def _upsert_lead_for_contact(
         lead.name = name
     if brand != Brand.UNASSIGNED and lead.brand == Brand.UNASSIGNED:
         lead.brand = brand
+    if audience is not None and lead.audience is None:
+        lead.audience = audience
 
     raw = dict(lead.raw_payload or {})
     found_on = list(raw.get("found_on") or [])
@@ -127,6 +131,7 @@ def upsert_contact_profile(
     brand: Brand,
     source_url: str,
     socials: dict | None = None,
+    audience: ContactAudience | None = None,
 ) -> ContactProfileOut:
     """Insert or merge a contact profile and link an email-keyed lead."""
     normalized_email = email.strip().lower()
@@ -141,6 +146,7 @@ def upsert_contact_profile(
             brand=brand,
             source_url=source_url,
             socials=socials,
+            audience=audience,
         )
 
         if row is None:
@@ -148,6 +154,7 @@ def upsert_contact_profile(
                 email=normalized_email,
                 name=name,
                 brand=brand,
+                audience=audience,
                 socials=socials,
                 source_urls=[source_url],
                 lead_id=lead.id,
@@ -158,6 +165,8 @@ def upsert_contact_profile(
                 row.name = name
             if brand != Brand.UNASSIGNED and row.brand == Brand.UNASSIGNED:
                 row.brand = brand
+            if audience is not None and row.audience is None:
+                row.audience = audience
             row.socials = merge_socials(row.socials, socials)
             row.source_urls = merge_source_urls(row.source_urls, source_url)
             row.lead_id = lead.id
@@ -169,6 +178,7 @@ def upsert_contact_profile(
 def list_contact_profiles(
     *,
     brand: Brand | None = None,
+    audience: ContactAudience | None = None,
     email: str | None = None,
     limit: int = 500,
 ) -> list[ContactProfileOut]:
@@ -176,6 +186,8 @@ def list_contact_profiles(
         stmt = select(ContactProfile).order_by(ContactProfile.updated_at.desc())
         if brand is not None:
             stmt = stmt.where(ContactProfile.brand == brand)
+        if audience is not None:
+            stmt = stmt.where(ContactProfile.audience == audience)
         if email is not None:
             stmt = stmt.where(ContactProfile.email == email.strip().lower())
         stmt = stmt.limit(limit)
@@ -190,6 +202,7 @@ def process_scraped_page_contacts(
     html: str | None = None,
     searx_client: httpx.Client | None = None,
     budget: ContactExtractionBudget | None = None,
+    audience: ContactAudience | None = None,
 ) -> list[ContactProfileOut]:
     """Extract contacts from a scraped page, upsert profiles, optionally run social lookup."""
     try:
@@ -220,6 +233,7 @@ def process_scraped_page_contacts(
                 brand=brand,
                 source_url=source_url,
                 socials=cleaned_socials,
+                audience=audience,
             )
         except Exception:  # noqa: BLE001
             logger.exception("Failed to upsert contact profile for %s", contact.email)
@@ -248,6 +262,7 @@ def process_scraped_page_contacts(
                         brand=brand,
                         source_url=source_url,
                         socials=cleaned_lookup_socials,
+                        audience=audience,
                     )
 
         profiles.append(profile)

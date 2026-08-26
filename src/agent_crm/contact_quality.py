@@ -69,6 +69,13 @@ COMMUNITY_PLATFORM_DOMAINS: frozenset[str] = frozenset(
         "wordpress.com",
         "blogspot.com",
         "tumblr.com",
+        "lemmy.world",
+        "lemmy.ml",
+        "lemmy.ca",
+        "lemmy.db",
+        "lemmy.nz",
+        "lemmy.today",
+        "lemmy.zip",
     }
 )
 
@@ -97,6 +104,14 @@ CONTACT_CONTEXT_PATH_FRAGMENTS: tuple[str, ...] = (
     "/press",
     "/media-kit",
     "/creators",
+    "/case-study",
+    "/case-studies",
+    "/portfolio",
+    "/work",
+    "/projects",
+    "/webxr",
+    "/webar",
+    "/xr",
 )
 
 # Social share / intent URLs — not real profile pages.
@@ -271,6 +286,8 @@ def is_community_platform(url: str) -> bool:
     host = _source_host(url)
     if not host:
         return False
+    if host.startswith("lemmy.") or ".lemmy." in host:
+        return True
     for platform in COMMUNITY_PLATFORM_DOMAINS:
         if host == platform or host.endswith(f".{platform}"):
             return True

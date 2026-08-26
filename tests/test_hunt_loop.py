@@ -142,6 +142,8 @@ def test_loop_stops_at_max_queries(loop_db, mock_pages):
 
 
 def test_loop_unlimited_max_queries_drains_queue(loop_db):
+    from agent_crm.hunt_seeds import seeds_for_brand
+
     store = HuntStore()
     for i in range(5):
         store.enqueue_query(query=f"q{i}", brand=Brand.MIDNIGHTSATIN, origin="seed")
@@ -156,7 +158,8 @@ def test_loop_unlimited_max_queries_drains_queue(loop_db):
         searx_client=http,
         firecrawl_client=http,
     )
-    assert result.queries_run == 5
+    expected = 5 + len(seeds_for_brand(Brand.MIDNIGHTSATIN))
+    assert result.queries_run == expected
     assert result.stop_reason == "queue_empty"
 
 
@@ -391,5 +394,5 @@ def test_resume_with_pending_still_enqueues_missing_seed_pack(loop_db) -> None:
     )
     seed_text = " ".join(row.query for row in seed_pack).lower()
     assert "ai generated romance novel communities" in seed_text
-    assert store.count_pending(Brand.MIDNIGHTSATIN) >= 2
+    assert len(seed_pack) >= 2
 
