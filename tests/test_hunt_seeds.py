@@ -11,3 +11,8 @@ def test_midnightsatin_seed_pack_includes_ai_generated_and_influencer_terms() ->
     combined = " ".join(seeds).lower()
     assert "ai generated" in combined
     assert "influencer" in combined
+
+
+def test_tactic_studio_seed_pack_non_empty() -> None:
+    seeds = seeds_for_brand(Brand.TACTIC_STUDIO)
+    assert len(seeds) >= 20

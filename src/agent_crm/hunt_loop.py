@@ -14,7 +14,7 @@ import httpx
 
 from .config import Settings, get_settings
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
-from .enums import AgentStatus, Brand, HuntQueryStatus
+from .enums import AgentStatus, Brand, ContactAudience, HuntQueryStatus
 from .firecrawl_client import FirecrawlError, scrape
 from .heartbeat import record_heartbeat
 from .hunt_feedback import (
@@ -22,7 +22,7 @@ from .hunt_feedback import (
     enqueue_community_terms,
     enqueue_person_terms,
 )
-from .hunt_seeds import seeds_for_brand
+from .hunt_seeds import audience_from_origin, seed_query_entries
 from .hunt_store import HuntStore
 from .hunt_utils import extract_heuristic_terms, is_junk_title
 from .llm_client import chat_completions
@@ -102,9 +102,12 @@ def run_hunt_loop(
         store.enqueue_query(query=query, brand=brand, origin="seed", run_id=result.run_id)
 
     if brand != Brand.UNASSIGNED:
-        for seed in seeds_for_brand(brand):
+        for seed_query, seed_origin in seed_query_entries(brand):
             store.enqueue_query(
-                query=seed, brand=brand, origin="seed_pack", run_id=result.run_id
+                query=seed_query,
+                brand=brand,
+                origin=seed_origin,
+                run_id=result.run_id,
             )
     elif not query and pending_existing == 0:
         result.stop_reason = "no_seed"
@@ -147,6 +150,7 @@ def run_hunt_loop(
         )
 
         try:
+            query_audience = audience_from_origin(pending.origin)
             stats = _run_queued_query(
                 pending.query,
                 brand=pending.brand,
@@ -161,6 +165,7 @@ def run_hunt_loop(
                 firecrawl_client=firecrawl_client,
                 contact_budget=contact_budget,
                 feedback_budget=feedback_budget,
+                audience=query_audience,
             )
         except Exception as exc:  # noqa: BLE001
             store.mark_query_failed(pending.id, str(exc))
@@ -210,6 +215,7 @@ def _run_queued_query(
     firecrawl_client: httpx.Client | None,
     contact_budget: ContactExtractionBudget | None = None,
     feedback_budget: HuntFeedbackBudget | None = None,
+    audience: ContactAudience | None = None,
 ) -> dict[str, int]:
     search_kwargs = dict(params)
     results = search(
@@ -230,6 +236,7 @@ def _run_queued_query(
         results,
         run_id=run_id,
         feedback_budget=feedback_budget,
+        audience=audience,
     )
 
     pages_scraped = 0
@@ -268,6 +275,7 @@ def _run_queued_query(
                         brand=brand,
                         run_id=run_id,
                         budget=feedback_budget,
+                        audience=audience,
                     )
                 try:
                     profiles = process_scraped_page_contacts(
@@ -276,6 +284,7 @@ def _run_queued_query(
                         brand=brand,
                         searx_client=searx_client,
                         budget=contact_budget,
+                        audience=audience,
                     )
                     for profile in profiles:
                         person_terms += enqueue_person_terms(
@@ -284,6 +293,7 @@ def _run_queued_query(
                             brand=brand,
                             run_id=run_id,
                             budget=feedback_budget,
+                            audience=audience,
                         )
                 except Exception:  # noqa: BLE001
                     pass
@@ -322,6 +332,7 @@ def _collect_from_results(
     *,
     run_id: str | None = None,
     feedback_budget: HuntFeedbackBudget | None = None,
+    audience: ContactAudience | None = None,
 ) -> tuple[int, int, int]:
     feedback_budget = feedback_budget or HuntFeedbackBudget.from_settings()
     count = 0
@@ -345,6 +356,7 @@ def _collect_from_results(
                     brand=brand,
                     run_id=run_id,
                     budget=feedback_budget,
+                    audience=audience,
                 )
     return count, community_terms, person_terms
 

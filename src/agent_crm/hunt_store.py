@@ -9,6 +9,8 @@ from sqlalchemy import func, select
 
 from agent_crm.db import session_scope
 from agent_crm.enums import AgentStatus, Brand, HuntQueryStatus, HuntResourceKind
+from agent_crm.hunt_priority import hunt_query_priority
+from agent_crm.hunt_seeds import audience_from_origin
 from agent_crm.heartbeat import record_heartbeat
 from agent_crm.hunt_utils import (
     ResourceClassification,
@@ -53,9 +55,12 @@ class HuntStore:
         params: dict | None = None,
         origin: str = "seed",
         run_id: str | None = None,
+        priority: int | None = None,
     ) -> bool:
         """Enqueue a query if not already present. Returns True if enqueued."""
         dedupe_key = make_dedupe_key(query, params)
+        if priority is None:
+            priority = hunt_query_priority(brand, audience_from_origin(origin))
         with session_scope() as session:
             existing = session.scalar(
                 select(HuntQuery).where(HuntQuery.dedupe_key == dedupe_key)
@@ -68,6 +73,7 @@ class HuntStore:
                     params=params,
                     origin=origin,
                     brand=brand,
+                    priority=priority,
                     status=HuntQueryStatus.PENDING,
                     dedupe_key=dedupe_key,
                     run_id=run_id,
@@ -82,7 +88,7 @@ class HuntStore:
             stmt = (
                 select(HuntQuery)
                 .where(HuntQuery.status == HuntQueryStatus.PENDING)
-                .order_by(HuntQuery.id.asc())
+                .order_by(HuntQuery.priority.desc(), HuntQuery.id.asc())
             )
             if run_id is not None:
                 stmt = stmt.where(HuntQuery.run_id == run_id)
@@ -237,6 +243,8 @@ class HuntStore:
                 .where(
                     HuntQuery.origin.startswith("community:")
                     | HuntQuery.origin.startswith("person:")
+                    | HuntQuery.origin.contains(":community:")
+                    | HuntQuery.origin.contains(":person:")
                 )
                 .order_by(HuntQuery.id.desc())
                 .limit(limit)

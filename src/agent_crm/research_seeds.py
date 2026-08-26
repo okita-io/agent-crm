@@ -39,6 +39,18 @@ COMPETITOR_QUERIES: dict[Brand, list[str]] = {
         "booktok ai generated stories",
         "influencers promoting AI novels",
     ],
+    Brand.TACTIC_STUDIO: [
+        "WebAR XR experience studio portfolio",
+        "industrial AR training vendor enterprise",
+        "8th Wall migration WebAR agency alternative",
+        "immersive brand activation AR studio",
+        "enterprise AR product visualization studio",
+        "Snap AR lens creative production studio",
+        "WebXR agency retail CPG campaigns",
+        "augmented reality industrial training company",
+        "mixed reality studio commercial activations",
+        "AR glasses enterprise deployment vendor",
+    ],
 }
 
 NONPROFIT_QUERIES: dict[Brand, list[str]] = {
@@ -64,7 +76,7 @@ NONPROFIT_QUERIES: dict[Brand, list[str]] = {
 def default_kind_for_brand(brand: Brand) -> ResearchFindingKind:
     if brand == Brand.HEYBUDDY:
         return ResearchFindingKind.NONPROFIT
-    if brand in {Brand.CELESTIAL_NEXUS, Brand.MIDNIGHTSATIN}:
+    if brand in {Brand.CELESTIAL_NEXUS, Brand.MIDNIGHTSATIN, Brand.TACTIC_STUDIO}:
         return ResearchFindingKind.COMPETITOR
     return ResearchFindingKind.OTHER
 
@@ -94,5 +106,6 @@ BRAND_DISPLAY: dict[Brand, str] = {
     Brand.CELESTIAL_NEXUS: "Celestial-Nexus",
     Brand.MIDNIGHTSATIN: "MidnightSatin",
     Brand.HEYBUDDY: "HeyBuddy",
+    Brand.TACTIC_STUDIO: "tactic.studio",
     Brand.UNASSIGNED: "unassigned",
 }

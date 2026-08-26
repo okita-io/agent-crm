@@ -9,7 +9,8 @@ from urllib.parse import unquote
 
 from .config import get_settings
 from .contact_extractor import _looks_like_name
-from .enums import Brand, HuntResourceKind
+from .enums import Brand, ContactAudience, HuntResourceKind
+from .hunt_seeds import origin_with_audience
 from .hunt_store import HuntStore
 from .hunt_utils import ResourceClassification, normalize_query
 
@@ -187,6 +188,7 @@ def enqueue_community_terms(
     brand: Brand,
     run_id: str | None,
     budget: HuntFeedbackBudget,
+    audience: ContactAudience | None = None,
 ) -> int:
     """Enqueue community-derived queries when budget allows."""
     if classification.kind not in {
@@ -196,7 +198,10 @@ def enqueue_community_terms(
         return 0
 
     slug = classification.community_slug or classification.platform or "community"
-    origin = f"community:{classification.platform or 'web'}/{_origin_slug(slug)}"
+    origin = origin_with_audience(
+        f"community:{classification.platform or 'web'}/{_origin_slug(slug)}",
+        audience,
+    )
     enqueued = 0
     for term in community_search_terms(classification, title=title):
         if budget.community_terms_remaining <= 0:
@@ -220,12 +225,13 @@ def enqueue_person_terms(
     brand: Brand,
     run_id: str | None,
     budget: HuntFeedbackBudget,
+    audience: ContactAudience | None = None,
 ) -> int:
     """Enqueue person-derived queries for a validated contact name."""
     if not is_valid_hunt_person_name(name):
         return 0
 
-    origin = f"person:{_origin_slug(name)}"
+    origin = origin_with_audience(f"person:{_origin_slug(name)}", audience)
     enqueued = 0
     for term in person_search_terms(name):
         if budget.person_terms_remaining <= 0:

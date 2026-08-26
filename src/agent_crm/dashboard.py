@@ -15,6 +15,7 @@ from agent_crm.db import database_kind, init_db
 from agent_crm.enums import (
     AgentStatus,
     Brand,
+    ContactAudience,
     ContactVerificationStatus,
     HuntResourceKind,
     ResearchFindingKind,
@@ -358,7 +359,7 @@ def _render_research_tab() -> None:
 
     brand_filter = st.selectbox(
         "Brand filter",
-        options=["all", "celestial-nexus", "midnightsatin", "heybuddy"],
+        options=["all", "celestial-nexus", "midnightsatin", "heybuddy", "tactic-studio"],
         index=0,
     )
     kind_filter = st.selectbox(
@@ -411,8 +412,18 @@ def _render_contacts_tab() -> None:
         options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
         key="contacts_brand",
     )
+    audience_filter = st.selectbox(
+        "Audience filter",
+        options=["all", "marketing", "influencer", "user"],
+        key="contacts_audience",
+    )
     brand = None if brand_filter == "all" else Brand(brand_filter)
-    profiles = list_contact_profiles(brand=brand, limit=500)
+    audience = (
+        None
+        if audience_filter == "all"
+        else ContactAudience(audience_filter)
+    )
+    profiles = list_contact_profiles(brand=brand, audience=audience, limit=500)
 
     if not profiles:
         st.info("No contact profiles yet. Run hunter or research scrapes to extract emails.")
@@ -426,6 +437,7 @@ def _render_contacts_tab() -> None:
                     "name": row.name,
                     "email": row.email,
                     "brand": row.brand.value,
+                    "audience": row.audience.value if row.audience else None,
                     "socials": json.dumps(row.socials) if row.socials else None,
                     "source pages": ", ".join(row.source_urls or []),
                     "lead_id": row.lead_id,

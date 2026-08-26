@@ -22,7 +22,7 @@ from . import __version__
 from .config import get_settings
 from .contact_store import backfill_contact_quality, list_contact_profiles
 from .db import database_kind, init_db
-from .enums import Brand, ResearchFindingKind, Stage
+from .enums import Brand, ContactAudience, ResearchFindingKind, Stage
 from .errors import InvalidStageTransition, NotFoundError
 from .heartbeat import list_heartbeats, record_heartbeat
 from .hunt_loop import HuntBudget, run_hunt_loop
@@ -183,11 +183,12 @@ def research_findings(
 @app.get("/contacts", response_model=list[ContactProfileOut], tags=["contacts"])
 def list_contacts(
     brand: Brand | None = None,
+    audience: ContactAudience | None = None,
     email: str | None = None,
     limit: int = 500,
 ) -> list[ContactProfileOut]:
     """List contact profiles keyed by email."""
-    return list_contact_profiles(brand=brand, email=email, limit=limit)
+    return list_contact_profiles(brand=brand, audience=audience, email=email, limit=limit)
 
 
 @app.post("/contacts/backfill", response_model=ContactBackfillResultOut, tags=["contacts"])

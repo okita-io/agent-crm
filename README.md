@@ -2,7 +2,7 @@
 
 A local, agent-driven CRM for the ranch creative/tech brands **MidnightSatin**, **Celestial-Nexus**, and **HeyBuddy**. It captures leads, runs outbound research and hunting, extracts contact profiles from scraped pages, and tracks pipeline state — all on your own hardware.
 
-**There is no outreach or sending in this stack.** The lead verifier checks DNS, MX, and HTTP only. MX means the domain can receive mail, not that a specific local-part inbox exists.
+**There is no outreach or sending in this stack.** The lead verifier checks DNS, MX, and HTTP only. tactic.studio outbound (direct mail, DMs) remains gated by Pete (`pete@tactic.studio`) and naming-rights — this repo collects and categorizes only.
 
 ---
 
@@ -65,6 +65,9 @@ Set `CRM_DATABASE_URL` in `.env`. On Postgres, do **not** rely on `create_all`; 
 | `midnightsatin` | MidnightSatin routing and hunts |
 | `celestial-nexus` | Celestial-Nexus routing and hunts |
 | `heybuddy` | HeyBuddy routing; research defaults to nonprofit partnership hunts |
+| `tactic-studio` | tactic.studio AR/XR/VR vendor BD (collection only; Pete + naming-rights gate outbound) |
+
+tactic.studio contacts are tagged with an **audience** bucket on `contact_profiles` and matching `leads`: `marketing` (brand/industrial bid list), `influencer` (XR creators), `user` (community members who should see tactic work). Other brands leave audience unset.
 
 ---
 
@@ -86,19 +89,30 @@ Each search hit can be scraped to markdown via the host Firecrawl API. Hunter de
 
 **Hunt loop** (`hunt_loop`): bounded branching collection of **sites** into `hunt_resources` (not people). Features:
 
-- FIFO query queue (`hunt_queries`) with dedupe
+- **Priority queue** (`hunt_queries.priority`, higher number runs first) with composite index `(status, priority, id)`. tactic.studio marketing/influencer/user seeds dequeue ahead of older MidnightSatin rows. Unlisted origins (generic seeds, branch terms) use priority **30** and still run, but never block tactic marketing.
 - SearXNG param rotation (general, social media, news, IT, …)
 - LLM branch-term extraction to enqueue new queries
-- **Community/person feedback**: newly catalogued communities and extracted contact names enqueue deterministic follow-up queries (`origin` prefix `community:` / `person:`)
-- Defaults: **40 queries**, **unlimited wall clock**, **50 pages per query** (still capped by community/person term limits per run)
-- Per-brand **seed packs** include AI-generated-content readers and promoters (communities, BookTok/TikTok creators, influencers) in addition to generic discovery terms; on resume, missing seed-pack queries are merged into the queue without clearing pending work
+- **Community/person feedback**: newly catalogued communities and extracted contact names enqueue deterministic follow-up queries (`origin` prefix `marketing:` / `influencer:` / `user:` plus `community:` / `person:` when applicable)
+- Defaults: **unlimited queries**, **unlimited wall clock**, **50 pages per query** (still capped by community/person term limits per run)
+- Per-brand **seed packs** include AI-generated-content readers and promoters (communities, BookTok/TikTok creators, influencers) in addition to generic discovery terms; tactic.studio packs are split by audience intent
 
 | Entry | Command / API |
 |-------|---------------|
 | Single hunt | `agent-crm hunt "<query>"` · `POST /hunt` |
-| Branching loop | `agent-crm hunt-loop [--brand …] [query]` · `POST /hunt/loop` |
+| Global loop | `agent-crm hunt-loop` (no `--brand`) · `POST /hunt/loop` with `brand=unassigned` |
+| Brand loop | `agent-crm hunt-loop --brand tactic-studio` · drains that brand by priority |
 | List sites | `GET /hunt/resources` |
 | Queue status | `GET /hunt/queue` |
+
+**Ranch ops:** run **one** global `agent-crm hunt-loop` (no `--brand`) so tactic.studio marketing seeds jump ahead of pending MidnightSatin work. Stop any MidnightSatin-only loop that would keep draining MS rows in FIFO order. After merge, seed tactic with:
+
+```bash
+docker compose run -d --rm --no-deps api agent-crm hunt-loop --brand tactic-studio
+```
+
+then switch to the global loop for ongoing collection. Spark LLM still routes through spark-queue (4 concurrent cap).
+
+**Dequeue priority (highest first):** tactic `marketing` → tactic `influencer` → tactic `user` → MidnightSatin influencer/user → Celestial-Nexus influencer/user → HeyBuddy influencer/user → unlisted (30).
 
 Hunt-loop prompt explicitly forbids inventing emails or person names. Sites land in `hunt_resources`; people are handled by contact extraction (below).
 
@@ -110,7 +124,7 @@ Competitor and nonprofit prospecting with the same SearXNG + Firecrawl + Spark s
 
 | Brand | Default kind | Focus |
 |-------|--------------|-------|
-| `celestial-nexus`, `midnightsatin` | `competitor` | Competitor site scans |
+| `celestial-nexus`, `midnightsatin`, `tactic-studio` | `competitor` | Competitor / landscape scans (XR studios for tactic.studio) |
 | `heybuddy` | `nonprofit` | 501(c)(3) partnership / grant prospects (HeyBuddy itself is **not** a nonprofit) |
 
 Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`. Seed packs include AI-generated-content audiences and promoters alongside competitor/nonprofit discovery terms.
@@ -148,7 +162,7 @@ Skipped when the scrape already attached socials to that contact.
 
 | Entry | Command / API |
 |-------|---------------|
-| List profiles | `agent-crm contacts list [--brand …] [--email …]` · `GET /contacts` |
+| List profiles | `agent-crm contacts list [--brand …] [--audience marketing\|influencer\|user] [--email …]` · `GET /contacts?audience=…` |
 | Backfill filters | `agent-crm contacts backfill [--limit 500] [--dry-run]` · `POST /contacts/backfill` |
 
 ### 6. Lead verifier

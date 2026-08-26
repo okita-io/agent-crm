@@ -15,6 +15,7 @@ from .enums import (
     ActivityType,
     AgentStatus,
     Brand,
+    ContactAudience,
     ContactKind,
     ContactVerificationStatus,
     HuntResourceKind,
@@ -278,6 +279,7 @@ class LeadOut(ORMModel):
     score: int | None
     priority: Priority | None
     brand: Brand
+    audience: ContactAudience | None = None
     enrichment_summary: str | None
     status: LeadStatus
     account_id: int | None
@@ -326,6 +328,7 @@ class ContactProfileOut(ORMModel):
     email: str
     name: str | None
     brand: Brand
+    audience: ContactAudience | None
     socials: dict | None
     source_urls: list[str] | None
     lead_id: int | None
