@@ -12,9 +12,11 @@ from .config import get_settings
 from .contact_extractor import ExtractedContact, extract_contacts
 from .contact_quality import (
     ContactBackfillResult,
+    EmailQualityFilter,
     clean_contact_data,
     filter_socials,
     is_relevant_contact,
+    profile_matches_quality_filter,
     scrub_notes_value,
 )
 from .contact_social_lookup import lookup_social_profiles
@@ -28,18 +30,31 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ContactExtractionBudget:
-    """Per-run cap on how many profiles get SearXNG social lookup."""
+    """Per-run cap on social lookup and Spark obfuscation decode."""
 
     social_lookups_remaining: int
+    spark_decode_remaining: int = 0
+    spark_decode_per_page: int = 5
 
     @classmethod
     def from_settings(cls) -> ContactExtractionBudget:
-        return cls(social_lookups_remaining=get_settings().contact_social_lookups_per_run)
+        settings = get_settings()
+        return cls(
+            social_lookups_remaining=settings.contact_social_lookups_per_run,
+            spark_decode_remaining=settings.contact_spark_decode_per_run,
+            spark_decode_per_page=settings.contact_spark_decode_per_page,
+        )
 
     def consume_profile_lookup(self) -> bool:
         if self.social_lookups_remaining <= 0:
             return False
         self.social_lookups_remaining -= 1
+        return True
+
+    def consume_spark_decode(self) -> bool:
+        if self.spark_decode_remaining <= 0:
+            return False
+        self.spark_decode_remaining -= 1
         return True
 
 
@@ -191,22 +206,85 @@ def _apply_contact_profile_filters(
     return stmt
 
 
-def count_contact_profiles(
+def _load_profiles_for_quality_filter(
     *,
     brand: Brand | None = None,
     audience: ContactAudience | None = None,
     email: str | None = None,
-) -> int:
-    """Count contact profiles matching optional brand/audience/email filters."""
+) -> list[ContactProfile]:
     with session_scope() as session:
-        stmt = select(func.count()).select_from(ContactProfile)
+        stmt = select(ContactProfile).order_by(ContactProfile.updated_at.desc())
         stmt = _apply_contact_profile_filters(
             stmt,
             brand=brand,
             audience=audience,
             email=email,
         )
-        return int(session.scalar(stmt) or 0)
+        return list(session.scalars(stmt))
+
+
+def _filter_profile_rows(
+    rows: list[ContactProfile],
+    *,
+    quality: EmailQualityFilter = "all",
+) -> list[ContactProfile]:
+    if quality == "all":
+        return rows
+    return [
+        row
+        for row in rows
+        if profile_matches_quality_filter(
+            row.email,
+            name=row.name,
+            quality=quality,
+        )
+    ]
+
+
+def count_contact_profiles_by_quality(
+    *,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+) -> dict[str, int]:
+    """Count person, role, and total profiles for optional brand/audience filters."""
+    rows = _load_profiles_for_quality_filter(brand=brand, audience=audience)
+    person = sum(
+        1
+        for row in rows
+        if profile_matches_quality_filter(row.email, name=row.name, quality="person")
+    )
+    role = sum(
+        1
+        for row in rows
+        if profile_matches_quality_filter(row.email, name=row.name, quality="role")
+    )
+    return {"person": person, "role": role, "total": len(rows)}
+
+
+def count_contact_profiles(
+    *,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+    email: str | None = None,
+    quality: EmailQualityFilter = "all",
+) -> int:
+    """Count contact profiles matching optional brand/audience/email/quality filters."""
+    if quality == "all" and email is not None:
+        with session_scope() as session:
+            stmt = select(func.count()).select_from(ContactProfile)
+            stmt = _apply_contact_profile_filters(
+                stmt,
+                brand=brand,
+                audience=audience,
+                email=email,
+            )
+            return int(session.scalar(stmt) or 0)
+    rows = _load_profiles_for_quality_filter(
+        brand=brand,
+        audience=audience,
+        email=email,
+    )
+    return len(_filter_profile_rows(rows, quality=quality))
 
 
 def count_contact_profiles_by_brand(
@@ -228,8 +306,11 @@ def count_contact_profiles_by_brand(
         ]
 
 
-def count_contact_emails_by_brand_audience() -> list[dict]:
-    """Count contact profiles with non-empty email, grouped by brand and audience."""
+def count_contact_emails_by_brand_audience(
+    *,
+    quality: EmailQualityFilter = "all",
+) -> list[dict]:
+    """Count contact profiles grouped by brand and audience."""
     with session_scope() as session:
         stmt = (
             select(
@@ -242,14 +323,31 @@ def count_contact_emails_by_brand_audience() -> list[dict]:
             .group_by(ContactProfile.brand, ContactProfile.audience)
             .order_by(ContactProfile.brand.asc(), ContactProfile.audience.asc())
         )
-        return [
-            {
-                "brand": brand.value,
-                "audience": audience.value if audience else None,
-                "count": count,
-            }
-            for brand, audience, count in session.execute(stmt)
-        ]
+        if quality == "all":
+            return [
+                {
+                    "brand": brand.value,
+                    "audience": audience.value if audience else None,
+                    "count": count,
+                }
+                for brand, audience, count in session.execute(stmt)
+            ]
+
+    rows = _load_profiles_for_quality_filter()
+    tallies: dict[tuple[str, str | None], int] = {}
+    for row in rows:
+        if not profile_matches_quality_filter(
+            row.email,
+            name=row.name,
+            quality=quality,
+        ):
+            continue
+        key = (row.brand.value, row.audience.value if row.audience else None)
+        tallies[key] = tallies.get(key, 0) + 1
+    return [
+        {"brand": brand, "audience": audience, "count": count}
+        for (brand, audience), count in sorted(tallies.items())
+    ]
 
 
 def list_contact_profiles(
@@ -257,19 +355,18 @@ def list_contact_profiles(
     brand: Brand | None = None,
     audience: ContactAudience | None = None,
     email: str | None = None,
+    quality: EmailQualityFilter = "all",
     offset: int = 0,
     limit: int = 500,
 ) -> list[ContactProfileOut]:
-    with session_scope() as session:
-        stmt = select(ContactProfile).order_by(ContactProfile.updated_at.desc())
-        stmt = _apply_contact_profile_filters(
-            stmt,
-            brand=brand,
-            audience=audience,
-            email=email,
-        )
-        stmt = stmt.offset(max(offset, 0)).limit(limit)
-        return [ContactProfileOut.model_validate(row) for row in session.scalars(stmt)]
+    rows = _load_profiles_for_quality_filter(
+        brand=brand,
+        audience=audience,
+        email=email,
+    )
+    filtered = _filter_profile_rows(rows, quality=quality)
+    page = filtered[max(offset, 0) : max(offset, 0) + limit]
+    return [ContactProfileOut.model_validate(row) for row in page]
 
 
 def process_scraped_page_contacts(
@@ -284,7 +381,7 @@ def process_scraped_page_contacts(
 ) -> list[ContactProfileOut]:
     """Extract contacts from a scraped page, upsert profiles, optionally run social lookup."""
     try:
-        extracted = extract_contacts(markdown=markdown, html=html)
+        extracted = extract_contacts(markdown=markdown, html=html, budget=budget)
     except Exception:  # noqa: BLE001
         logger.exception("Contact extraction failed for %s", source_url)
         return []

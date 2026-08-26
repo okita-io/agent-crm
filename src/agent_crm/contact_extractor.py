@@ -2,11 +2,24 @@
 
 from __future__ import annotations
 
+import html
+import json
+import logging
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
-from .contact_quality import filter_socials, is_low_quality_social_url
+from .contact_quality import (
+    filter_socials,
+    is_low_quality_social_url,
+    is_role_inbox_email,
+)
+
+if TYPE_CHECKING:
+    from .contact_store import ContactExtractionBudget
+
+logger = logging.getLogger(__name__)
 
 EMAIL_RE = re.compile(
     r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",
@@ -96,6 +109,57 @@ GENERIC_NAME_WORDS = frozenset(
     }
 )
 
+_AT_TOKEN_RE = re.compile(
+    r"(?:\[at\]|\(at\)|\bat\b|&#64;|%40|@)",
+    re.IGNORECASE,
+)
+_DOT_TOKEN_RE = re.compile(
+    r"(?:\[dot\]|\(dot\)|\bdot\b|&#46;|%2e)",
+    re.IGNORECASE,
+)
+
+# first last dot company dot com -> first.last@company.com
+_SPACE_NAME_DOT_DOMAIN_RE = re.compile(
+    r"(?P<local>(?:[A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,4}))"
+    r"\s+dot\s+"
+    r"(?P<domain>(?:[A-Za-z][A-Za-z0-9\-]*(?:\s+dot\s+[A-Za-z][A-Za-z0-9\-]*)+))",
+    re.IGNORECASE,
+)
+
+# jane doe at acme.com -> jane.doe@acme.com
+_SPACE_NAME_AT_DOMAIN_RE = re.compile(
+    r"(?P<local>(?:[A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){1,4}))"
+    r"\s+at\s+"
+    r"(?P<domain>[A-Za-z0-9][A-Za-z0-9.\-]*\.[A-Za-z]{2,})",
+    re.IGNORECASE,
+)
+
+_OBFUSCATION_CANDIDATE_RE = re.compile(
+    r"(?:"
+    r"\b(?:at|dot)\b|"
+    r"\[at\]|\[dot\]|\(at\)|\(dot\)|"
+    r"&#64;|&#46;|%40|%2e|"
+    r"\bemail\b|\breach\b|\bcontact\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_OBFUSCATION_SPAN_RE = re.compile(
+    r"(?:"
+    r"[A-Za-z0-9][A-Za-z0-9'\-]*(?:\s+[A-Za-z0-9][A-Za-z0-9'\-]*){0,6}\s+"
+    r"(?:at|\[at\]|\(at\)|&#64;|%40|@)\s+"
+    r"[A-Za-z0-9][A-Za-z0-9.\-]*(?:\s+(?:dot|\[dot\]|\(dot\)|&#46;|%2e)\s+[A-Za-z0-9][A-Za-z0-9.\-]*)+"
+    r"|"
+    r"[A-Za-z0-9._%+\-]+\s*(?:@|at)\s*[A-Za-z0-9][A-Za-z0-9.\-]*(?:\s+dot\s+[A-Za-z0-9][A-Za-z0-9.\-]*)+"
+    r"|"
+    r"[A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){1,4}\s+dot\s+"
+    r"[A-Za-z][A-Za-z0-9\-]*(?:\s+dot\s+[A-Za-z][A-Za-z0-9\-]*)+"
+    r")",
+    re.IGNORECASE,
+)
+
+SPARK_DECODE_ACTOR = "contact-extractor"
+
 
 @dataclass
 class ExtractedContact:
@@ -104,6 +168,7 @@ class ExtractedContact:
     email: str
     name: str | None = None
     socials: dict[str, str | list[str]] = field(default_factory=dict)
+    decoded_from_obfuscation: bool = False
 
 
 def normalize_email(email: str) -> str:
@@ -129,6 +194,198 @@ def is_skipped_email(email: str) -> bool:
     if domain.endswith(".example") or domain.endswith(".invalid"):
         return True
     return False
+
+
+def _normalize_obfuscation_entities(text: str) -> str:
+    decoded = html.unescape(text)
+    return unquote(decoded)
+
+
+def _spaces_to_dots(value: str) -> str:
+    return ".".join(part for part in value.strip().split() if part)
+
+
+def _local_from_spaced_name(value: str) -> str:
+    return _spaces_to_dots(value.strip())
+
+
+def _domain_from_spaced_dots(value: str) -> str:
+    parts = [part.strip() for part in re.split(r"\s+dot\s+", value, flags=re.IGNORECASE) if part.strip()]
+    return ".".join(parts)
+
+
+def _replace_at_dot_tokens(text: str) -> str:
+    text = re.sub(
+        r"\s*(?:\[at\]|\(at\)|\bat\b|&#64;|%40|@)\s*",
+        "@",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\s*(?:\[dot\]|\(dot\)|\bdot\b|&#46;|%2e)\s*",
+        ".",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text
+
+
+def decode_obfuscated_email_deterministic(text: str) -> list[tuple[str, str | None]]:
+    """Decode common anti-scraper email obfuscations without Spark."""
+    if not text or not text.strip():
+        return []
+
+    normalized = _normalize_obfuscation_entities(text)
+    found: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+
+    def add_email(raw_email: str, name: str | None = None) -> None:
+        email = normalize_email(raw_email)
+        if is_skipped_email(email) or email in seen:
+            return
+        seen.add(email)
+        cleaned_name = _clean_name(name) if name else None
+        found.append((email, cleaned_name))
+
+    for match in _SPACE_NAME_AT_DOMAIN_RE.finditer(normalized):
+        local = _local_from_spaced_name(match.group("local"))
+        domain = match.group("domain").strip().lower()
+        add_email(f"{local}@{domain}", match.group("local"))
+
+    for match in _SPACE_NAME_DOT_DOMAIN_RE.finditer(normalized):
+        local = _local_from_spaced_name(match.group("local"))
+        domain = _domain_from_spaced_dots(match.group("domain"))
+        add_email(f"{local}@{domain}", match.group("local"))
+
+    tokenized = _replace_at_dot_tokens(normalized)
+    for match in EMAIL_RE.finditer(tokenized):
+        prefix = tokenized[max(0, match.start() - 40) : match.start()]
+        if re.search(r"[A-Za-z]\s+$", prefix):
+            continue
+        add_email(match.group(0))
+
+    return found
+
+
+def _looks_like_obfuscated_candidate(text: str) -> bool:
+    if not text or not _OBFUSCATION_CANDIDATE_RE.search(text):
+        return False
+    if EMAIL_RE.search(text):
+        return False
+    return bool(_OBFUSCATION_SPAN_RE.search(text))
+
+
+def _collect_obfuscation_spans(text: str, *, max_spans: int = 6) -> list[str]:
+    spans: list[str] = []
+    seen: set[str] = set()
+    for match in _OBFUSCATION_SPAN_RE.finditer(text):
+        span = match.group(0).strip()
+        key = span.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        spans.append(span[:400])
+        if len(spans) >= max_spans:
+            break
+    if spans:
+        return spans
+    if _looks_like_obfuscated_candidate(text):
+        for line in text.splitlines():
+            if _looks_like_obfuscated_candidate(line):
+                snippet = line.strip()[:400]
+                if snippet:
+                    spans.append(snippet)
+                if len(spans) >= max_spans:
+                    break
+    return spans
+
+
+def _parse_spark_email_json(content: str) -> list[dict[str, str | None]]:
+    match = re.search(r"\{.*\}", content, re.DOTALL)
+    if not match:
+        return []
+    try:
+        payload = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return []
+    emails = payload.get("emails")
+    if not isinstance(emails, list):
+        return []
+    parsed: list[dict[str, str | None]] = []
+    for item in emails:
+        if isinstance(item, str):
+            parsed.append({"email": item, "name": None})
+        elif isinstance(item, dict) and isinstance(item.get("email"), str):
+            name = item.get("name")
+            parsed.append(
+                {
+                    "email": item["email"],
+                    "name": name if isinstance(name, str) else None,
+                }
+            )
+    return parsed
+
+
+def decode_obfuscated_emails_spark(
+    text: str,
+    *,
+    budget: ContactExtractionBudget | None = None,
+    max_spans: int = 4,
+) -> list[tuple[str, str | None]]:
+    """Use Spark (via spark-queue) to decode leftover obfuscated email candidates."""
+    if budget is None or not budget.consume_spark_decode():
+        return []
+
+    spans = _collect_obfuscation_spans(text, max_spans=max_spans)
+    if not spans:
+        return []
+
+    from .llm_client import chat_completions
+
+    prompt = (
+        "Extract zero or more real email addresses from the obfuscated snippets below. "
+        "Decode anti-scraper forms like 'jane at acme dot com'. "
+        "Do NOT invent addresses. Skip role/shared inboxes (info@, hello@, support@). "
+        "Respond with JSON only: "
+        '{"emails":[{"email":"jane@acme.com","name":"Jane Doe"}]}\n\n'
+        "Snippets:\n"
+        + "\n---\n".join(spans)
+    )
+    try:
+        response = chat_completions(
+            {
+                "model": "crm",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You extract emails from obfuscated text. Output JSON only.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.0,
+                "max_tokens": 300,
+            },
+            timeout=90.0,
+            actor=SPARK_DECODE_ACTOR,
+            task="decode obfuscated emails",
+        )
+        content = response["choices"][0]["message"]["content"]
+    except Exception:  # noqa: BLE001
+        logger.exception("Spark obfuscation decode failed")
+        return []
+
+    found: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+    for item in _parse_spark_email_json(content):
+        email = normalize_email(item["email"] or "")
+        if not email or is_skipped_email(email) or is_role_inbox_email(email):
+            continue
+        if email in seen:
+            continue
+        seen.add(email)
+        name = _clean_name(item["name"] or "") if item.get("name") else None
+        found.append((email, name))
+    return found
 
 
 def _looks_like_name(value: str) -> bool:
@@ -175,6 +432,17 @@ def _clean_name(value: str) -> str | None:
     return text[:255]
 
 
+def _name_from_local_part(email: str) -> str | None:
+    local = email.split("@", 1)[0]
+    if _AT_TOKEN_RE.search(local) or "." not in local:
+        return None
+    parts = [part for part in re.split(r"[._\-]+", local) if part and part.isalpha()]
+    if len(parts) < 2:
+        return None
+    candidate = " ".join(part.capitalize() for part in parts[:3])
+    return _clean_name(candidate)
+
+
 def extract_social_urls(text: str, *, email: str | None = None) -> dict[str, str | list[str]]:
     """Collect public social profile URLs from page text."""
     found: dict[str, str | list[str]] = {}
@@ -212,10 +480,32 @@ def _socials_near_email(text: str, email: str, email_start: int) -> dict[str, st
     return {key: value for key, value in socials.items() if isinstance(value, str)}
 
 
+def _register_contact(
+    contacts: dict[str, ExtractedContact],
+    email: str,
+    *,
+    name: str | None = None,
+    decoded_from_obfuscation: bool = False,
+) -> None:
+    existing = contacts.get(email)
+    if existing is None:
+        contacts[email] = ExtractedContact(
+            email=email,
+            name=name,
+            decoded_from_obfuscation=decoded_from_obfuscation,
+        )
+        return
+    if existing.name is None and name is not None:
+        existing.name = name
+    if decoded_from_obfuscation:
+        existing.decoded_from_obfuscation = True
+
+
 def extract_contacts(
     *,
     markdown: str | None = None,
     html: str | None = None,
+    budget: ContactExtractionBudget | None = None,
 ) -> list[ExtractedContact]:
     """Extract email contacts and optional names from page content."""
     parts: list[str] = []
@@ -230,34 +520,49 @@ def extract_contacts(
     page_socials = extract_social_urls(combined)
     contacts: dict[str, ExtractedContact] = {}
 
+    for email, name in decode_obfuscated_email_deterministic(combined):
+        if is_skipped_email(email):
+            continue
+        _register_contact(
+            contacts,
+            email,
+            name=name or _name_from_local_part(email),
+            decoded_from_obfuscation=True,
+        )
+
+    spark_budget = budget
+    if spark_budget is not None and spark_budget.spark_decode_remaining > 0:
+        spark_batch = decode_obfuscated_emails_spark(combined, budget=spark_budget)
+        for email, name in spark_batch[:spark_budget.spark_decode_per_page]:
+            if is_skipped_email(email):
+                continue
+            _register_contact(
+                contacts,
+                email,
+                name=name or _name_from_local_part(email),
+                decoded_from_obfuscation=True,
+            )
+
     for match in NAME_EMAIL_ANGLE_RE.finditer(combined):
         name = _clean_name(match.group(1))
         email = normalize_email(match.group(2))
         if is_skipped_email(email):
             continue
-        contacts[email] = ExtractedContact(email=email, name=name)
+        _register_contact(contacts, email, name=name)
 
     for match in MAILTO_MD_RE.finditer(combined):
         name = _clean_mailto_name(match.group(1))
         email = normalize_email(match.group(2))
         if is_skipped_email(email):
             continue
-        existing = contacts.get(email)
-        if existing is None:
-            contacts[email] = ExtractedContact(email=email, name=name)
-        elif existing.name is None and name is not None:
-            existing.name = name
+        _register_contact(contacts, email, name=name)
 
     for match in MAILTO_HTML_RE.finditer(combined):
         email = normalize_email(match.group(1))
         name = _clean_mailto_name(match.group(2))
         if is_skipped_email(email):
             continue
-        existing = contacts.get(email)
-        if existing is None:
-            contacts[email] = ExtractedContact(email=email, name=name)
-        elif existing.name is None and name is not None:
-            existing.name = name
+        _register_contact(contacts, email, name=name)
 
     for match in EMAIL_RE.finditer(combined):
         email = normalize_email(match.group(0))
@@ -270,7 +575,7 @@ def extract_contacts(
                     contacts[email].name = name
             continue
         name = _name_before_email(combined, email, match.start())
-        contacts[email] = ExtractedContact(email=email, name=name)
+        _register_contact(contacts, email, name=name)
 
     if not contacts:
         return []

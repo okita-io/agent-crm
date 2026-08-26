@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from agent_crm.contact_store import count_contact_emails_by_brand_audience
+from agent_crm.contact_store import (
+    count_contact_emails_by_brand_audience,
+    count_contact_profiles_by_quality,
+)
 from agent_crm.enums import Brand, ContactAudience, HuntQueryStatus
 from agent_crm.hunt_seeds import audience_from_origin
 from agent_crm.hunt_store import HuntStore
@@ -88,11 +91,9 @@ def build_hunt_status(
     aggregate = store.queue_status()
     queue_rows = store.queue_breakdown()
     email_counts = count_contact_emails_by_brand_audience()
-    tactic_total = sum(
-        row["count"]
-        for row in email_counts
-        if row["brand"] == Brand.TACTIC_STUDIO.value
-    )
+    tactic_quality = count_contact_profiles_by_quality(brand=Brand.TACTIC_STUDIO)
+    tactic_person_total = tactic_quality["person"]
+    tactic_all_total = tactic_quality["total"]
     recently_completed = [
         {
             "id": row.id,
@@ -115,7 +116,9 @@ def build_hunt_status(
         "total_resources": aggregate["total_resources"],
         "queue_breakdown": queue_rows,
         "email_counts": email_counts,
-        "tactic_studio_email_total": tactic_total,
+        "tactic_studio_email_total": tactic_person_total,
+        "tactic_studio_person_email_total": tactic_person_total,
+        "tactic_studio_all_email_total": tactic_all_total,
         "tactic_studio_email_goal": TACTIC_STUDIO_EMAIL_GOAL,
         "recently_completed": recently_completed,
         "spark": {

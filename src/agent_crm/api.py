@@ -200,16 +200,29 @@ def list_contacts(
     brand: Brand | None = None,
     audience: ContactAudience | None = None,
     email: str | None = None,
+    quality: str | None = None,
+    person_only: bool = False,
     offset: int = 0,
     limit: int = 500,
 ) -> list[ContactProfileOut]:
     """List contact profiles keyed by email."""
-    total = count_contact_profiles(brand=brand, audience=audience, email=email)
+    from .contact_quality import EmailQualityFilter
+
+    resolved_quality: EmailQualityFilter = "person" if person_only else "all"
+    if quality in ("person", "role", "all"):
+        resolved_quality = quality
+    total = count_contact_profiles(
+        brand=brand,
+        audience=audience,
+        email=email,
+        quality=resolved_quality,
+    )
     response.headers["X-Total-Count"] = str(total)
     return list_contact_profiles(
         brand=brand,
         audience=audience,
         email=email,
+        quality=resolved_quality,
         offset=offset,
         limit=limit,
     )
@@ -219,9 +232,20 @@ def list_contacts(
 def contacts_summary(
     brand: Brand | None = None,
     audience: ContactAudience | None = None,
+    quality: str | None = None,
+    person_only: bool = False,
 ) -> ContactProfilesSummaryOut:
     """Return total and per-brand counts for contact profile filters."""
-    total = count_contact_profiles(brand=brand, audience=audience)
+    from .contact_quality import EmailQualityFilter
+
+    resolved_quality: EmailQualityFilter = "person" if person_only else "all"
+    if quality in ("person", "role", "all"):
+        resolved_quality = quality
+    total = count_contact_profiles(
+        brand=brand,
+        audience=audience,
+        quality=resolved_quality,
+    )
     if brand is None:
         by_brand = [
             {"brand": row["brand"], "count": row["count"]}

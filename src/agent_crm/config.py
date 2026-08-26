@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     # Contact extraction / social lookup
     contact_social_queries_per_profile: int = 4
     contact_social_lookups_per_run: int = 40
+    contact_spark_decode_per_run: int = 20
+    contact_spark_decode_per_page: int = 5
 
     @property
     def is_sqlite(self) -> bool:
