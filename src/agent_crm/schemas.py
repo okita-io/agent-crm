@@ -205,6 +205,31 @@ class BatchVerifyResult(BaseModel):
     errors: list[str]
 
 
+class ContactBackfillRequest(BaseModel):
+    """Re-apply contact-quality filters to existing profiles."""
+
+    limit: int = Field(default=500, ge=1, le=5000)
+    dry_run: bool = False
+
+
+class ContactQualityCleanupOut(BaseModel):
+    email: str
+    kept: bool
+    removed_source_urls: list[str] = Field(default_factory=list)
+    stripped_social_keys: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
+class ContactBackfillResultOut(BaseModel):
+    profiles_scanned: int
+    profiles_updated: int
+    profiles_removed: int
+    leads_disqualified: int
+    resource_notes_scrubbed: int
+    details: list[ContactQualityCleanupOut] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
 class VerifyRawResult(BaseModel):
     results: list[ContactVerificationOut]
 

@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .config import get_settings
-from .contact_store import list_contact_profiles
+from .contact_store import backfill_contact_quality, list_contact_profiles
 from .db import database_kind, init_db
 from .enums import Brand, ResearchFindingKind, Stage
 from .errors import InvalidStageTransition, NotFoundError
@@ -37,6 +37,8 @@ from .schemas import (
     AgentObserverOut,
     BatchVerifyRequest,
     BatchVerifyResult,
+    ContactBackfillRequest,
+    ContactBackfillResultOut,
     ContactVerificationOut,
     ContactProfileOut,
     HeartbeatIn,
@@ -186,6 +188,12 @@ def list_contacts(
 ) -> list[ContactProfileOut]:
     """List contact profiles keyed by email."""
     return list_contact_profiles(brand=brand, email=email, limit=limit)
+
+
+@app.post("/contacts/backfill", response_model=ContactBackfillResultOut, tags=["contacts"])
+def contacts_backfill(body: ContactBackfillRequest) -> ContactBackfillResultOut:
+    """Re-apply contact-quality filters to existing profiles and hunt notes."""
+    return backfill_contact_quality(limit=body.limit, dry_run=body.dry_run)
 
 
 # ---- lead verifier ---------------------------------------------------------

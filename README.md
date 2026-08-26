@@ -130,6 +130,13 @@ After every successful Firecrawl scrape (hunter, hunt-loop, research), the stack
 
 Each email upserts a row in **`contact_profiles`** (unique lowercase email) and a matching **`Lead`** (`source=CONTACT`). `source_urls` and `socials` merge across pages.
 
+**Contact-quality filters** run at extraction, verification, and via backfill:
+
+- **Source relevance** — inspect `source_urls` / scrape page URL; drop contacts found only on ad/tracking hosts or legal boilerplate pages unrelated to the email domain. Community platforms (Reddit, Discord, etc.) and matching-domain pages stay relevant.
+- **Generic support emails** — `support@`, `helpdesk@`, and similar role inboxes are not kept as prospects.
+- **Social scrub** — strip share-link templates (`/intent/tweet`, `sharer.php`, …), ad-firm accounts, and generic platform handles (`@support`, `@help`, …).
+- **Notes scrub** — remove tracking-pixel / open-beacon URLs from `hunt_resources.notes` snippets during backfill.
+
 When a profile still has no socials after scrape, a **bounded SearXNG lookup** runs (X / LinkedIn / Instagram) — no paid APIs, no login:
 
 | Variable | Default | Meaning |
@@ -142,6 +149,7 @@ Skipped when the scrape already attached socials to that contact.
 | Entry | Command / API |
 |-------|---------------|
 | List profiles | `agent-crm contacts list [--brand …] [--email …]` · `GET /contacts` |
+| Backfill filters | `agent-crm contacts backfill [--limit 500] [--dry-run]` · `POST /contacts/backfill` |
 
 ### 6. Lead verifier
 
@@ -154,6 +162,8 @@ Defensive contact checks — **DNS, MX, HTTP only**. No SMTP, no RCPT/VRFY, no s
 | Raw | `agent-crm verify --email a@b.com` · `POST /verify/raw` |
 
 Results in `contact_verifications` (one row per lead + contact).
+
+For `source=CONTACT` leads, the verifier also applies the source-relevance / support-email quality gate before DNS/MX checks.
 
 ---
 
@@ -240,6 +250,12 @@ agent-crm contacts list \
   [--brand midnightsatin|celestial-nexus|heybuddy|unassigned] \
   [--email user@example.com] [--limit 500]
 
+# Re-apply contact-quality filters to existing rows (Postgres or SQLite)
+agent-crm contacts backfill [--limit 500] [--dry-run]
+
+# Docker Compose example (Mini Postgres after merge):
+# docker compose run --rm --no-deps api agent-crm contacts backfill --limit 500
+
 # Verifier (no mail sent)
 agent-crm verify --lead-id 42
 agent-crm verify --unverified [--limit 50]
@@ -268,6 +284,7 @@ streamlit run src/agent_crm/dashboard.py
 | POST | `/research` | Research run |
 | GET | `/research/findings` | List findings |
 | GET | `/contacts` | List `contact_profiles` (`?brand=`, `?email=`) |
+| POST | `/contacts/backfill` | Re-apply contact-quality filters (`{"limit":500,"dry_run":false}`) |
 | POST | `/leads/{id}/verify` | Verify lead contacts |
 | GET | `/leads/{id}/verifications` | List verifications |
 | POST | `/verify/batch` | Batch verify unverified leads |
