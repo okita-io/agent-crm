@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from .config import get_settings
+from .comment_people_store import process_scraped_page_comment_people
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
 from .enums import ActivityType, AgentStatus, Brand, ResearchFindingKind
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
@@ -175,6 +176,12 @@ def run_research(
                     source_url=normalized,
                     brand=request.brand,
                     searx_client=searx_client,
+                    budget=contact_budget,
+                )
+                process_scraped_page_comment_people(
+                    markdown=page.markdown,
+                    source_url=normalized,
+                    brand=request.brand,
                     budget=contact_budget,
                 )
             except Exception:  # noqa: BLE001
