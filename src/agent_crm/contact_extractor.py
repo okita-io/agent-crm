@@ -113,10 +113,6 @@ _AT_TOKEN_RE = re.compile(
     r"(?:\[at\]|\(at\)|\bat\b|&#64;|%40|@)",
     re.IGNORECASE,
 )
-_DOT_TOKEN_RE = re.compile(
-    r"(?:\[dot\]|\(dot\)|\bdot\b|&#46;|%2e)",
-    re.IGNORECASE,
-)
 
 # first last dot company dot com -> first.last@company.com
 _SPACE_NAME_DOT_DOMAIN_RE = re.compile(
