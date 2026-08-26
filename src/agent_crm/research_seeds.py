@@ -53,6 +53,78 @@ COMPETITOR_QUERIES: dict[Brand, list[str]] = {
     ],
 }
 
+AD_PLACEMENT_QUERIES: dict[Brand, list[str]] = {
+    Brand.MIDNIGHTSATIN: [
+        "booktok romance newsletter sponsorship advertising rates",
+        "spicy romance subreddit self promotion advertising thread",
+        "4chan /lit/ self promotion sticky thread rules",
+        "serialized romance discord server advertising sponsorship",
+        "romance reader substack newsletter ad placement media kit",
+        "wattpad alternative promo board forum banner ads",
+        "indie romance author forum sticky thread advertising",
+        "romance book club discord server boost sponsorship",
+        "bookstagram newsletter sponsorship romance readers",
+        "reddit r/RomanceBooks self promotion weekly thread",
+        "serial fiction zine newsletter advertising placement",
+        "passionflix romance newsletter sponsorship rates",
+        "smut readers forum advertising board self promote",
+        "interactive fiction community forum banner ads",
+        "romance audiobook podcast sponsorship advertising",
+    ],
+    Brand.CELESTIAL_NEXUS: [
+        "astrology forum banner advertising media kit",
+        "witchtok newsletter sponsorship advertising rates",
+        "tarot discord server boost advertising sponsorship",
+        "4chan /x/ self promotion occult astrology sticky",
+        "horoscope newsletter sponsorship ad placement rates",
+        "occult blog advertising media kit sponsorship",
+        "witchcraft subreddit self promotion advertising thread",
+        "astrology podcast sponsorship advertising rates",
+        "tarot reading forum sticky promo board ads",
+        "pagan forum banner advertising sponsorship",
+        "astro twitter newsletter sponsorship ad placement",
+        "divination community discord server advertising",
+        "metaphysical magazine advertising rates sponsorship",
+        "crystal healing newsletter ad placement media kit",
+        "reddit r/astrology weekly self promotion thread",
+        "spiritual wellness zine advertising sponsorship",
+    ],
+    Brand.HEYBUDDY: [
+        "loneliness forum community resources sticky advertising",
+        "veteran mental health forum sponsorship advertising",
+        "elder companionship newsletter ad placement sponsorship",
+        "501c3 nonprofit newsletter sponsorship advertising rates",
+        "caregiver support forum banner ads sponsorship",
+        "mental wellness podcast sponsorship advertising rates",
+        "veteran peer support forum advertising board",
+        "senior living community newsletter ad placement",
+        "4chan /adv/ self promotion rules sticky thread",
+        "digital wellbeing nonprofit newsletter advertising",
+        "loneliness epidemic podcast sponsorship rates",
+        "reddit r/lonely community resources wiki advertising",
+        "AI companion newsletter sponsorship advertising caution",
+        "depression support forum community resources board ads",
+        "nonprofit mental health newsletter media kit sponsorship",
+    ],
+    Brand.TACTIC_STUDIO: [
+        "WebAR newsletter sponsorship advertising rates",
+        "industrial training trade publication banner advertising",
+        "manufacturing forum banner ads sponsorship media kit",
+        "4chan /g/ self promotion WebAR sticky thread",
+        "4chan /vr/ advertising self promotion sticky",
+        "augmented reality trade magazine ad rates sponsorship",
+        "XR industry newsletter sponsorship advertising placement",
+        "brand activation blog advertising media kit sponsorship",
+        "enterprise AR podcast sponsorship advertising rates",
+        "immersive technology forum promo board banner ads",
+        "Snap AR lens creator newsletter ad placement",
+        "retail CPG innovation newsletter sponsorship rates",
+        "industrial metaverse forum advertising sponsorship",
+        "WebXR agency blog sponsorship advertising placement",
+        "training simulation trade show sponsorship rates",
+    ],
+}
+
 NONPROFIT_QUERIES: dict[Brand, list[str]] = {
     Brand.HEYBUDDY: [
         "501c3 loneliness elder companionship nonprofit",
@@ -96,6 +168,9 @@ def seed_queries(
 
     if kind == ResearchFindingKind.COMPETITOR:
         return list(COMPETITOR_QUERIES.get(brand, []))
+
+    if kind == ResearchFindingKind.AD_PLACEMENT:
+        return list(AD_PLACEMENT_QUERIES.get(brand, []))
 
     competitor = COMPETITOR_QUERIES.get(brand, [])
     nonprofit = NONPROFIT_QUERIES.get(brand, [])

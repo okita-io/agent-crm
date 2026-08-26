@@ -508,7 +508,9 @@ def _render_hunter_tab(refresh_seconds: int) -> None:
 
 def _render_research_tab() -> None:
     st.subheader("Research findings")
-    st.caption("Competitor and nonprofit prospecting output from the Research agent.")
+    st.caption(
+        "Competitor, nonprofit, and ad-placement prospecting output from the Research agent."
+    )
 
     brand_filter = st.selectbox(
         "Brand filter",
@@ -518,7 +520,7 @@ def _render_research_tab() -> None:
     )
     kind_filter = st.selectbox(
         "Kind filter",
-        options=["all", "competitor", "nonprofit", "other"],
+        options=["all", "competitor", "nonprofit", "ad_placement", "other"],
         index=0,
     )
 

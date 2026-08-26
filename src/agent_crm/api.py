@@ -181,7 +181,7 @@ def hunt_status() -> HuntStatusOut:
 
 @app.post("/research", response_model=ResearchResult, tags=["research"])
 def research(payload: ResearchRequest) -> ResearchResult:
-    """Run a bounded Research agent cycle (competitor or nonprofit prospecting)."""
+    """Run a bounded Research agent cycle (competitor, nonprofit, or ad-placement prospecting)."""
     return run_research(payload)
 
 

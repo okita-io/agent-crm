@@ -1,4 +1,4 @@
-"""Research agent: competitor and nonprofit prospecting via SearXNG + Firecrawl + Spark."""
+"""Research agent: competitor, nonprofit, and ad-placement prospecting via SearXNG + Firecrawl + Spark."""
 
 from __future__ import annotations
 
@@ -208,6 +208,8 @@ def _fallback_summary(
         prefix = f"Competitor site vs {brand_label}: "
     elif kind == ResearchFindingKind.NONPROFIT:
         prefix = "Potential nonprofit / 501(c)(3) partner for HeyBuddy: "
+    elif kind == ResearchFindingKind.AD_PLACEMENT:
+        prefix = f"Ad placement opportunity for {brand_label}: "
     else:
         prefix = "Research finding: "
     parts = [prefix + title]
@@ -257,6 +259,24 @@ def _maybe_summarize(
             'Return JSON: {"summary": "...", "org_name": "...", "mission": "...", '
             '"ein": null or "XX-XXXXXXX", "why_it_matters": "..."}'
         )
+    elif kind == ResearchFindingKind.AD_PLACEMENT:
+        system = (
+            "You analyze websites, forums, newsletters, podcasts, and communities that sell ads, "
+            "take sponsorships, or offer promo/sticky/banner/board placement. "
+            "Discovery only — do not invent pricing or contact emails. "
+            "Assess brand fit and brand safety honestly (imageboards like 4chan often warrant caution)."
+        )
+        user = (
+            f"Target brand: {brand_label}\n"
+            f"URL: {hit.url}\n"
+            f"Title: {page.title or hit.title}\n"
+            f"Snippet: {hit.snippet}\n"
+            f"Page excerpt:\n{(page.markdown or '')[:3500]}\n\n"
+            'Return JSON: {"summary": "...", "site_name": "...", "audience": "...", '
+            '"ad_product": "display|newsletter|sticky|board|sponsorship|discord boost|other", '
+            '"how_to_buy": "URL or unknown", "brand_fit": "...", '
+            '"brand_safety": "ok|caution|avoid — brief reason", "why_it_matters": "..."}'
+        )
     else:
         system = "You write concise CRM research summaries. Be factual."
         user = (
@@ -301,8 +321,6 @@ def _heuristic_extra(
     hit: SearchResult,
     kind: ResearchFindingKind,
 ) -> dict[str, Any] | None:
-    if kind != ResearchFindingKind.NONPROFIT:
-        return None
     text = " ".join(
         part
         for part in (
@@ -313,14 +331,87 @@ def _heuristic_extra(
         )
         if part
     )
-    ein = extract_ein_from_text(text)
+    if kind == ResearchFindingKind.NONPROFIT:
+        ein = extract_ein_from_text(text)
+        extra: dict[str, Any] = {}
+        if ein:
+            extra["ein"] = ein
+        org_name = clean_title(page.title or hit.title or "")
+        if org_name:
+            extra["org_name"] = org_name
+        return extra or None
+
+    if kind == ResearchFindingKind.AD_PLACEMENT:
+        return _heuristic_ad_placement_extra(page, hit, text)
+
+    return None
+
+
+_AD_PRODUCT_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("newsletter", "newsletter"),
+    ("sponsor", "sponsorship"),
+    ("sponsorship", "sponsorship"),
+    ("media kit", "sponsorship"),
+    ("sticky", "sticky"),
+    ("banner", "display"),
+    ("display ad", "display"),
+    ("self promote", "board"),
+    ("self-promotion", "board"),
+    ("promo board", "board"),
+    ("discord boost", "discord boost"),
+    ("advertise", "display"),
+    ("advertising", "display"),
+)
+
+_BUY_LINK_HINTS = ("advertise", "sponsor", "media-kit", "mediakit", "ads.", "/ads")
+
+
+def _heuristic_ad_placement_extra(
+    page: ScrapeResult,
+    hit: SearchResult,
+    text: str,
+) -> dict[str, Any]:
+    lower = text.lower()
     extra: dict[str, Any] = {}
-    if ein:
-        extra["ein"] = ein
-    org_name = clean_title(page.title or hit.title or "")
-    if org_name:
-        extra["org_name"] = org_name
-    return extra or None
+    site_name = clean_title(page.title or hit.title or extract_domain(hit.url))
+    if site_name:
+        extra["site_name"] = site_name
+
+    for keyword, product in _AD_PRODUCT_KEYWORDS:
+        if keyword in lower:
+            extra["ad_product"] = product
+            break
+    if "ad_product" not in extra:
+        extra["ad_product"] = "other"
+
+    how_to_buy = _extract_how_to_buy(page.markdown or "", hit.url)
+    extra["how_to_buy"] = how_to_buy
+
+    domain = extract_domain(hit.url).lower()
+    if "4chan" in domain or "8kun" in domain:
+        extra["brand_safety"] = "caution — imageboard; high toxicity and moderation risk"
+    elif any(token in domain for token in ("reddit.com", "discord.")):
+        extra["brand_safety"] = "caution — community platform; review sub/server rules"
+    else:
+        extra["brand_safety"] = "ok — review placement context before buying"
+
+    if hit.snippet:
+        extra["audience"] = hit.snippet.strip()[:240]
+    extra["why_it_matters"] = "Potential paid placement surface discovered via research seed."
+    return extra
+
+
+def _extract_how_to_buy(markdown: str, page_url: str) -> str:
+    for line in markdown.splitlines():
+        lower = line.lower()
+        if not any(hint in lower for hint in _BUY_LINK_HINTS):
+            continue
+        match = re.search(r"https?://[^\s)>\"]+", line)
+        if match:
+            return match.group(0).rstrip(".,)")
+    if any(hint in page_url.lower() for hint in _BUY_LINK_HINTS):
+        return page_url
+    return "unknown"
 
 
 def _normalize_extra(
@@ -330,7 +421,17 @@ def _normalize_extra(
     kind: ResearchFindingKind,
 ) -> dict[str, Any] | None:
     extra: dict[str, Any] = {}
-    for key in ("org_name", "mission", "why_it_matters"):
+    for key in (
+        "org_name",
+        "mission",
+        "why_it_matters",
+        "site_name",
+        "audience",
+        "ad_product",
+        "how_to_buy",
+        "brand_fit",
+        "brand_safety",
+    ):
         value = parsed.get(key)
         if isinstance(value, str) and value.strip():
             extra[key] = value.strip()
@@ -348,6 +449,11 @@ def _normalize_extra(
         source_ein = extract_ein_from_text(text)
         if source_ein:
             extra["ein"] = source_ein
+
+    if kind == ResearchFindingKind.AD_PLACEMENT and "how_to_buy" not in extra:
+        how_to_buy = _extract_how_to_buy(page.markdown or "", hit.url)
+        if how_to_buy != "unknown":
+            extra["how_to_buy"] = how_to_buy
 
     return extra or None
 
@@ -388,7 +494,17 @@ def _extract_chat_content(response: dict[str, Any]) -> str | None:
 def _is_strong_hit(summary: str, extra: dict[str, Any] | None) -> bool:
     if len(summary) >= 120:
         return True
-    if extra and any(extra.get(key) for key in ("ein", "mission", "why_it_matters")):
+    if extra and any(
+        extra.get(key)
+        for key in (
+            "ein",
+            "mission",
+            "why_it_matters",
+            "ad_product",
+            "how_to_buy",
+            "brand_fit",
+        )
+    ):
         return True
     return False
 
@@ -405,7 +521,9 @@ def _maybe_write_account_note(
     from .models import Account
 
     domain = extract_domain(url)
-    org_name = (extra or {}).get("org_name") if extra else None
+    org_name = None
+    if extra:
+        org_name = extra.get("org_name") or extra.get("site_name")
     account_name = org_name or title or domain
 
     with session_scope() as session:
@@ -416,6 +534,12 @@ def _maybe_write_account_note(
                 note_parts.append(f"Mission: {extra['mission']}")
             if extra.get("ein"):
                 note_parts.append(f"EIN: {extra['ein']}")
+            if extra.get("ad_product"):
+                note_parts.append(f"Ad product: {extra['ad_product']}")
+            if extra.get("how_to_buy"):
+                note_parts.append(f"How to buy: {extra['how_to_buy']}")
+            if extra.get("brand_safety"):
+                note_parts.append(f"Brand safety: {extra['brand_safety']}")
             if extra.get("why_it_matters"):
                 note_parts.append(f"Why it matters: {extra['why_it_matters']}")
         account.notes = "\n\n".join(note_parts)

@@ -15,7 +15,8 @@ from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import AgentStatus, Brand, ResearchFindingKind
 from agent_crm.heartbeat import list_heartbeats
-from agent_crm.research import run_research
+from agent_crm.research import _heuristic_extra, run_research
+from agent_crm.research_seeds import AD_PLACEMENT_QUERIES, seed_queries
 from agent_crm.research_store import list_findings
 from agent_crm.research_utils import canonical_url, is_junk_finding
 from agent_crm.schemas import ResearchFindingOut, ResearchRequest, ResearchResult
@@ -145,6 +146,160 @@ def _nonprofit_http_client() -> httpx.Client:
             }
         )
     )
+
+
+def test_research_finding_kind_includes_ad_placement() -> None:
+    assert ResearchFindingKind.AD_PLACEMENT.value == "ad_placement"
+
+
+def test_ad_placement_seed_queries_cover_all_brands() -> None:
+    for brand in (
+        Brand.CELESTIAL_NEXUS,
+        Brand.MIDNIGHTSATIN,
+        Brand.HEYBUDDY,
+        Brand.TACTIC_STUDIO,
+    ):
+        queries = seed_queries(brand, ResearchFindingKind.AD_PLACEMENT)
+        assert 10 <= len(queries) <= 18
+        assert brand in AD_PLACEMENT_QUERIES
+
+
+def test_ad_placement_seed_queries_include_offbeat_surfaces() -> None:
+    all_queries = " ".join(
+        query
+        for brand in AD_PLACEMENT_QUERIES
+        for query in AD_PLACEMENT_QUERIES[brand]
+    ).lower()
+    assert "4chan" in all_queries
+    assert any("discord" in query for query in all_queries.split())
+
+
+def test_heuristic_ad_placement_extra_detects_imageboard_caution(
+    tmp_path, monkeypatch
+) -> None:
+    _setup_db(tmp_path, monkeypatch, "research-heuristic-ad.db")
+    from agent_crm.firecrawl_client import ScrapeResult
+    from agent_crm.searxng_client import SearchResult
+
+    hit = SearchResult(
+        url="https://boards.4chan.org/lit/catalog",
+        title="/lit/ - Literature",
+        snippet="self promotion sticky thread",
+    )
+    page = ScrapeResult(
+        url=hit.url,
+        title="/lit/ - Literature",
+        markdown="Advertise on 4chan: https://www.4chan.org/advertise",
+        metadata={},
+    )
+    extra = _heuristic_extra(page, hit, ResearchFindingKind.AD_PLACEMENT)
+    assert extra is not None
+    assert extra["ad_product"] == "sticky"
+    assert "4chan.org/advertise" in extra["how_to_buy"]
+    assert extra["brand_safety"].startswith("caution")
+    _teardown_db()
+
+
+def test_run_research_ad_placement_writes_structured_extra(tmp_path, monkeypatch) -> None:
+    _setup_db(tmp_path, monkeypatch, "research-ad-placement.db")
+
+    payload = {
+        "results": [
+            {
+                "url": "https://newsletter.example/ads",
+                "title": "Romance Reader Weekly — Advertise",
+                "content": "BookTok romance newsletter sponsorship rates",
+            }
+        ]
+    }
+    firecrawl_ok = {
+        "data": {
+            "markdown": (
+                "Romance Reader Weekly reaches 40k subscribers. "
+                "Newsletter sponsorship from $500. Media kit: https://newsletter.example/media-kit"
+            ),
+            "metadata": {"title": "Advertise — Romance Reader Weekly"},
+        }
+    }
+
+    def searx_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    def firecrawl_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=firecrawl_ok)
+
+    http = httpx.Client(
+        transport=_mock_transport(
+            {
+                "/search": searx_handler,
+                "/v1/scrape": firecrawl_handler,
+            }
+        )
+    )
+
+    with patch("agent_crm.research.chat_completions") as mock_llm:
+        mock_llm.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "summary": "Romance newsletter with sponsorship slots for BookTok readers.",
+                                "site_name": "Romance Reader Weekly",
+                                "audience": "BookTok and spicy romance readers",
+                                "ad_product": "newsletter",
+                                "how_to_buy": "https://newsletter.example/media-kit",
+                                "brand_fit": "Strong overlap with MidnightSatin serial romance audience.",
+                                "brand_safety": "ok — editorial newsletter with clear ad policy",
+                                "why_it_matters": "Direct newsletter placement for romance readers.",
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+        result = run_research(
+            ResearchRequest(
+                brand=Brand.MIDNIGHTSATIN,
+                kind=ResearchFindingKind.AD_PLACEMENT,
+                query="booktok romance newsletter sponsorship",
+                max_pages=2,
+                max_queries=1,
+                write_accounts=False,
+            ),
+            searx_client=http,
+            firecrawl_client=http,
+        )
+
+    assert result.findings_written
+    findings = list_findings(brand=Brand.MIDNIGHTSATIN, kind=ResearchFindingKind.AD_PLACEMENT)
+    assert findings[0].extra is not None
+    assert findings[0].extra["ad_product"] == "newsletter"
+    assert findings[0].extra["how_to_buy"] == "https://newsletter.example/media-kit"
+    assert findings[0].extra["brand_safety"].startswith("ok")
+    _teardown_db()
+
+
+def test_research_api_accepts_ad_placement_kind(client: TestClient) -> None:
+    with patch("agent_crm.api.run_research") as mock_run:
+        mock_run.return_value = ResearchResult(
+            brand=Brand.MIDNIGHTSATIN,
+            kind=ResearchFindingKind.AD_PLACEMENT,
+            queries_run=1,
+            pages_scraped=1,
+            findings_written=[1],
+            errors=[],
+        )
+        response = client.post(
+            "/research",
+            json={
+                "brand": "midnightsatin",
+                "kind": "ad_placement",
+                "query": "booktok newsletter sponsorship",
+            },
+        )
+    assert response.status_code == 200
+    assert response.json()["kind"] == "ad_placement"
 
 
 def test_canonical_url_dedupes_tracking_params() -> None:

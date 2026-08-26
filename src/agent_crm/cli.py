@@ -182,6 +182,37 @@ def _cmd_research(args: argparse.Namespace) -> int:
     return 0 if result.findings_written or not result.errors else 1
 
 
+def _cmd_research_loop(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .research_loop import ResearchLoopBudget, run_research_loop
+
+    init_db()
+    budget = ResearchLoopBudget(
+        max_queries=args.max_queries,
+        max_pages=args.max_pages,
+        max_minutes=args.max_minutes,
+        search_limit=args.search_limit,
+    )
+    result = run_research_loop(
+        budget=budget,
+        summarize=not args.no_summarize,
+        write_accounts=not args.no_accounts,
+    )
+    print(
+        json.dumps(
+            {
+                "queries_run": result.queries_run,
+                "pages_scraped": result.pages_scraped,
+                "findings_written": result.findings_written,
+                "stop_reason": result.stop_reason,
+                "errors": result.errors,
+            },
+            indent=2,
+        )
+    )
+    return 0 if result.findings_written or not result.errors else 1
+
+
 def _cmd_contacts(args: argparse.Namespace) -> int:
     from .contact_store import (
         backfill_contact_enrichment,
@@ -327,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
 
     research = sub.add_parser(
         "research",
-        help="Run a Research agent cycle (competitor or nonprofit prospecting)",
+        help="Run a Research agent cycle (competitor, nonprofit, or ad-placement prospecting)",
     )
     research.add_argument(
         "--brand",
@@ -337,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     research.add_argument(
         "--kind",
-        choices=["competitor", "nonprofit", "other"],
+        choices=["competitor", "nonprofit", "ad_placement", "other"],
         help="Finding kind (defaults from brand: heybuddy->nonprofit, others->competitor)",
     )
     research.add_argument(
@@ -365,6 +396,46 @@ def main(argv: list[str] | None = None) -> int:
         help="Do not write Account notes for strong hits",
     )
     research.set_defaults(func=_cmd_research)
+
+    research_loop = sub.add_parser(
+        "research-loop",
+        help="Cycle all four brands on ad-placement seed queries (0 budgets = unlimited)",
+    )
+    research_loop.add_argument(
+        "--max-queries",
+        type=int,
+        default=0,
+        help="Query budget (0 = unlimited)",
+    )
+    research_loop.add_argument(
+        "--max-pages",
+        type=int,
+        default=0,
+        help="Page scrape budget (0 = unlimited)",
+    )
+    research_loop.add_argument(
+        "--max-minutes",
+        type=int,
+        default=0,
+        help="Wall-clock budget in minutes (0 = unlimited)",
+    )
+    research_loop.add_argument(
+        "--search-limit",
+        type=int,
+        default=50,
+        help="Max SearXNG results per query",
+    )
+    research_loop.add_argument(
+        "--no-summarize",
+        action="store_true",
+        help="Skip Spark LLM summarization",
+    )
+    research_loop.add_argument(
+        "--no-accounts",
+        action="store_true",
+        help="Do not write Account notes for strong hits",
+    )
+    research_loop.set_defaults(func=_cmd_research_loop)
 
     contacts = sub.add_parser("contacts", help="List contact profiles extracted from scrapes")
     contacts_sub = contacts.add_subparsers(dest="contacts_command", required=True)
