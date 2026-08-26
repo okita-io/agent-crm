@@ -146,6 +146,57 @@ class HuntQueueStatusOut(BaseModel):
     total_resources: int
 
 
+class HuntRunningQueryOut(BaseModel):
+    id: int
+    query: str
+    brand: Brand
+    priority: int
+    origin: str
+    audience: ContactAudience | None = None
+    updated_at: datetime
+    running_seconds: int
+
+
+class HuntQueueBreakdownRow(BaseModel):
+    brand: Brand
+    priority: int
+    status: str
+    count: int
+
+
+class HuntEmailCountRow(BaseModel):
+    brand: Brand
+    audience: ContactAudience | None = None
+    count: int
+
+
+class HuntCompletedQueryOut(BaseModel):
+    id: int
+    query: str
+    brand: Brand
+    updated_at: datetime
+
+
+class HuntSparkSummaryOut(BaseModel):
+    waiting: int
+    in_flight: int
+    model: str | None = None
+
+
+class HuntStatusOut(BaseModel):
+    phase: str
+    now_playing: HuntRunningQueryOut | None = None
+    pending: int
+    by_status: dict[str, int]
+    total_resources: int
+    queue_breakdown: list[HuntQueueBreakdownRow]
+    email_counts: list[HuntEmailCountRow]
+    tactic_studio_email_total: int
+    tactic_studio_email_goal: int
+    recently_completed: list[HuntCompletedQueryOut]
+    spark: HuntSparkSummaryOut
+
+
 class ResearchRequest(BaseModel):
     """Research agent run configuration."""
 

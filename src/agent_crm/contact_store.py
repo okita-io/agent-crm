@@ -175,6 +175,30 @@ def upsert_contact_profile(
         return ContactProfileOut.model_validate(row)
 
 
+def count_contact_emails_by_brand_audience() -> list[dict]:
+    """Count contact profiles with non-empty email, grouped by brand and audience."""
+    with session_scope() as session:
+        stmt = (
+            select(
+                ContactProfile.brand,
+                ContactProfile.audience,
+                func.count(),
+            )
+            .where(ContactProfile.email.is_not(None))
+            .where(func.length(func.trim(ContactProfile.email)) > 0)
+            .group_by(ContactProfile.brand, ContactProfile.audience)
+            .order_by(ContactProfile.brand.asc(), ContactProfile.audience.asc())
+        )
+        return [
+            {
+                "brand": brand.value,
+                "audience": audience.value if audience else None,
+                "count": count,
+            }
+            for brand, audience, count in session.execute(stmt)
+        ]
+
+
 def list_contact_profiles(
     *,
     brand: Brand | None = None,

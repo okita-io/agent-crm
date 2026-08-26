@@ -26,6 +26,7 @@ from .enums import Brand, ContactAudience, ResearchFindingKind, Stage
 from .errors import InvalidStageTransition, NotFoundError
 from .heartbeat import list_heartbeats, record_heartbeat
 from .hunt_loop import HuntBudget, run_hunt_loop
+from .hunt_status import build_hunt_status
 from .hunt_store import HuntStore
 from .outbound_hunter import run_hunt
 from .pipeline import PipelineManager
@@ -46,6 +47,7 @@ from .schemas import (
     HuntLoopRequest,
     HuntLoopResultOut,
     HuntQueueStatusOut,
+    HuntStatusOut,
     HuntRequest,
     HuntResourceOut,
     HuntResult,
@@ -157,6 +159,12 @@ def list_hunt_resources(
 @app.get("/hunt/queue", response_model=HuntQueueStatusOut, tags=["hunter"])
 def hunt_queue_status() -> HuntQueueStatusOut:
     return HuntQueueStatusOut(**HuntStore().queue_status())
+
+
+@app.get("/hunt/status", response_model=HuntStatusOut, tags=["hunter"])
+def hunt_status() -> HuntStatusOut:
+    """Live hunt-loop drain status: current query, phase, queue, and email counts."""
+    return HuntStatusOut(**build_hunt_status())
 
 
 # ---- research --------------------------------------------------------------

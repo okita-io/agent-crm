@@ -22,6 +22,7 @@ from agent_crm.enums import (
     Stage,
 )
 from agent_crm.hunt_feedback import parse_community_notes
+from agent_crm.hunt_status import STALE_RUNNING_MINUTES, build_hunt_status
 from agent_crm.heartbeat import list_heartbeats
 from agent_crm.hunt_store import HuntStore
 from agent_crm.pipeline import PipelineManager
@@ -103,6 +104,130 @@ def _resource_rows(brand: Brand | None) -> pd.DataFrame:
     )
 
 
+def _format_duration(seconds: int) -> str:
+    minutes, remainder = divmod(max(0, seconds), 60)
+    if minutes:
+        return f"{minutes}m {remainder}s"
+    return f"{remainder}s"
+
+
+def _priority_label(priority: int) -> str:
+    labels = {
+        100: "tactic marketing",
+        90: "tactic influencer",
+        80: "tactic user",
+        70: "midnightsatin influencer",
+        65: "midnightsatin user",
+    }
+    label = labels.get(priority)
+    if label:
+        return f"{label} ({priority})"
+    if priority == 30:
+        return f"default ({priority})"
+    return str(priority)
+
+
+def _render_hunt_loop_status(*, compact: bool = False) -> None:
+    status = build_hunt_status()
+    phase = status["phase"]
+    now_playing = status.get("now_playing")
+
+    if compact:
+        if now_playing:
+            st.caption(
+                f"Hunt loop · **{phase}** · "
+                f"{now_playing['brand']} p{now_playing['priority']} · "
+                f"\"{(now_playing['query'] or '')[:72]}\" · "
+                f"running {_format_duration(now_playing['running_seconds'])}"
+            )
+        else:
+            pending = status.get("pending", 0)
+            st.caption(
+                f"Hunt loop · **{phase}** · pending {pending} · "
+                f"Spark waiting {status['spark']['waiting']} · "
+                f"in-flight {status['spark']['in_flight']}"
+            )
+        return
+
+    st.subheader("Hunt loop (live)")
+    st.caption(
+        f"Auto-refresh · stale running rows ignored after {STALE_RUNNING_MINUTES} minutes"
+    )
+
+    phase_cols = st.columns(4)
+    phase_cols[0].metric("Phase", phase)
+    phase_cols[1].metric("Pending", status.get("pending", 0))
+    phase_cols[2].metric("Spark waiting", status["spark"]["waiting"])
+    phase_cols[3].metric("Spark in-flight", status["spark"]["in_flight"])
+
+    st.markdown("**Now playing**")
+    if now_playing:
+        audience = now_playing.get("audience") or "—"
+        st.write(
+            f"**{now_playing['brand']}** · priority {now_playing['priority']} · "
+            f"origin `{now_playing['origin']}` · audience **{audience}** · "
+            f"running **{_format_duration(now_playing['running_seconds'])}** "
+            f"(updated {now_playing['updated_at']})"
+        )
+        st.code(now_playing["query"], language=None)
+    else:
+        st.info("No fresh running query — loop is idle or between queries.")
+
+    st.markdown("**Queue breakdown**")
+    breakdown = status.get("queue_breakdown") or []
+    if breakdown:
+        queue_df = pd.DataFrame(
+            [
+                {
+                    "brand": row["brand"],
+                    "priority": _priority_label(row["priority"]),
+                    "status": row["status"],
+                    "count": row["count"],
+                }
+                for row in breakdown
+            ]
+        )
+        st.dataframe(queue_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("Queue is empty.")
+
+    st.markdown("**Pete's list** (contact profiles with email)")
+    tactic_total = int(status.get("tactic_studio_email_total", 0))
+    tactic_goal = int(status.get("tactic_studio_email_goal", 100))
+    st.progress(min(tactic_total / tactic_goal, 1.0))
+    st.caption(f"tactic.studio total: **{tactic_total}** / {tactic_goal} goal")
+
+    email_counts = status.get("email_counts") or []
+    if email_counts:
+        st.dataframe(
+            pd.DataFrame(email_counts),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("No contact profiles with email yet.")
+
+    st.markdown("**Recently completed**")
+    completed = status.get("recently_completed") or []
+    if completed:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "query": row["query"],
+                        "brand": row["brand"],
+                        "updated": row["updated_at"],
+                    }
+                    for row in completed
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("No completed hunt queries yet.")
+
+
 def _fetch_api_agents() -> list[dict] | None:
     url = f"{get_settings().api_base_url.rstrip('/')}/agents"
     try:
@@ -156,6 +281,7 @@ def _render_agent_observer(refresh_seconds: int) -> None:
     queue_health = fetch_spark_queue_health()
     summary = spark_slot_summary(queue_health)
     _render_spark_strip(summary)
+    _render_hunt_loop_status(compact=True)
 
     api_agents = _fetch_api_agents()
     if api_agents is not None:
@@ -264,7 +390,18 @@ def _render_pipeline_tab() -> None:
                 pass
 
 
-def _render_hunter_tab() -> None:
+def _render_hunter_tab(refresh_seconds: int) -> None:
+    try:
+        fragment = st.fragment(run_every=timedelta(seconds=refresh_seconds))
+    except TypeError:
+        fragment = st.fragment
+
+    @fragment
+    def _hunter_live() -> None:
+        _render_hunt_loop_status()
+
+    _hunter_live()
+
     st.subheader("Hunter resources")
     status = HuntStore().queue_status()
     store = HuntStore()
@@ -544,7 +681,7 @@ def main() -> None:
         _render_pipeline_tab()
 
     with hunter_tab:
-        _render_hunter_tab()
+        _render_hunter_tab(refresh_seconds)
 
     with research_tab:
         _render_research_tab()
