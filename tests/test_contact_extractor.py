@@ -14,12 +14,14 @@ from agent_crm.contact_extractor import extract_contacts, is_skipped_email
 from agent_crm.contact_social_lookup import build_social_queries, lookup_social_profiles
 from agent_crm.contact_store import (
     ContactExtractionBudget,
+    count_contact_profiles,
+    count_contact_profiles_by_brand,
     list_contact_profiles,
     process_scraped_page_contacts,
     upsert_contact_profile,
 )
 from agent_crm.db import init_db, reset_engine
-from agent_crm.enums import Brand, LeadSource
+from agent_crm.enums import Brand, ContactAudience, LeadSource
 from agent_crm.models import ContactProfile, Lead
 from agent_crm.db import session_scope
 from sqlalchemy import select
@@ -203,6 +205,82 @@ def test_list_contacts_api(api_client, db_url) -> None:
     assert len(payload) == 1
     assert payload[0]["email"] == "found@example.com"
     assert payload[0]["socials"]["x"] == "https://x.com/found"
+    assert response.headers["X-Total-Count"] == "1"
+
+
+def test_contacts_summary_and_pagination(db_url) -> None:
+    upsert_contact_profile(
+        email="ms-one@example.com",
+        name="MS One",
+        brand=Brand.MIDNIGHTSATIN,
+        source_url="https://example.com/ms-one",
+    )
+    upsert_contact_profile(
+        email="ts-one@example.com",
+        name="TS One",
+        brand=Brand.TACTIC_STUDIO,
+        source_url="https://example.com/ts-one",
+        audience=ContactAudience.MARKETING,
+    )
+    upsert_contact_profile(
+        email="ts-two@example.com",
+        name="TS Two",
+        brand=Brand.TACTIC_STUDIO,
+        source_url="https://example.com/ts-two",
+        audience=ContactAudience.MARKETING,
+    )
+
+    assert count_contact_profiles() == 3
+    by_brand = {row["brand"]: row["count"] for row in count_contact_profiles_by_brand()}
+    assert by_brand["midnightsatin"] == 1
+    assert by_brand["tactic-studio"] == 2
+
+    page = list_contact_profiles(limit=1, offset=0)
+    assert len(page) == 1
+    assert count_contact_profiles(brand=Brand.TACTIC_STUDIO, audience=ContactAudience.MARKETING) == 2
+
+
+def test_contacts_summary_api(api_client, db_url) -> None:
+    upsert_contact_profile(
+        email="alpha@example.com",
+        name=None,
+        brand=Brand.MIDNIGHTSATIN,
+        source_url="https://example.com/alpha",
+    )
+    upsert_contact_profile(
+        email="beta@example.com",
+        name=None,
+        brand=Brand.TACTIC_STUDIO,
+        source_url="https://example.com/beta",
+        audience=ContactAudience.MARKETING,
+    )
+
+    response = api_client.get("/contacts/summary")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    by_brand = {row["brand"]: row["count"] for row in payload["by_brand"]}
+    assert by_brand["midnightsatin"] == 1
+    assert by_brand["tactic-studio"] == 1
+
+    filtered = api_client.get("/contacts/summary?audience=marketing")
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+
+
+def test_list_contacts_api_offset_and_total_header(api_client, db_url) -> None:
+    for index in range(3):
+        upsert_contact_profile(
+            email=f"user{index}@example.com",
+            name=None,
+            brand=Brand.HEYBUDDY,
+            source_url=f"https://example.com/{index}",
+        )
+
+    response = api_client.get("/contacts?brand=heybuddy&limit=1&offset=1")
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.headers["X-Total-Count"] == "3"
 
 
 def test_process_scraped_page_does_not_invent_names(db_url) -> None:

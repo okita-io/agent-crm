@@ -387,6 +387,16 @@ class ContactProfileOut(ORMModel):
     updated_at: datetime
 
 
+class ContactProfileBrandCountOut(BaseModel):
+    brand: Brand
+    count: int
+
+
+class ContactProfilesSummaryOut(BaseModel):
+    total: int
+    by_brand: list[ContactProfileBrandCountOut]
+
+
 class ResearchFindingOut(ORMModel):
     id: int
     url: str
