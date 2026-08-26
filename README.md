@@ -120,18 +120,22 @@ Hunt-loop prompt explicitly forbids inventing emails or person names. Sites land
 
 ### 4. Research agent
 
-Competitor and nonprofit prospecting with the same SearXNG + Firecrawl + Spark summarization pipeline.
+Competitor, nonprofit, and **ad-placement** prospecting with the same SearXNG + Firecrawl + Spark summarization pipeline.
 
 | Brand | Default kind | Focus |
 |-------|--------------|-------|
 | `celestial-nexus`, `midnightsatin`, `tactic-studio` | `competitor` | Competitor / landscape scans (XR studios for tactic.studio) |
 | `heybuddy` | `nonprofit` | 501(c)(3) partnership / grant prospects (HeyBuddy itself is **not** a nonprofit) |
+| any (explicit `--kind ad_placement`) | `ad_placement` | Sites that sell ads, sponsorships, or promo/sticky/banner/board placement — discovery only |
 
-Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`. Seed packs include AI-generated-content audiences and promoters alongside competitor/nonprofit discovery terms.
+Pass `--kind ad_placement` (or `"kind": "ad_placement"` on `POST /research`) to hunt newsletters, forums (including offbeat/imageboard surfaces like 4chan boards), Discords, podcasts, subreddits, zines, and trade pubs where each brand’s audience actually hangs out. Summaries capture `ad_product`, `how_to_buy`, `brand_fit`, and `brand_safety` — no ad buying or account creation.
+
+Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`. Seed packs include AI-generated-content audiences and promoters alongside competitor/nonprofit/ad-placement discovery terms.
 
 | Entry | Command / API |
 |-------|---------------|
-| Run | `agent-crm research --brand celestial-nexus [--kind nonprofit] [query]` · `POST /research` |
+| Run | `agent-crm research --brand celestial-nexus [--kind ad_placement\|nonprofit\|competitor] [query]` · `POST /research` |
+| Loop | `agent-crm research-loop [--max-queries 0] [--max-pages 0] [--max-minutes 0]` — cycles all four brands on ad-placement seeds (`0` = unlimited) |
 | List | `GET /research/findings` |
 
 ### 5. Contact extraction and social lookup
@@ -225,7 +229,7 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 | Lead Intake | `lead_intake` | `POST /intake/webhook` → create lead |
 | Lead Scoring | `lead_scoring` | Score + priority via tooling |
 | Brand Router | `brand_router` | Assign brand |
-| Research | `research` | Competitor / nonprofit runs → `research_findings` |
+| Research | `research` | Competitor / nonprofit / ad-placement runs → `research_findings` |
 | Outbound Hunter | `outbound_hunter` | Hunt + hunt-loop → sites and page leads |
 | Lead Verifier | `lead_verifier` | DNS/MX/HTTP checks |
 | CRM / Pipeline | `api`, `dashboard`, … | Stage transitions, reporting |
@@ -255,8 +259,12 @@ agent-crm hunt-loop [query] \
   [--no-resume] [--no-summarize]
 
 # Research
-agent-crm research --brand heybuddy [--kind nonprofit|competitor|other] [query] \
+agent-crm research --brand heybuddy [--kind nonprofit|competitor|ad_placement|other] [query] \
   [--max-queries 20] [--max-pages 200] [--max-minutes 60] \
+  [--search-limit 50] [--no-summarize] [--no-accounts]
+
+agent-crm research-loop \
+  [--max-queries 0] [--max-pages 0] [--max-minutes 0] \
   [--search-limit 50] [--no-summarize] [--no-accounts]
 
 # Contacts

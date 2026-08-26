@@ -177,6 +177,7 @@ class ResearchFindingKind(str, enum.Enum):
 
     COMPETITOR = "competitor"
     NONPROFIT = "nonprofit"
+    AD_PLACEMENT = "ad_placement"
     OTHER = "other"
 
 
