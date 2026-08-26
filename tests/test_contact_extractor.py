@@ -128,11 +128,12 @@ def test_process_scraped_page_contacts_creates_profiles_and_leads(db_url) -> Non
         brand=Brand.MIDNIGHTSATIN,
         budget=ContactExtractionBudget(social_lookups_remaining=0),
     )
-    assert len(profiles) == 3
+    # support@ is filtered as a generic support identity
+    assert len(profiles) == 2
 
     with session_scope() as session:
         rows = session.scalars(select(ContactProfile)).all()
-        assert len(rows) == 3
+        assert len(rows) == 2
         lead = session.scalar(select(Lead).where(Lead.email == "jane@novastudio.com"))
         assert lead is not None
         assert lead.source == LeadSource.CONTACT

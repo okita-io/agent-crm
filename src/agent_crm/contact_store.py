@@ -10,11 +10,18 @@ from sqlalchemy import func, select
 
 from .config import get_settings
 from .contact_extractor import ExtractedContact, extract_contacts
+from .contact_quality import (
+    ContactBackfillResult,
+    clean_contact_data,
+    filter_socials,
+    is_relevant_contact,
+    scrub_notes_value,
+)
 from .contact_social_lookup import lookup_social_profiles
 from .db import session_scope
 from .enums import Brand, LeadSource, LeadStatus
-from .models import ContactProfile, Lead, Opportunity
-from .schemas import ContactProfileOut
+from .models import ContactProfile, HuntResource, Lead, Opportunity
+from .schemas import ContactBackfillResultOut, ContactProfileOut, ContactQualityCleanupOut
 
 logger = logging.getLogger(__name__)
 
@@ -198,13 +205,21 @@ def process_scraped_page_contacts(
     profiles: list[ContactProfileOut] = []
 
     for contact in extracted:
+        if not is_relevant_contact(contact.email, [source_url]):
+            logger.debug(
+                "Skipping irrelevant contact %s from %s",
+                contact.email,
+                source_url,
+            )
+            continue
+        cleaned_socials = filter_socials(contact.socials or None, email=contact.email)
         try:
             profile = upsert_contact_profile(
                 email=contact.email,
                 name=contact.name,
                 brand=brand,
                 source_url=source_url,
-                socials=contact.socials or None,
+                socials=cleaned_socials,
             )
         except Exception:  # noqa: BLE001
             logger.exception("Failed to upsert contact profile for %s", contact.email)
@@ -225,14 +240,98 @@ def process_scraped_page_contacts(
                 continue
 
             if socials:
-                profile = upsert_contact_profile(
-                    email=contact.email,
-                    name=contact.name,
-                    brand=brand,
-                    source_url=source_url,
-                    socials=socials,
-                )
+                cleaned_lookup_socials = filter_socials(socials, email=contact.email)
+                if cleaned_lookup_socials:
+                    profile = upsert_contact_profile(
+                        email=contact.email,
+                        name=contact.name,
+                        brand=brand,
+                        source_url=source_url,
+                        socials=cleaned_lookup_socials,
+                    )
 
         profiles.append(profile)
 
     return profiles
+
+
+def backfill_contact_quality(
+    *,
+    limit: int = 500,
+    dry_run: bool = False,
+) -> ContactBackfillResultOut:
+    """Re-apply contact-quality filters to existing profiles and related notes."""
+    result = ContactBackfillResult()
+
+    with session_scope() as session:
+        profiles = list(
+            session.scalars(
+                select(ContactProfile).order_by(ContactProfile.updated_at.desc()).limit(limit)
+            )
+        )
+        result.profiles_scanned = len(profiles)
+
+        for row in profiles:
+            try:
+                cleaned_socials, kept_urls, keep, cleanup = clean_contact_data(
+                    email=row.email,
+                    socials=row.socials,
+                    source_urls=row.source_urls,
+                )
+                changed = (
+                    cleaned_socials != row.socials
+                    or kept_urls != (row.source_urls or [])
+                )
+                result.details.append(
+                    ContactQualityCleanupOut(
+                        email=cleanup.email,
+                        kept=cleanup.kept,
+                        removed_source_urls=cleanup.removed_source_urls,
+                        stripped_social_keys=cleanup.stripped_social_keys,
+                        reasons=cleanup.reasons,
+                    )
+                )
+
+                if not keep:
+                    if not dry_run:
+                        lead = session.get(Lead, row.lead_id) if row.lead_id else None
+                        if lead and lead.status != LeadStatus.DISQUALIFIED:
+                            lead.status = LeadStatus.DISQUALIFIED
+                            result.leads_disqualified += 1
+                        session.delete(row)
+                    result.profiles_removed += 1
+                    continue
+
+                if changed and not dry_run:
+                    row.socials = cleaned_socials
+                    row.source_urls = kept_urls
+                    if row.lead_id:
+                        lead = session.get(Lead, row.lead_id)
+                        if lead is not None:
+                            raw = dict(lead.raw_payload or {})
+                            raw["socials"] = cleaned_socials
+                            raw["found_on"] = kept_urls
+                            lead.raw_payload = raw
+                    result.profiles_updated += 1
+                elif changed:
+                    result.profiles_updated += 1
+            except Exception as exc:  # noqa: BLE001
+                result.errors.append(f"{row.email}: {exc}")
+
+        if not dry_run:
+            resources = list(session.scalars(select(HuntResource)))
+            for resource in resources:
+                cleaned_notes = scrub_notes_value(resource.notes)
+                if cleaned_notes != resource.notes:
+                    resource.notes = cleaned_notes
+                    result.resource_notes_scrubbed += 1
+
+    return ContactBackfillResultOut(
+        profiles_scanned=result.profiles_scanned,
+        profiles_updated=result.profiles_updated,
+        profiles_removed=result.profiles_removed,
+        leads_disqualified=result.leads_disqualified,
+        resource_notes_scrubbed=result.resource_notes_scrubbed,
+        details=result.details,
+        errors=result.errors,
+    )

@@ -183,11 +183,16 @@ def _cmd_research(args: argparse.Namespace) -> int:
 
 
 def _cmd_contacts(args: argparse.Namespace) -> int:
-    from .contact_store import list_contact_profiles
+    from .contact_store import backfill_contact_quality, list_contact_profiles
     from .db import init_db
     from .enums import Brand
 
     init_db()
+    if getattr(args, "contacts_command", None) == "backfill":
+        result = backfill_contact_quality(limit=args.limit, dry_run=args.dry_run)
+        print(json.dumps(result.model_dump(mode="json"), indent=2))
+        return 0 if not result.errors else 1
+
     brand = Brand(args.brand) if args.brand else None
     profiles = list_contact_profiles(brand=brand, email=args.email, limit=args.limit)
     rows = [profile.model_dump(mode="json") for profile in profiles]
@@ -346,6 +351,23 @@ def main(argv: list[str] | None = None) -> int:
     contacts_list.add_argument("--email", help="Filter by exact email")
     contacts_list.add_argument("--limit", type=int, default=500, help="Max profiles to return")
     contacts_list.set_defaults(func=_cmd_contacts)
+
+    contacts_backfill = contacts_sub.add_parser(
+        "backfill",
+        help="Re-apply contact-quality filters to existing profiles",
+    )
+    contacts_backfill.add_argument(
+        "--limit",
+        type=int,
+        default=500,
+        help="Max profiles to scan (default 500)",
+    )
+    contacts_backfill.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report changes without writing",
+    )
+    contacts_backfill.set_defaults(func=_cmd_contacts)
 
     verify = sub.add_parser("verify", help="Verify lead contacts (DNS/MX/HTTP, no mail)")
     verify.add_argument("--lead-id", type=int, help="Verify a single lead by id")

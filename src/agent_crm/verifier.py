@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import session_scope
+from .contact_quality import is_relevant_contact
 from .enums import (
     ActivityType,
     AgentStatus,
@@ -545,6 +546,8 @@ def verify_lead(
                 account_website = account.website
 
         contacts = extract_contacts(lead, account_website=account_website)
+        lead_source = lead.source
+        lead_payload = dict(lead.raw_payload or {}) if isinstance(lead.raw_payload, dict) else {}
         if not contacts:
             crm.record_heartbeat(status=AgentStatus.IDLE)
             crm.log_note(
@@ -564,10 +567,34 @@ def verify_lead(
             task=f"checking {kind.value}: {contact[:60]}",
         )
         if kind == ContactKind.EMAIL:
-            check = check_email(contact, resolver=resolver)
-            dns_summary = check.dns_summary
-            mx_summary = check.mx_summary
-            http_status = None
+            if lead_source == LeadSource.CONTACT:
+                found_on = lead_payload.get("found_on")
+                source_urls = (
+                    [url for url in found_on if isinstance(url, str)]
+                    if isinstance(found_on, list)
+                    else []
+                )
+                if not is_relevant_contact(contact, source_urls):
+                    check = EmailCheckResult(
+                        status=ContactVerificationStatus.INVALID,
+                        reasons=[
+                            "contact failed source-context quality filter "
+                            "(irrelevant page or generic support identity)",
+                        ],
+                    )
+                    dns_summary = None
+                    mx_summary = None
+                    http_status = None
+                else:
+                    check = check_email(contact, resolver=resolver)
+                    dns_summary = check.dns_summary
+                    mx_summary = check.mx_summary
+                    http_status = None
+            else:
+                check = check_email(contact, resolver=resolver)
+                dns_summary = check.dns_summary
+                mx_summary = check.mx_summary
+                http_status = None
         else:
             check = check_url(contact, client=http_client, resolver=resolver)
             dns_summary = check.dns_summary

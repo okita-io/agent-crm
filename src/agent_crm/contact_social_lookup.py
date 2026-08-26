@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import get_settings
+from .contact_quality import filter_socials
 from .searxng_client import SearchResult, search
 
 PROFILE_PATH_HINTS = {
@@ -151,4 +152,4 @@ def lookup_social_profiles(
             ):
                 socials[platform_guess] = _normalize_profile_url(hit.url)
 
-    return socials, queries_used
+    return filter_socials(socials, email=email) or {}, queries_used

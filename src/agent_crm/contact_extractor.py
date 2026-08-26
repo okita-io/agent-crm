@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from urllib.parse import unquote
 
+from .contact_quality import filter_socials, is_low_quality_social_url
+
 EMAIL_RE = re.compile(
     r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",
     re.IGNORECASE,
@@ -173,13 +175,14 @@ def _clean_name(value: str) -> str | None:
     return text[:255]
 
 
-def extract_social_urls(text: str) -> dict[str, str | list[str]]:
+def extract_social_urls(text: str, *, email: str | None = None) -> dict[str, str | list[str]]:
     """Collect public social profile URLs from page text."""
     found: dict[str, str | list[str]] = {}
-    other: list[str] = []
     for platform, pattern in SOCIAL_URL_PATTERNS.items():
         for match in pattern.findall(text):
             url = match.rstrip(").,;]")
+            if is_low_quality_social_url(url, email=email):
+                continue
             if platform not in found:
                 found[platform] = url
     return found
@@ -205,7 +208,7 @@ def _socials_near_email(text: str, email: str, email_start: int) -> dict[str, st
     window_start = max(0, email_start - 400)
     window_end = min(len(text), email_start + len(email) + 400)
     window = text[window_start:window_end]
-    socials = extract_social_urls(window)
+    socials = extract_social_urls(window, email=email)
     return {key: value for key, value in socials.items() if isinstance(value, str)}
 
 
@@ -274,7 +277,9 @@ def extract_contacts(
 
     if len(contacts) == 1 and page_socials:
         only = next(iter(contacts.values()))
-        only.socials = dict(page_socials)
+        only.socials = dict(
+            filter_socials(page_socials, email=only.email) or {}
+        )
         return list(contacts.values())
 
     for contact in contacts.values():
@@ -284,5 +289,6 @@ def extract_contacts(
             near = _socials_near_email(combined, contact.email, match.start())
             if near:
                 contact.socials.update(near)
+        contact.socials = filter_socials(contact.socials, email=contact.email) or {}
 
     return list(contacts.values())
