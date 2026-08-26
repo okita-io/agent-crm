@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
@@ -251,6 +251,64 @@ class HuntStore:
             )
             if brand is not None:
                 stmt = stmt.where(HuntQuery.brand == brand)
+            return list(session.scalars(stmt))
+
+    def current_running_query(
+        self,
+        *,
+        stale_minutes: int = 15,
+        now: datetime | None = None,
+    ) -> HuntQuery | None:
+        """Most recently updated fresh ``running`` query, or ``None`` if stale/absent."""
+        reference = now or datetime.now(UTC)
+        cutoff = reference - timedelta(minutes=stale_minutes)
+        with session_scope() as session:
+            stmt = (
+                select(HuntQuery)
+                .where(
+                    HuntQuery.status == HuntQueryStatus.RUNNING,
+                    HuntQuery.updated_at >= cutoff,
+                )
+                .order_by(HuntQuery.updated_at.desc())
+                .limit(1)
+            )
+            return session.scalar(stmt)
+
+    def queue_breakdown(self) -> list[dict]:
+        """Counts grouped by brand, priority, and status."""
+        with session_scope() as session:
+            stmt = (
+                select(
+                    HuntQuery.brand,
+                    HuntQuery.priority,
+                    HuntQuery.status,
+                    func.count(),
+                )
+                .group_by(HuntQuery.brand, HuntQuery.priority, HuntQuery.status)
+                .order_by(
+                    HuntQuery.brand.asc(),
+                    HuntQuery.priority.desc(),
+                    HuntQuery.status.asc(),
+                )
+            )
+            return [
+                {
+                    "brand": brand.value,
+                    "priority": priority,
+                    "status": status.value,
+                    "count": count,
+                }
+                for brand, priority, status, count in session.execute(stmt)
+            ]
+
+    def recently_completed_queries(self, *, limit: int = 8) -> list[HuntQuery]:
+        with session_scope() as session:
+            stmt = (
+                select(HuntQuery)
+                .where(HuntQuery.status == HuntQueryStatus.COMPLETED)
+                .order_by(HuntQuery.completed_at.desc(), HuntQuery.updated_at.desc())
+                .limit(limit)
+            )
             return list(session.scalars(stmt))
 
     def queue_status(self, run_id: str | None = None) -> dict:

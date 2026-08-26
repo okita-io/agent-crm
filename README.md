@@ -45,7 +45,7 @@ CRM_LLM_BASE_URL=http://spark-queue:8088/v1
 - Global cap: **4 concurrent Spark sessions** (shared with Hermes; leaves GPU headroom for ComfyUI)
 - **Never point agents at Spark SGLang directly**
 
-The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats.
+The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats and a compact hunt-loop phase strip. The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
 
 ### Database and migrations
 
@@ -211,9 +211,9 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 
 | Tab | Shows |
 |-----|-------|
-| **Live agents** | Heartbeats + spark-queue slot occupancy (auto-refresh) |
+| **Live agents** | Heartbeats + spark-queue slot occupancy + compact hunt-loop phase (auto-refresh) |
 | **Pipeline & leads** | Weekly metrics, stage chart, lead table, activity history, verifications |
-| **Hunter** | Query queue status + `hunt_resources` table |
+| **Hunter** | Live hunt-loop drain status + query queue + `hunt_resources` table |
 | **Research** | `research_findings` with brand/kind filters |
 | **Contacts** | `contact_profiles` — name, email, socials, source pages |
 | **Verifier** | Hunter leads and verification status |
