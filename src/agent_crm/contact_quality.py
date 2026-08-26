@@ -9,9 +9,198 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from typing import Literal
 from urllib.parse import urlparse
 
 from .hunt_utils import registrable_domain
+
+EmailQualityFilter = Literal["all", "person", "role"]
+
+# Role / shared inbox local parts beyond generic support handles.
+ROLE_INBOX_LOCAL_PARTS: frozenset[str] = frozenset(
+    {
+        "info",
+        "hello",
+        "hi",
+        "contact",
+        "sales",
+        "enquiries",
+        "inquiries",
+        "inquiry",
+        "general",
+        "office",
+        "team",
+        "mail",
+        "email",
+        "press",
+        "media",
+        "pr",
+        "marketing",
+        "business",
+        "accounts",
+        "booking",
+        "bookings",
+        "orders",
+        "order",
+        "shop",
+        "store",
+        "reception",
+        "frontdesk",
+        "front-desk",
+        "concierge",
+        "careers",
+        "jobs",
+        "hr",
+        "recruiting",
+        "recruitment",
+        "talent",
+        "news",
+        "newsletter",
+        "subscribe",
+        "unsubscribe",
+        "membership",
+        "members",
+        "community",
+        "partners",
+        "partnerships",
+        "sponsorship",
+        "sponsor",
+        "advertising",
+        "ads",
+        "ad",
+        "wholesale",
+        "returns",
+        "refunds",
+        "warranty",
+        "claims",
+        "complaints",
+        "complaint",
+        "enquiry",
+        "enquire",
+        "inquire",
+        "questions",
+        "question",
+        "ask",
+        "talk",
+        "chat",
+        "welcome",
+        "sayhello",
+        "getintouch",
+        "reachus",
+        "reachout",
+        "connect",
+        "workwithus",
+        "collab",
+        "collaborate",
+        "studio",
+        "agency",
+        "company",
+        "brand",
+        "founders",
+        "founder",
+        "ceo",
+        "owner",
+        "owners",
+        "management",
+        "operations",
+        "ops",
+        "dev",
+        "developers",
+        "engineering",
+        "tech",
+        "it",
+        "finance",
+        "billing",
+        "invoice",
+        "invoices",
+        "payments",
+        "payment",
+        "accounting",
+        "accounts",
+        "account",
+        "customersuccess",
+        "customer-success",
+        "success",
+        "onboarding",
+        "training",
+        "education",
+        "school",
+        "university",
+        "college",
+        "library",
+        "museum",
+        "gallery",
+        "events",
+        "event",
+        "tickets",
+        "ticket",
+        "reservations",
+        "reservation",
+        "concierge",
+    }
+)
+
+_FILENAME_EMAIL_DOMAIN_RE = re.compile(
+    r"\.(?:png|jpe?g|gif|svg|webp|ico|bmp|tiff?|pdf|docx?|xlsx?|zip|mp[34]|mov|avi)$",
+    re.IGNORECASE,
+)
+
+_PLACEHOLDER_EMAIL_DOMAINS: frozenset[str] = frozenset(
+    {
+        "domain.com",
+        "example.com",
+        "example.org",
+        "example.net",
+        "email.com",
+        "mail.com",
+        "yourdomain.com",
+        "yourcompany.com",
+        "company.com",
+        "website.com",
+        "site.com",
+        "test.com",
+        "sample.com",
+        "placeholder.com",
+        "yoursite.com",
+        "mydomain.com",
+    }
+)
+
+_PLACEHOLDER_EMAIL_LOCALS: frozenset[str] = frozenset(
+    {
+        "name",
+        "firstname",
+        "lastname",
+        "first",
+        "last",
+        "yourname",
+        "your-name",
+        "your.email",
+        "you",
+        "user",
+        "username",
+        "someone",
+        "somebody",
+        "person",
+        "email",
+        "e-mail",
+        "mail",
+        "contact",
+        "example",
+        "test",
+        "demo",
+        "sample",
+        "placeholder",
+        "foo",
+        "bar",
+        "john",
+        "jane",
+    }
+)
+
+_LOCAL_PART_SEPARATOR_RE = re.compile(r"[._\-]")
+_ALPHA_TOKEN_RE = re.compile(r"[a-z]+", re.IGNORECASE)
+_PERSON_NAME_WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]{0,}")
 
 # Domains that should never count as a useful contact-discovery page.
 IRRELEVANT_SOURCE_DOMAIN_FRAGMENTS: tuple[str, ...] = (
@@ -364,7 +553,7 @@ def is_generic_support_email(email: str) -> bool:
 
 
 def is_role_inbox_email(email: str) -> bool:
-    """True for generic role inboxes (info@, support@, etc.) — not individual people."""
+    """Return True for shared / role inboxes (info@, hello@, support@, etc.)."""
     if is_generic_support_email(email):
         return True
     local, _, domain = email.strip().lower().partition("@")
@@ -377,6 +566,155 @@ def is_role_inbox_email(email: str) -> bool:
         if part in ROLE_INBOX_LOCAL_PARTS:
             return True
     return False
+
+
+def is_filename_as_email(email: str) -> bool:
+    """Return True when the address looks like a filename-as-email (name@x.png)."""
+    local, _, domain = email.strip().lower().partition("@")
+    if not local or not domain:
+        return False
+    if _FILENAME_EMAIL_DOMAIN_RE.search(domain):
+        return True
+    if re.search(r"\.(?:png|jpe?g|gif|svg|webp|ico|bmp)$", local, re.IGNORECASE):
+        return True
+    return False
+
+
+def is_placeholder_email(email: str) -> bool:
+    """Return True for template placeholders like name@domain.com."""
+    local, _, domain = email.strip().lower().partition("@")
+    if not local or not domain:
+        return True
+    if domain in _PLACEHOLDER_EMAIL_DOMAINS:
+        return True
+    if local in _PLACEHOLDER_EMAIL_LOCALS and domain in _PLACEHOLDER_EMAIL_DOMAINS:
+        return True
+    if local in _PLACEHOLDER_EMAIL_LOCALS and domain.endswith(".example"):
+        return True
+    if domain.endswith(".example") or domain.endswith(".invalid") or domain.endswith(".test"):
+        return True
+    return False
+
+
+def _stored_name_looks_like_person(name: str | None) -> bool:
+    if not name:
+        return False
+    text = name.strip()
+    if not text or len(text) > 80:
+        return False
+    if "@" in text:
+        return False
+    words = _PERSON_NAME_WORD_RE.findall(text)
+    if len(words) < 2:
+        return False
+    generic = {
+        "contact",
+        "email",
+        "support",
+        "team",
+        "sales",
+        "info",
+        "hello",
+        "general",
+        "inquiries",
+        "inquiry",
+        "mail",
+        "message",
+        "reach",
+        "write",
+        "send",
+        "us",
+        "our",
+        "the",
+        "for",
+        "at",
+        "or",
+        "and",
+    }
+    meaningful = [word for word in words if word.lower() not in generic]
+    return len(meaningful) >= 2
+
+
+def local_part_has_person_signals(email: str) -> bool:
+    """Return True when the local part looks like an individual (jane.doe, jane_doe)."""
+    local, _, domain = email.strip().lower().partition("@")
+    if not local or not domain:
+        return False
+    base_local = local.split("+", 1)[0]
+    if _LOCAL_PART_SEPARATOR_RE.search(base_local):
+        parts = [part for part in re.split(r"[._\-]+", base_local) if part]
+        alpha_parts = [part for part in parts if _ALPHA_TOKEN_RE.fullmatch(part)]
+        if len(alpha_parts) >= 2:
+            return True
+    alpha_tokens = _ALPHA_TOKEN_RE.findall(base_local)
+    return len(alpha_tokens) >= 2
+
+
+def is_person_email(
+    email: str,
+    *,
+    name: str | None = None,
+    decoded_from_obfuscation: bool = False,
+) -> bool:
+    """Return True when an email looks like an individual person inbox."""
+    normalized = email.strip().lower()
+    if not normalized or "@" not in normalized:
+        return False
+    if is_role_inbox_email(normalized):
+        return False
+    if is_filename_as_email(normalized):
+        return False
+    if is_placeholder_email(normalized):
+        return False
+    if decoded_from_obfuscation:
+        return True
+    if _stored_name_looks_like_person(name):
+        return True
+    if local_part_has_person_signals(normalized):
+        return True
+    return False
+
+
+def classify_email_quality(
+    email: str,
+    *,
+    name: str | None = None,
+    decoded_from_obfuscation: bool = False,
+) -> EmailQualityFilter | None:
+    """Classify an email as person, role, or None when it is low-quality junk."""
+    if is_person_email(
+        email,
+        name=name,
+        decoded_from_obfuscation=decoded_from_obfuscation,
+    ):
+        return "person"
+    if is_role_inbox_email(email):
+        return "role"
+    if is_filename_as_email(email) or is_placeholder_email(email):
+        return None
+    return None
+
+
+def profile_matches_quality_filter(
+    email: str,
+    *,
+    name: str | None = None,
+    quality: EmailQualityFilter = "all",
+    decoded_from_obfuscation: bool = False,
+) -> bool:
+    """Return whether a stored profile matches the requested quality filter."""
+    if quality == "all":
+        return True
+    classification = classify_email_quality(
+        email,
+        name=name,
+        decoded_from_obfuscation=decoded_from_obfuscation,
+    )
+    if quality == "person":
+        return classification == "person"
+    if quality == "role":
+        return classification == "role"
+    return True
 
 
 def is_relevant_contact(email: str, source_urls: list[str] | None) -> bool:

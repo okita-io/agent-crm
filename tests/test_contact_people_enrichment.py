@@ -27,7 +27,8 @@ from agent_crm.contact_store import (
     _persist_enrichment,
 )
 from agent_crm.db import init_db, reset_engine
-from agent_crm.enums import Brand
+from agent_crm.enums import AgentJobKind, Brand
+from agent_crm.job_store import count_pending_jobs
 
 
 @pytest.fixture()
@@ -162,7 +163,7 @@ def test_contacts_api_round_trip_enrichment_fields(api_client, db_url) -> None:
     assert row["enrichment"] is not None
 
 
-def test_process_scraped_page_enrichment_mocked(db_url) -> None:
+def test_process_scraped_page_contacts_enqueues_enrich_job(db_url) -> None:
     searx_payload = {
         "results": [
             {
@@ -191,9 +192,10 @@ def test_process_scraped_page_enrichment_mocked(db_url) -> None:
     )
     assert len(profiles) == 1
     profile = profiles[0]
-    assert profile.title == "VP Marketing"
-    assert profile.organization == "Acme"
+    assert profile.title is None
+    assert profile.organization is None
     assert profile.name == "Jane Doe"
+    assert count_pending_jobs(kind=AgentJobKind.ENRICH_CONTACT) == 1
 
 
 def test_backfill_contact_enrichment_cli_shape(db_url) -> None:

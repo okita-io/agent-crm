@@ -65,11 +65,17 @@ class Settings(BaseSettings):
     # Contact extraction / social lookup
     contact_social_queries_per_profile: int = 4
     contact_social_lookups_per_run: int = 40
+    contact_spark_decode_per_run: int = 20
+    contact_spark_decode_per_page: int = 5
 
     # Contact people-enrichment (SERP + public pages + Spark)
     contact_enrichment_queries_per_profile: int = 6
     contact_enrichments_per_run: int = 20
     contact_enrichment_spark_per_run: int = 10
+
+    # Contact worker drain loops (job dispatcher)
+    job_dispatcher_poll_seconds: int = 45
+    job_dispatcher_batch_size: int = 20
 
     @property
     def is_sqlite(self) -> bool:

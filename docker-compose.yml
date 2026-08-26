@@ -84,5 +84,22 @@ services:
       spark-queue:
         condition: service_started
 
+  contact-worker:
+    build: .
+    command: ["agent-crm", "jobs"]
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_SEARXNG_URL: http://host.docker.internal:8080
+      CRM_FIRECRAWL_URL: http://host.docker.internal:3002
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      spark-queue:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   crm_pgdata:

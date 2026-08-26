@@ -192,7 +192,10 @@ class HuntStatusOut(BaseModel):
     queue_breakdown: list[HuntQueueBreakdownRow]
     email_counts: list[HuntEmailCountRow]
     tactic_studio_email_total: int
+    tactic_studio_person_email_total: int | None = None
+    tactic_studio_all_email_total: int | None = None
     tactic_studio_email_goal: int
+    agent_jobs: dict | None = None
     recently_completed: list[HuntCompletedQueryOut]
     spark: HuntSparkSummaryOut
 

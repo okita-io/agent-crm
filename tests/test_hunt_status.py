@@ -143,23 +143,32 @@ def test_build_hunt_status_includes_email_counts_and_completed(db_url):
         row.completed_at = datetime.now(UTC)
 
     upsert_contact_profile(
-        email="pete@example.com",
-        name="Pete",
+        email="pete.smith@tactic.studio",
+        name="Pete Smith",
         brand=Brand.TACTIC_STUDIO,
-        source_url="https://example.com",
+        source_url="https://tactic.studio/team",
         audience=ContactAudience.MARKETING,
     )
     upsert_contact_profile(
-        email="creator@example.com",
-        name="Creator",
+        email="jane.doe@tactic.studio",
+        name="Jane Doe",
         brand=Brand.TACTIC_STUDIO,
-        source_url="https://example.com/creator",
+        source_url="https://tactic.studio/creator",
         audience=ContactAudience.INFLUENCER,
+    )
+    upsert_contact_profile(
+        email="info@tactic.studio",
+        name=None,
+        brand=Brand.TACTIC_STUDIO,
+        source_url="https://tactic.studio/contact",
+        audience=ContactAudience.MARKETING,
     )
 
     status = build_hunt_status(store=store, queue_health=None, now=datetime.now(UTC))
     assert status["phase"] == "idle / queue empty"
     assert status["tactic_studio_email_total"] == 2
+    assert status["tactic_studio_person_email_total"] == 2
+    assert status["tactic_studio_all_email_total"] == 3
     assert len(status["recently_completed"]) == 1
     assert status["recently_completed"][0]["query"] == "done query"
     assert any(

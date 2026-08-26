@@ -34,6 +34,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from .enums import (
     ActivityType,
+    AgentJobKind,
+    AgentJobStatus,
     AgentStatus,
     Brand,
     ContactAudience,
@@ -331,6 +333,34 @@ class ContactProfile(Base, TimestampMixin):
     )
 
     lead: Mapped[Lead | None] = relationship(back_populates="contact_profile")
+
+
+class AgentJob(Base, TimestampMixin):
+    """Background CRM work queue (enrichment, verification, Spark decode)."""
+
+    __tablename__ = "agent_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[AgentJobKind] = mapped_column(
+        str_enum(AgentJobKind), nullable=False, index=True
+    )
+    status: Mapped[AgentJobStatus] = mapped_column(
+        str_enum(AgentJobStatus),
+        default=AgentJobStatus.PENDING,
+        nullable=False,
+        index=True,
+    )
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=50, nullable=False, index=True)
+    dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    actor: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ContactVerification(Base, TimestampMixin):

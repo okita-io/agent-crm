@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import uuid
@@ -29,6 +30,8 @@ from .llm_client import chat_completions
 from .searxng_client import SearchResult, search
 
 ACTOR = "outbound_hunter"
+
+logger = logging.getLogger(__name__)
 
 PARAM_PALETTES: list[dict | None] = [
     None,
@@ -117,12 +120,12 @@ def run_hunt_loop(
     use_run_id = None if resume else result.run_id
     brand_filter = brand if brand != Brand.UNASSIGNED else None
     palette_index = 0
-    contact_budget = ContactExtractionBudget.from_settings()
     feedback_budget = HuntFeedbackBudget.from_settings()
 
     while not _query_budget_exhausted(result.queries_run, budget.max_queries) and (
         deadline is None or time.monotonic() < deadline
     ):
+        contact_budget = ContactExtractionBudget.from_settings()
         pending = store.next_pending_query(run_id=use_run_id, brand=brand_filter)
         if pending is None:
             result.stop_reason = "queue_empty"

@@ -13,6 +13,7 @@ from agent_crm.config import get_settings
 from agent_crm.contact_store import (
     count_contact_profiles,
     count_contact_profiles_by_brand,
+    count_contact_profiles_by_quality,
     list_contact_profiles,
 )
 from agent_crm.db import database_kind, init_db
@@ -164,6 +165,13 @@ def _render_hunt_loop_status(*, compact: bool = False) -> None:
     phase_cols[2].metric("Spark waiting", status["spark"]["waiting"])
     phase_cols[3].metric("Spark in-flight", status["spark"]["in_flight"])
 
+    enrich_pending = int((status.get("agent_jobs") or {}).get("pending_by_kind", {}).get("enrich_contact", 0))
+    verify_pending = int((status.get("agent_jobs") or {}).get("pending_by_kind", {}).get("verify_lead", 0))
+    st.caption(
+        f"Job queue: enrich **{enrich_pending}** pending · "
+        f"verify **{verify_pending}** pending"
+    )
+
     st.markdown("**Now playing**")
     if now_playing:
         audience = now_playing.get("audience") or "—"
@@ -195,11 +203,15 @@ def _render_hunt_loop_status(*, compact: bool = False) -> None:
     else:
         st.info("Queue is empty.")
 
-    st.markdown("**Pete's list** (contact profiles with email)")
+    st.markdown("**Pete's list** (person emails on tactic.studio profiles)")
     tactic_total = int(status.get("tactic_studio_email_total", 0))
+    tactic_all = int(status.get("tactic_studio_all_email_total", tactic_total))
     tactic_goal = int(status.get("tactic_studio_email_goal", 100))
     st.progress(min(tactic_total / tactic_goal, 1.0))
-    st.caption(f"tactic.studio total: **{tactic_total}** / {tactic_goal} goal")
+    st.caption(
+        f"tactic.studio person emails: **{tactic_total}** / {tactic_goal} goal "
+        f"(all with email: {tactic_all})"
+    )
 
     email_counts = status.get("email_counts") or []
     if email_counts:
@@ -565,26 +577,40 @@ def _render_contacts_tab() -> None:
         options=["all", "marketing", "influencer", "user"],
         key="contacts_audience",
     )
+    quality_filter = st.selectbox(
+        "Email quality",
+        options=["person", "role", "all"],
+        index=0,
+        key="contacts_quality",
+    )
     brand = None if brand_filter == "all" else Brand(brand_filter)
     audience = (
         None
         if audience_filter == "all"
         else ContactAudience(audience_filter)
     )
+    quality = quality_filter
 
-    filter_key = f"{brand_filter}:{audience_filter}"
+    filter_key = f"{brand_filter}:{audience_filter}:{quality_filter}"
     if st.session_state.get("contacts_filter_key") != filter_key:
         st.session_state.contacts_filter_key = filter_key
         st.session_state.contacts_page = 0
     if "contacts_page" not in st.session_state:
         st.session_state.contacts_page = 0
 
-    total = count_contact_profiles(brand=brand, audience=audience)
-    if total == 0:
+    quality_counts = count_contact_profiles_by_quality(brand=brand, audience=audience)
+    total = count_contact_profiles(brand=brand, audience=audience, quality=quality)
+    st.caption(
+        f"person **{quality_counts['person']}** / "
+        f"role **{quality_counts['role']}** / "
+        f"total **{quality_counts['total']}**"
+    )
+
+    if quality_counts["total"] == 0:
         st.info("No contact profiles yet. Run hunter or research scrapes to extract emails.")
         return
 
-    if brand is None:
+    if brand is None and quality == "all":
         by_brand = count_contact_profiles_by_brand(audience=audience)
         brand_cols = st.columns(max(len(by_brand), 1))
         for col, row in zip(brand_cols, by_brand, strict=False):
@@ -601,6 +627,7 @@ def _render_contacts_tab() -> None:
     profiles = list_contact_profiles(
         brand=brand,
         audience=audience,
+        quality=quality,
         limit=CONTACTS_PAGE_SIZE,
         offset=offset,
     )
