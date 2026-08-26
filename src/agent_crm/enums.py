@@ -138,6 +138,28 @@ class HuntQueryStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class AgentJobKind(str, enum.Enum):
+    """Kinds of background CRM work dispatched by the job runner."""
+
+    ENRICH_CONTACT = "enrich_contact"
+    VERIFY_LEAD = "verify_lead"
+    DECODE_EMAIL = "decode_email"
+
+
+class AgentJobStatus(str, enum.Enum):
+    """Lifecycle of a queued agent job."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+SPARK_AGENT_JOB_KINDS: frozenset[AgentJobKind] = frozenset(
+    {AgentJobKind.ENRICH_CONTACT, AgentJobKind.DECODE_EMAIL}
+)
+
+
 class HuntResourceKind(str, enum.Enum):
     """What kind of site/resource the hunter discovered."""
 

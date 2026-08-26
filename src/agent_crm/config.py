@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     contact_enrichments_per_run: int = 20
     contact_enrichment_spark_per_run: int = 10
 
+    # Contact worker drain loops (job dispatcher)
+    job_dispatcher_poll_seconds: int = 45
+    job_dispatcher_batch_size: int = 20
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from agent_crm.job_dispatcher import build_job_status
 from agent_crm.contact_store import (
     count_contact_emails_by_brand_audience,
     count_contact_profiles_by_quality,
@@ -120,6 +121,7 @@ def build_hunt_status(
         "tactic_studio_person_email_total": tactic_person_total,
         "tactic_studio_all_email_total": tactic_all_total,
         "tactic_studio_email_goal": TACTIC_STUDIO_EMAIL_GOAL,
+        "agent_jobs": build_job_status(),
         "recently_completed": recently_completed,
         "spark": {
             "waiting": int(spark.get("waiting", 0)),

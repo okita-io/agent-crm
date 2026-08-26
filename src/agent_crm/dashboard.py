@@ -165,6 +165,13 @@ def _render_hunt_loop_status(*, compact: bool = False) -> None:
     phase_cols[2].metric("Spark waiting", status["spark"]["waiting"])
     phase_cols[3].metric("Spark in-flight", status["spark"]["in_flight"])
 
+    enrich_pending = int((status.get("agent_jobs") or {}).get("pending_by_kind", {}).get("enrich_contact", 0))
+    verify_pending = int((status.get("agent_jobs") or {}).get("pending_by_kind", {}).get("verify_lead", 0))
+    st.caption(
+        f"Job queue: enrich **{enrich_pending}** pending · "
+        f"verify **{verify_pending}** pending"
+    )
+
     st.markdown("**Now playing**")
     if now_playing:
         audience = now_playing.get("audience") or "—"

@@ -13,7 +13,7 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .db import session_scope
@@ -653,6 +653,19 @@ def verify_lead(
 
     crm.record_heartbeat(status=AgentStatus.IDLE)
     return results
+
+
+def count_unverified_hunter_leads() -> int:
+    """Count hunter leads that have no contact verification rows yet."""
+    with session_scope() as session:
+        verified_lead_ids = select(ContactVerification.lead_id).distinct()
+        stmt = (
+            select(func.count())
+            .select_from(Lead)
+            .where(Lead.source == LeadSource.HUNTER)
+            .where(Lead.id.not_in(verified_lead_ids))
+        )
+        return int(session.scalar(stmt) or 0)
 
 
 def verify_batch_unverified(

@@ -271,6 +271,14 @@ def contacts_enrich(body: ContactEnrichRequest) -> ContactEnrichResultOut:
     return backfill_contact_enrichment(limit=body.limit, dry_run=body.dry_run)
 
 
+@app.get("/jobs/status", tags=["jobs"])
+def jobs_status() -> dict:
+    """Return pending/running agent job counts by kind."""
+    from .job_dispatcher import build_job_status
+
+    return build_job_status()
+
+
 # ---- lead verifier ---------------------------------------------------------
 
 

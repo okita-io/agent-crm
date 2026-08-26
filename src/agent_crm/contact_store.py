@@ -28,6 +28,7 @@ from .contact_people_enrichment import (
 from .contact_social_lookup import lookup_social_profiles
 from .db import session_scope
 from .enums import Brand, ContactAudience, LeadSource, LeadStatus
+from .job_store import enqueue_enrich_contact_job
 from .models import ContactProfile, HuntResource, Lead, Opportunity
 from .schemas import (
     ContactBackfillResultOut,
@@ -45,8 +46,8 @@ class ContactExtractionBudget:
     """Per-query/run caps on social lookup, people-enrichment, and Spark decode."""
 
     social_lookups_remaining: int
-    enrichments_remaining: int
-    spark_enrichments_remaining: int
+    enrichments_remaining: int = 0
+    spark_enrichments_remaining: int = 0
     spark_decode_remaining: int = 0
     spark_decode_per_page: int = 5
 
@@ -215,7 +216,23 @@ def upsert_contact_profile(
             row.lead_id = lead.id
 
         session.flush()
-        return ContactProfileOut.model_validate(row)
+        profile_out = ContactProfileOut.model_validate(row)
+        enqueue_after = _should_enqueue_enrich_job(row)
+        profile_id = row.id
+
+    if enqueue_after:
+        enqueue_enrich_contact_job(profile_id)
+    return profile_out
+
+
+def _should_enqueue_enrich_job(row: ContactProfile) -> bool:
+    if is_role_inbox_email(row.email):
+        return False
+    if row.enrichment is not None:
+        return False
+    if row.title is not None and row.organization is not None:
+        return False
+    return True
 
 
 def _persist_enrichment(
@@ -256,53 +273,6 @@ def _persist_enrichment(
 
         session.flush()
         return ContactProfileOut.model_validate(row)
-
-
-def _needs_people_enrichment(profile: ContactProfileOut) -> bool:
-    return (
-        profile.enrichment is None
-        and profile.title is None
-        and profile.organization is None
-    )
-
-
-def _maybe_enrich_contact(
-    *,
-    profile: ContactProfileOut,
-    name: str | None,
-    searx_client: httpx.Client | None,
-    budget: ContactExtractionBudget,
-) -> ContactProfileOut:
-    if is_role_inbox_email(profile.email):
-        return profile
-    if not _needs_people_enrichment(profile):
-        return profile
-    if not budget.consume_enrichment():
-        return profile
-
-    allow_spark = budget.spark_enrichments_remaining > 0
-    try:
-        result = enrich_contact_person(
-            email=profile.email,
-            name=name or profile.name,
-            searx_client=searx_client,
-            allow_spark=allow_spark,
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("People enrichment failed for %s", profile.email)
-        return profile
-
-    if result is None:
-        return profile
-
-    if result.spark_used and allow_spark:
-        budget.consume_spark()
-
-    try:
-        return _persist_enrichment(email=profile.email, result=result)
-    except Exception:  # noqa: BLE001
-        logger.exception("Failed to persist enrichment for %s", profile.email)
-        return profile
 
 
 def _apply_contact_profile_filters(
@@ -530,12 +500,6 @@ def process_scraped_page_contacts(
             continue
 
         page_had_socials = bool(contact.socials)
-        profile = _maybe_enrich_contact(
-            profile=profile,
-            name=contact.name,
-            searx_client=searx_client,
-            budget=budget,
-        )
 
         needs_lookup = not profile.socials
         if needs_lookup and not page_had_socials and budget.consume_profile_lookup():
@@ -649,17 +613,6 @@ def backfill_contact_quality(
     )
 
 
-def count_enrichment_queue_remaining() -> int:
-    """Count person contact profiles still missing people-enrichment."""
-    with session_scope() as session:
-        rows = list(
-            session.scalars(
-                select(ContactProfile).where(ContactProfile.enrichment.is_(None))
-            )
-        )
-    return sum(1 for row in rows if not is_role_inbox_email(row.email))
-
-
 def _load_enrichment_queue(limit: int, *, mark_role_skips: bool = True) -> list[ContactProfile]:
     """Load up to ``limit`` person profiles that still need enrichment."""
     fetch_cap = max(limit * 5, limit)
@@ -682,16 +635,6 @@ def _load_enrichment_queue(limit: int, *, mark_role_skips: bool = True) -> list[
             if len(person_rows) >= limit:
                 break
         return person_rows
-
-
-def drain_enrichment_backlog_after_query(
-    *,
-    batch_size: int | None = None,
-) -> ContactEnrichResultOut:
-    """Process one enrichment batch after a hunt query (default batch size from settings)."""
-    settings = get_settings()
-    size = batch_size if batch_size is not None else settings.contact_enrichments_per_run
-    return backfill_contact_enrichment(limit=size, dry_run=False)
 
 
 def backfill_contact_enrichment(

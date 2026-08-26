@@ -211,6 +211,18 @@ def _cmd_contacts(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_jobs(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .job_dispatcher import run_job_dispatcher
+
+    init_db()
+    run_job_dispatcher(
+        batch_size=args.batch_size,
+        poll_seconds=args.poll_seconds,
+    )
+    return 0
+
+
 def _cmd_verify(args: argparse.Namespace) -> int:
     from .db import init_db
     from .schemas import VerifyRawRequest
@@ -404,6 +416,24 @@ def main(argv: list[str] | None = None) -> int:
         help="Report enrichment without writing",
     )
     contacts_enrich.set_defaults(func=_cmd_contacts)
+
+    jobs = sub.add_parser(
+        "jobs",
+        help="Run the agent job dispatcher (enrich, verify; Spark-aware)",
+    )
+    jobs.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Max jobs to claim per cycle (default from settings)",
+    )
+    jobs.add_argument(
+        "--poll-seconds",
+        type=int,
+        default=None,
+        help="Idle poll interval when queues are empty (default from settings)",
+    )
+    jobs.set_defaults(func=_cmd_jobs)
 
     verify = sub.add_parser("verify", help="Verify lead contacts (DNS/MX/HTTP, no mail)")
     verify.add_argument("--lead-id", type=int, help="Verify a single lead by id")

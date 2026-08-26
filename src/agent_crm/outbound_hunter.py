@@ -251,6 +251,9 @@ def _create_lead_from_hit(
     )
     if brand is not None and brand != Brand.UNASSIGNED:
         crm.route_brand(lead.id, brand)
+    from .job_store import enqueue_verify_lead_job
+
+    enqueue_verify_lead_job(lead.id)
     return lead
 
 
