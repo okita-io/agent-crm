@@ -90,21 +90,19 @@ def run_hunt_loop(
     deadline = _wall_clock_deadline(budget.max_minutes)
 
     pending_existing = store.count_pending(brand if brand != Brand.UNASSIGNED else None)
-    if resume and not query and pending_existing > 0:
-        should_seed = False
-    else:
-        should_seed = bool(query) or brand != Brand.UNASSIGNED
 
-    if should_seed:
-        if query:
-            store.enqueue_query(query=query, brand=brand, origin="seed", run_id=result.run_id)
-        elif brand != Brand.UNASSIGNED:
-            for seed in seeds_for_brand(brand):
-                store.enqueue_query(query=seed, brand=brand, origin="seed_pack", run_id=result.run_id)
-        else:
-            result.stop_reason = "no_seed"
-            record_heartbeat(ACTOR, status=AgentStatus.IDLE)
-            return result
+    if query:
+        store.enqueue_query(query=query, brand=brand, origin="seed", run_id=result.run_id)
+
+    if brand != Brand.UNASSIGNED:
+        for seed in seeds_for_brand(brand):
+            store.enqueue_query(
+                query=seed, brand=brand, origin="seed_pack", run_id=result.run_id
+            )
+    elif not query and pending_existing == 0:
+        result.stop_reason = "no_seed"
+        record_heartbeat(ACTOR, status=AgentStatus.IDLE)
+        return result
 
     use_run_id = None if resume else result.run_id
     brand_filter = brand if brand != Brand.UNASSIGNED else None
