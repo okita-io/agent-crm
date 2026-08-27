@@ -145,6 +145,28 @@ _FILENAME_EMAIL_DOMAIN_RE = re.compile(
     re.IGNORECASE,
 )
 
+_RETINA_ASSET_DOMAIN_RE = re.compile(
+    r"^\d+x(?:\.[a-f0-9]{4,})?\.(?:png|jpe?g|gif|svg|webp)$",
+    re.IGNORECASE,
+)
+
+_IMAGE_EXTENSION_TLD_RE = re.compile(
+    r"^(?:png|jpe?g|gif|svg|webp|bmp|tiff?)$",
+    re.IGNORECASE,
+)
+
+_ASSET_EMAIL_LOCAL_MARKERS: tuple[str, ...] = (
+    "screenshot",
+    "screen-shot",
+    "screen_shot",
+    "cleanshot",
+    "clean-shot",
+    "whatsapp-image",
+    "whatsapp_image",
+    "whatsapp image",
+    "untitled",
+)
+
 _JUNK_PERSON_NAME_RE = re.compile(
     r"(?:"
     r"screenshot|screen[\s\-_]?shot|"
@@ -615,7 +637,17 @@ def is_filename_as_email(email: str) -> bool:
         return False
     if _FILENAME_EMAIL_DOMAIN_RE.search(domain):
         return True
+    if _RETINA_ASSET_DOMAIN_RE.match(domain):
+        return True
+    if _IMAGE_EXTENSION_TLD_RE.match(domain):
+        return True
     if re.search(r"\.(?:png|jpe?g|gif|svg|webp|ico|bmp)$", local, re.IGNORECASE):
+        return True
+    if any(marker in local for marker in _ASSET_EMAIL_LOCAL_MARKERS):
+        return True
+    if re.search(r"@(?:\d+x|[\d.]+(?:am|pm)?)", local):
+        return True
+    if re.fullmatch(r"\d+x\d+", local) and _FILENAME_EMAIL_DOMAIN_RE.search(domain):
         return True
     return False
 

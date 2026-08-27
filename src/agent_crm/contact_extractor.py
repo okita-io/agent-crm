@@ -13,6 +13,7 @@ from urllib.parse import unquote
 from .contact_quality import (
     filter_socials,
     is_dummy_documentation_email,
+    is_filename_as_email,
     is_junk_person_name,
     is_low_quality_social_url,
     is_role_inbox_email,
@@ -156,6 +157,26 @@ _OBFUSCATION_SPAN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Image filenames / asset paths where ``at`` must not become ``@``.
+_ASSET_FILENAME_SPAN_RE = re.compile(
+    r"(?<![A-Za-z0-9@])"
+    r"(?:"
+    r"(?:screenshot|screen[\s\-_]?shot|cleanshot|clean[\s\-_]?shot|"
+    r"whatsapp[\s\-_]?image|untitled)[\w.\-]*"
+    r"(?:[\s\-]+(?:at|@)[\s\-]*[\d.:apm\-]+)?"
+    r"(?:@(?:\d+x(?:\.[a-f0-9]+)?))?"
+    r"\.(?:png|jpe?g|gif|webp|svg|bmp|tiff?)"
+    r"|"
+    r"[\w.\-]+(?:[\s\-]+(?:at|@)[\s\-]*[\d.:apm\-]+(?:[\s\-]*[ap]m)?)?"
+    r"(?:@(?:\d+x(?:\.[a-f0-9]+)?))?"
+    r"\.(?:png|jpe?g|gif|webp|svg|bmp|tiff?)"
+    r"|"
+    r"[\w.\-]+@(?:\d+x(?:\.[a-f0-9]+)?)\.(?:png|jpe?g|gif|webp|svg)"
+    r")"
+    r"(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
 SPARK_DECODE_ACTOR = "contact-extractor"
 
 
@@ -202,7 +223,18 @@ def is_skipped_email(email: str) -> bool:
         return True
     if is_dummy_documentation_email(normalized):
         return True
+    if is_filename_as_email(normalized):
+        return True
     return False
+
+
+def _mask_asset_filename_spans(text: str) -> str:
+    """Blank out image/asset filename spans before at→@ obfuscation decoding."""
+
+    def _blank(match: re.Match[str]) -> str:
+        return " " * len(match.group(0))
+
+    return _ASSET_FILENAME_SPAN_RE.sub(_blank, text)
 
 
 def _normalize_obfuscation_entities(text: str) -> str:
@@ -266,7 +298,7 @@ def decode_obfuscated_email_deterministic(text: str) -> list[tuple[str, str | No
         domain = _domain_from_spaced_dots(match.group("domain"))
         add_email(f"{local}@{domain}", match.group("local"))
 
-    tokenized = _replace_at_dot_tokens(normalized)
+    tokenized = _replace_at_dot_tokens(_mask_asset_filename_spans(normalized))
     for match in EMAIL_RE.finditer(tokenized):
         prefix = tokenized[max(0, match.start() - 40) : match.start()]
         if re.search(r"[A-Za-z]\s+$", prefix):

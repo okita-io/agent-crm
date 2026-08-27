@@ -44,3 +44,16 @@ def test_compose_hunt_loop_stays_unbounded() -> None:
         end = content.index("\n\n", start)
         block = content[start:end]
         assert "restart: unless-stopped" in block, f"{service} missing restart policy"
+
+
+def test_contact_worker_and_orchestrator_do_not_require_spark_queue() -> None:
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    for service in ("contact-worker", "orchestrator"):
+        start = content.index(f"  {service}:")
+        end = content.index("\n\n", start)
+        block = content[start:end]
+        depends_start = block.index("depends_on:")
+        depends_block = block[depends_start:]
+        assert "spark-queue:" not in depends_block, (
+            f"{service} should not depend on spark-queue to start verify jobs"
+        )

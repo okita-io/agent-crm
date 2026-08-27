@@ -196,3 +196,10 @@ def test_role_inbox_marked_invalid_at_ingest() -> None:
         assert verification.status == ContactVerificationStatus.INVALID
 
     assert count_pending_jobs(kind=AgentJobKind.VERIFY_LEAD) == 0
+
+
+def test_orchestrator_idle_seed_runs_on_every_cycle() -> None:
+    with patch("agent_crm.orchestrator.seed_idle_backlog_jobs") as mock_seed:
+        mock_seed.return_value = {"verify": 0, "enrich": 0}
+        run_orchestrator_cycle()
+    mock_seed.assert_called_once()
