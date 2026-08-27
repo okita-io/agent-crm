@@ -25,11 +25,14 @@ docker compose up -d --build
 | `spark-queue` | 8088 | GPU-aware LLM queue proxy |
 | `contact-worker` | — | Job dispatcher — enrich + verify (`agent-crm jobs`) |
 | `hunt-loop` | — | Standing outbound hunter (`agent-crm hunt-loop`, global priority queue) |
-| `research-loop` | — | Standing ad-placement research across four brands |
+| `research-loop` | — | Standing ad-placement research (20 queries / 60 min / 200 pages per cycle) |
+| `orchestrator` | — | Self-learning stack inspector (`agent-crm orchestrate`) — writes improvement notes |
 
 API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-The `contact-worker` enqueues and runs `verify_lead` jobs automatically when contact profiles are upserted with an email, and backfills unverified leads when idle. You do **not** need to run `agent-crm verify` by hand for the pipeline to work — that CLI remains for one-off debugging.
+The `contact-worker` enqueues and runs `verify_lead` jobs automatically when contact profiles are upserted with an email, and backfills unverified leads when idle. Non-Spark verify jobs drain even when Spark enrich jobs are stuck on 500s. You do **not** need to run `agent-crm verify` by hand for the pipeline to work — that CLI remains for one-off debugging.
+
+The `orchestrator` inspects heartbeats, job failures, Spark health, verification coverage, and worker errors every few minutes. It writes deduped rows to `agent_improvement_notes` (gaps, performance issues, repairs). Manager/Cursor pulls open notes via `GET /improvement-notes?status=open`, investigates, patches the container, and rebuilds — no outbound mail, no Spark unless you choose to summarize notes later.
 
 ### Host services (not in Compose)
 
@@ -225,6 +228,7 @@ For `source=CONTACT` leads, the verifier also applies the source-relevance / sup
 | `contact_profiles` | **People** keyed by email — name, socials, source pages |
 | `contact_verifications` | Verifier results per lead contact |
 | `agent_jobs` | Background job queue (enrich, verify, decode) |
+| `agent_improvement_notes` | Self-learning gap/performance notes for orchestrator + Cursor |
 | `agent_heartbeats` | Live agent observer state |
 
 `Account.socials` is for companies. Person socials live on `contact_profiles` (and in lead `raw_payload`), not on accounts.
@@ -247,6 +251,7 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 | **Research** | `research_findings` with brand/kind filters |
 | **Contacts** | `contact_profiles` — name, email, socials, source pages |
 | **Verifier** | Hunter leads and verification status |
+| **Improvement** | Open orchestrator gap/performance notes |
 
 ### Agent roster (as implemented)
 
@@ -258,7 +263,8 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 | Research | `research` | Competitor / nonprofit / ad-placement runs → `research_findings` |
 | Outbound Hunter | `outbound_hunter` | Hunt + hunt-loop → sites and page leads |
 | Lead Verifier | `lead_verifier` | DNS/MX/HTTP checks (auto via `contact-worker`) |
-| Job dispatcher | `job-dispatcher` | Drains `agent_jobs` — enrich + verify |
+| Job dispatcher | `job-dispatcher` | Drains `agent_jobs` — verify before Spark enrich |
+| Orchestrator | `orchestrator` | Stack health inspection → improvement notes |
 | CRM / Pipeline | `api`, `dashboard`, … | Stage transitions, reporting |
 
 Outreach, nurture sends, and orchestrator scheduling are **not** implemented.
@@ -274,6 +280,7 @@ agent-crm init-db                        # SQLite only — Postgres uses Alembic
 agent-crm seed                           # Demo leads
 agent-crm report                         # Weekly JSON report
 agent-crm jobs                           # Job dispatcher (runs in contact-worker)
+agent-crm orchestrate                    # Orchestrator (runs in orchestrator service)
 
 # Hunter
 agent-crm hunt "boutique design NYC" \
@@ -345,6 +352,8 @@ streamlit run src/agent_crm/dashboard.py
 | POST | `/agents/{name}/heartbeat` | Agent heartbeat |
 | GET | `/agents` | Observer roster |
 | GET | `/agents/spark` | Spark queue slot summary |
+| GET | `/jobs/status` | Agent job queue counts |
+| GET | `/improvement-notes` | Self-learning gap notes (`?status=open`) |
 
 Full OpenAPI at `/docs`.
 
@@ -402,4 +411,4 @@ alembic upgrade head      # apply all revisions
 alembic current           # show head
 ```
 
-Current chain includes `f1a2b3c4d5e6` (`agent_jobs` queue). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.
+Current chain includes `h3i4j5k6l7m8` (`agent_improvement_notes` + `activitytype.VERIFIED`). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.

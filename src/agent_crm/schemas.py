@@ -19,6 +19,10 @@ from .enums import (
     ContactKind,
     ContactVerificationStatus,
     HuntResourceKind,
+    ImprovementNoteKind,
+    ImprovementNoteSeverity,
+    ImprovementNoteStatus,
+    ImprovementSourceAgent,
     JourneyStatus,
     LeadSource,
     LeadStatus,
@@ -440,3 +444,18 @@ class ResearchFindingOut(ORMModel):
     extra: dict | None
     first_seen_at: datetime
     last_seen_at: datetime
+
+
+class ImprovementNoteOut(ORMModel):
+    id: int
+    kind: ImprovementNoteKind
+    severity: ImprovementNoteSeverity
+    source_agent: ImprovementSourceAgent
+    title: str
+    body: str
+    metrics: dict | None
+    suggested_fix: str | None
+    status: ImprovementNoteStatus
+    fingerprint: str
+    created_at: datetime
+    updated_at: datetime

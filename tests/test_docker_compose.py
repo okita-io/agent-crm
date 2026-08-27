@@ -11,12 +11,13 @@ def test_compose_declares_standing_workers() -> None:
     content = COMPOSE_PATH.read_text(encoding="utf-8")
     assert 'command: ["agent-crm", "jobs"]' in content
     assert 'command: ["agent-crm", "hunt-loop"]' in content
-    assert 'command: ["agent-crm", "research-loop"]' in content
+    assert "research-loop" in content
+    assert 'command: ["agent-crm", "orchestrate"]' in content
 
 
 def test_compose_workers_restart_unless_stopped() -> None:
     content = COMPOSE_PATH.read_text(encoding="utf-8")
-    for service in ("contact-worker", "hunt-loop", "research-loop"):
+    for service in ("contact-worker", "hunt-loop", "research-loop", "orchestrator"):
         marker = f"  {service}:"
         start = content.index(marker)
         end = content.index("\n\n", start)

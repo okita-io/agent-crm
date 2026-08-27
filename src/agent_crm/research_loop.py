@@ -123,6 +123,15 @@ def run_research_loop(
         result.pages_scraped += run_result.pages_scraped
         result.findings_written.extend(run_result.findings_written)
         result.errors.extend(run_result.errors)
+        for error in run_result.errors:
+            from .enums import ImprovementSourceAgent
+            from .orchestrator import note_worker_failure
+
+            note_worker_failure(
+                source_agent=ImprovementSourceAgent.RESEARCH_LOOP,
+                error_text=error,
+                context=f"research {brand.value} query",
+            )
 
         if run_result.queries_run == 0:
             result.stop_reason = "query_failed"

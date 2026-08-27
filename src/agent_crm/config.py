@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     job_dispatcher_batch_size: int = 20
     job_dispatcher_idle_verify_limit: int = 50
 
+    # Orchestrator self-learning loop
+    orchestrator_poll_seconds: int = 180
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")

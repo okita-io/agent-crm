@@ -239,9 +239,60 @@ def claim_jobs(
     actor: str = "job-dispatcher",
 ) -> list[AgentJob]:
     """Claim pending jobs using furthest-behind scheduling per kind."""
+    non_spark = claim_non_spark_jobs(max_claim=max_claim, actor=actor)
+    remaining = max(max_claim - len(non_spark), 0)
+    if remaining <= 0:
+        return non_spark
+    spark_jobs = claim_spark_jobs(max_claim=remaining, actor=actor)
+    return non_spark + spark_jobs
+
+
+def claim_non_spark_jobs(
+    *,
+    max_claim: int = 20,
+    actor: str = "job-dispatcher",
+) -> list[AgentJob]:
+    """Claim pending non-Spark jobs (verify_lead) without Spark capacity checks."""
+    claimed: list[AgentJob] = []
+    while len(claimed) < max_claim:
+        job = _claim_one_non_spark_job(actor)
+        if job is None:
+            break
+        claimed.append(job)
+    return claimed
+
+
+def _claim_one_non_spark_job(actor: str) -> AgentJob | None:
+    with session_scope() as session:
+        job = session.scalar(
+            select(AgentJob)
+            .where(AgentJob.status == AgentJobStatus.PENDING)
+            .where(AgentJob.kind.not_in(tuple(SPARK_AGENT_JOB_KINDS)))
+            .order_by(AgentJob.created_at.asc(), AgentJob.id.asc())
+            .limit(1)
+        )
+        if job is None:
+            return None
+        job.status = AgentJobStatus.RUNNING
+        job.actor = actor
+        job.claimed_at = _utcnow()
+        session.flush()
+        return job
+
+
+def claim_spark_jobs(
+    *,
+    max_claim: int = 20,
+    actor: str = "job-dispatcher",
+) -> list[AgentJob]:
+    """Claim pending Spark jobs respecting spark-queue global concurrency."""
     claimed: list[AgentJob] = []
     spark_running = count_running_jobs(spark_only=True)
-    metrics = pending_kind_lag_metrics()
+    metrics = {
+        kind: values
+        for kind, values in pending_kind_lag_metrics().items()
+        if kind in SPARK_AGENT_JOB_KINDS
+    }
 
     while len(claimed) < max_claim and metrics:
         lag_kind = pick_furthest_behind_kind(metrics, spark_running=spark_running)

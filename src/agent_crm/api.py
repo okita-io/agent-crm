@@ -28,9 +28,10 @@ from .contact_store import (
     list_contact_profiles,
 )
 from .db import database_kind, init_db
-from .enums import Brand, ContactAudience, ResearchFindingKind, Stage
+from .enums import Brand, ContactAudience, ImprovementNoteStatus, ResearchFindingKind, Stage
 from .errors import InvalidStageTransition, NotFoundError
 from .heartbeat import list_heartbeats, record_heartbeat
+from .improvement_store import list_improvement_notes
 from .hunt_loop import HuntBudget, run_hunt_loop
 from .hunt_status import build_hunt_status
 from .hunt_store import HuntStore
@@ -60,6 +61,7 @@ from .schemas import (
     HuntRequest,
     HuntResourceOut,
     HuntResult,
+    ImprovementNoteOut,
     LeadCreate,
     LeadOut,
     OpportunityOut,
@@ -277,6 +279,19 @@ def jobs_status() -> dict:
     from .job_dispatcher import build_job_status
 
     return build_job_status()
+
+
+@app.get(
+    "/improvement-notes",
+    response_model=list[ImprovementNoteOut],
+    tags=["orchestrator"],
+)
+def improvement_notes(
+    status: ImprovementNoteStatus | None = ImprovementNoteStatus.OPEN,
+    limit: int = 200,
+) -> list[ImprovementNoteOut]:
+    """List self-learning improvement notes for Manager/Cursor follow-up."""
+    return list_improvement_notes(status=status, limit=limit)
 
 
 # ---- lead verifier ---------------------------------------------------------

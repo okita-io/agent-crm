@@ -254,6 +254,15 @@ def _cmd_jobs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_orchestrate(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .orchestrator import run_orchestrator
+
+    init_db()
+    run_orchestrator(poll_seconds=args.poll_seconds)
+    return 0
+
+
 def _cmd_verify(args: argparse.Namespace) -> int:
     from .db import init_db
     from .schemas import VerifyRawRequest
@@ -505,6 +514,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Idle poll interval when queues are empty (default from settings)",
     )
     jobs.set_defaults(func=_cmd_jobs)
+
+    orchestrate = sub.add_parser(
+        "orchestrate",
+        help="Run orchestrator loop (stack health + improvement notes)",
+    )
+    orchestrate.add_argument(
+        "--poll-seconds",
+        type=int,
+        default=None,
+        help="Inspection interval in seconds (default from settings)",
+    )
+    orchestrate.set_defaults(func=_cmd_orchestrate)
 
     verify = sub.add_parser("verify", help="Verify lead contacts (DNS/MX/HTTP, no mail)")
     verify.add_argument("--lead-id", type=int, help="Verify a single lead by id")

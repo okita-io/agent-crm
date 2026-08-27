@@ -122,21 +122,45 @@ services:
 
   research-loop:
     build: .
-    command: ["agent-crm", "research-loop"]
+    command:
+      - agent-crm
+      - research-loop
+      - --max-queries
+      - "20"
+      - --max-pages
+      - "200"
+      - --max-minutes
+      - "60"
     environment:
       CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_SEARXNG_URL: http://host.docker.internal:8080
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
-      CRM_RESEARCH_MAX_QUERIES_DEFAULT: "0"
-      CRM_RESEARCH_MAX_PAGES_PER_RUN: "0"
-      CRM_RESEARCH_MAX_MINUTES_DEFAULT: "0"
+      CRM_RESEARCH_MAX_QUERIES_DEFAULT: "20"
+      CRM_RESEARCH_MAX_PAGES_PER_RUN: "200"
+      CRM_RESEARCH_MAX_MINUTES_DEFAULT: "60"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
       spark-queue:
+        condition: service_started
+    restart: unless-stopped
+
+  orchestrator:
+    build: .
+    command: ["agent-crm", "orchestrate"]
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_ORCHESTRATOR_POLL_SECONDS: "180"
+    depends_on:
+      db:
+        condition: service_healthy
+      spark-queue:
+        condition: service_started
+      api:
         condition: service_started
     restart: unless-stopped
 
