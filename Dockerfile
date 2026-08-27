@@ -11,6 +11,8 @@ WORKDIR /app
 # Install dependencies first for layer caching.
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY skills ./skills
+COPY brand-context*.md ./
 COPY migrations ./migrations
 COPY alembic.ini ./
 

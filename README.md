@@ -69,6 +69,22 @@ Set `CRM_DATABASE_URL` in `.env`. On Postgres, do **not** rely on `create_all`; 
 
 tactic.studio contacts are tagged with an **audience** bucket on `contact_profiles` and matching `leads`: `marketing` (brand/industrial bid list), `influencer` (XR creators), `user` (community members who should see tactic work). Other brands leave audience unset.
 
+### Marketing skill
+
+Vendored MIT **marketing-agi** skill at [`skills/marketing-agi/`](skills/marketing-agi/) (router: `SKILL.md`; modules in `references/`). Upstream: [holy-templar/marketing-agi](https://github.com/holy-templar/marketing-agi) — see `skills/marketing-agi/SOURCE`.
+
+**Brand context** for Research, Hunter, and dashboard agents:
+
+| File | Brand |
+|------|-------|
+| `brand-context.md` | Ranch-wide constraints |
+| `brand-context.midnightsatin.md` | MidnightSatin |
+| `brand-context.celestial-nexus.md` | Celestial-Nexus |
+| `brand-context.heybuddy.md` | HeyBuddy (not a nonprofit — hunts partner orgs) |
+| `brand-context.tactic-studio.md` | tactic.studio |
+
+Research competitor summaries load bounded slices of `references/competitive.md` (+ positioning) into the Spark summarizer. Ad-placement runs pull short `paid-ads` / `hooks` excerpts for discovery briefs. Shared rules: never invent proof (`[NEED: x]`), no live ad accounts, no outbound send. **tactic.studio outbound remains gated** by Pete (`pete@tactic.studio`) + naming-rights — this stack never sends.
+
 ---
 
 ## Collection systems

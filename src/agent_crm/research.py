@@ -25,6 +25,11 @@ from .research_utils import (
     is_junk_finding,
     is_scrapable_url,
 )
+from .marketing_skill import (
+    ad_placement_summarizer_guidance,
+    brand_context_snippet,
+    competitor_summarizer_guidance,
+)
 from .schemas import ResearchRequest, ResearchResult
 from .searxng_client import SearchResult, SearxngError, search
 from .tooling import CRMToolkit
@@ -230,12 +235,16 @@ def _maybe_summarize(
     errors: list[str],
 ) -> tuple[str, dict[str, Any] | None]:
     brand_label = BRAND_DISPLAY.get(brand, brand.value)
+    brand_context = brand_context_snippet(brand)
     if kind == ResearchFindingKind.COMPETITOR:
         system = (
             "You analyze competitor websites for a CRM research agent. "
             "Summarize positioning, audience, and product angle vs the target brand. "
-            "Be factual; do not invent contact details."
+            "Be factual; do not invent contact details, stats, or testimonials.\n\n"
+            f"{competitor_summarizer_guidance()}"
         )
+        if brand_context:
+            system += f"\n\n--- brand context (excerpt) ---\n{brand_context}"
         user = (
             f"Target brand: {brand_label}\n"
             f"URL: {hit.url}\n"
@@ -264,8 +273,11 @@ def _maybe_summarize(
             "You analyze websites, forums, newsletters, podcasts, and communities that sell ads, "
             "take sponsorships, or offer promo/sticky/banner/board placement. "
             "Discovery only — do not invent pricing or contact emails. "
-            "Assess brand fit and brand safety honestly (imageboards like 4chan often warrant caution)."
+            "Assess brand fit and brand safety honestly (imageboards like 4chan often warrant caution).\n\n"
+            f"{ad_placement_summarizer_guidance()}"
         )
+        if brand_context:
+            system += f"\n\n--- brand context (excerpt) ---\n{brand_context}"
         user = (
             f"Target brand: {brand_label}\n"
             f"URL: {hit.url}\n"
