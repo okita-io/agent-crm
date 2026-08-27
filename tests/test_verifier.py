@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from unittest.mock import patch
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from agent_crm.api import app
@@ -83,11 +84,11 @@ def test_check_email_valid_mx() -> None:
 def test_check_email_null_mx() -> None:
     resolver = FakeResolver(
         {
-            ("reject.example", "A"): ["192.0.2.1"],
-            ("reject.example", "MX"): [FakeMx(".", 0)],
+            ("reject.testcorp", "A"): ["192.0.2.1"],
+            ("reject.testcorp", "MX"): [FakeMx(".", 0)],
         }
     )
-    result = check_email("user@reject.example", resolver=resolver)
+    result = check_email("user@reject.testcorp", resolver=resolver)
     assert result.status == ContactVerificationStatus.INVALID
     assert any("null MX" in r for r in result.reasons)
 
@@ -100,8 +101,8 @@ def test_check_email_nxdomain() -> None:
 
 
 def test_check_email_no_mx() -> None:
-    resolver = FakeResolver({("exists.example", "A"): ["192.0.2.1"]})
-    result = check_email("user@exists.example", resolver=resolver)
+    resolver = FakeResolver({("exists.testcorp", "A"): ["192.0.2.1"]})
+    result = check_email("user@exists.testcorp", resolver=resolver)
     assert result.status == ContactVerificationStatus.INVALID
     assert any("no mx" in r.lower() for r in result.reasons)
 
@@ -124,6 +125,41 @@ def test_check_email_placeholder_domain() -> None:
     assert any("placeholder" in r for r in result.reasons)
 
 
+@pytest.mark.parametrize(
+    "email",
+    [
+        "info@icarmenia.am",
+        "hello@x.com",
+        "careers@crescendo.ai",
+        "noreply@acme.com",
+        "our.team@vocabulary.com",
+        "team.of.english.language.specialists@vocabulary.com",
+    ],
+)
+def test_check_email_role_inbox_invalid_despite_mx(email: str) -> None:
+    result = check_email(email, resolver=_valid_mx_resolver())
+    assert result.status == ContactVerificationStatus.INVALID
+    assert result.status != ContactVerificationStatus.VALID
+    assert any("role" in r.lower() or "shared inbox" in r.lower() for r in result.reasons)
+
+
+def test_check_email_info_at_example_domain_is_invalid() -> None:
+    result = check_email("info@example.com", resolver=_valid_mx_resolver())
+    assert result.status == ContactVerificationStatus.INVALID
+    assert result.status != ContactVerificationStatus.VALID
+
+
+def test_check_email_placeholder_local_invalid_despite_mx() -> None:
+    result = check_email("name@domain.com", resolver=_valid_mx_resolver())
+    assert result.status == ContactVerificationStatus.INVALID
+    assert any("placeholder" in r.lower() for r in result.reasons)
+
+
+def test_check_email_person_local_can_be_valid_with_mx() -> None:
+    result = check_email("jane.doe@acme.com", resolver=_valid_mx_resolver())
+    assert result.status == ContactVerificationStatus.VALID
+
+
 def test_check_email_role_address() -> None:
     resolver = FakeResolver(
         {
@@ -132,8 +168,8 @@ def test_check_email_role_address() -> None:
         }
     )
     result = check_email("noreply@acme.com", resolver=resolver)
-    assert result.status == ContactVerificationStatus.RISKY
-    assert any("no-reply" in r.lower() or "role" in r.lower() for r in result.reasons)
+    assert result.status == ContactVerificationStatus.INVALID
+    assert any("role" in r.lower() or "shared inbox" in r.lower() for r in result.reasons)
 
 
 def test_check_url_dead_404() -> None:
