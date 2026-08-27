@@ -123,6 +123,7 @@ class HuntLoopResultOut(BaseModel):
     branch_terms_enqueued: int
     community_terms_enqueued: int = 0
     person_terms_enqueued: int = 0
+    handle_terms_enqueued: int = 0
     stop_reason: str
 
 
@@ -425,6 +426,20 @@ class ContactProfileBrandCountOut(BaseModel):
 class ContactProfilesSummaryOut(BaseModel):
     total: int
     by_brand: list[ContactProfileBrandCountOut]
+
+
+class CommentPersonOut(ORMModel):
+    id: int
+    platform: str
+    handle: str
+    display_name: str | None
+    profile_url: str | None
+    brand: Brand
+    audience: ContactAudience | None
+    source_urls: list[str] | None
+    comment_snippets: list[dict] | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ResearchFindingOut(ORMModel):

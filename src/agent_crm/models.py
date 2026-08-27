@@ -307,6 +307,29 @@ class ResearchFinding(Base):
     )
 
 
+class CommentPerson(Base, TimestampMixin):
+    """A public comment author keyed by platform + handle (no email required)."""
+
+    __tablename__ = "comment_people"
+    __table_args__ = (
+        UniqueConstraint("platform", "handle", name="uq_comment_people_platform_handle"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    platform: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    handle: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    profile_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    brand: Mapped[Brand] = mapped_column(
+        existing_brand_enum(), nullable=False, index=True
+    )
+    audience: Mapped[ContactAudience | None] = mapped_column(
+        str_enum(ContactAudience), nullable=True, index=True
+    )
+    source_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    comment_snippets: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+
 class ContactProfile(Base, TimestampMixin):
     """A person contact keyed by email, with social links for follow-up."""
 

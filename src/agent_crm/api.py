@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .config import get_settings
+from .comment_people_store import count_comment_people, list_comment_people
 from .contact_store import (
     backfill_contact_enrichment,
     backfill_contact_quality,
@@ -51,6 +52,7 @@ from .schemas import (
     ContactVerificationOut,
     ContactProfileOut,
     ContactProfilesSummaryOut,
+    CommentPersonOut,
     HeartbeatIn,
     HeartbeatOut,
     HuntLoopRequest,
@@ -152,6 +154,7 @@ def hunt_loop(payload: HuntLoopRequest) -> HuntLoopResultOut:
         branch_terms_enqueued=result.branch_terms_enqueued,
         community_terms_enqueued=result.community_terms_enqueued,
         person_terms_enqueued=result.person_terms_enqueued,
+        handle_terms_enqueued=result.handle_terms_enqueued,
         stop_reason=result.stop_reason,
     )
 
@@ -269,6 +272,27 @@ def contacts_backfill(body: ContactBackfillRequest) -> ContactBackfillResultOut:
 def contacts_enrich(body: ContactEnrichRequest) -> ContactEnrichResultOut:
     """Backfill public people-enrichment for profiles missing enrichment data."""
     return backfill_contact_enrichment(limit=body.limit, dry_run=body.dry_run)
+
+
+@app.get("/comment-people", response_model=list[CommentPersonOut], tags=["contacts"])
+def list_comment_people_endpoint(
+    response: Response,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+    platform: str | None = None,
+    offset: int = 0,
+    limit: int = 500,
+) -> list[CommentPersonOut]:
+    """List handle-keyed comment authors collected from scraped threads."""
+    total = count_comment_people(brand=brand, audience=audience, platform=platform)
+    response.headers["X-Total-Count"] = str(total)
+    return list_comment_people(
+        brand=brand,
+        audience=audience,
+        platform=platform,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @app.get("/jobs/status", tags=["jobs"])

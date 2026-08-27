@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import get_settings
+from .comment_people_store import process_scraped_page_comment_people
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
 from .enums import ActivityType, AgentStatus, Brand, LeadSource, Stage
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
@@ -138,6 +139,12 @@ def run_hunt(
                 source_url=hit.url,
                 brand=request.brand or Brand.UNASSIGNED,
                 searx_client=searx_client,
+                budget=contact_budget,
+            )
+            process_scraped_page_comment_people(
+                markdown=page.markdown,
+                source_url=hit.url,
+                brand=request.brand or Brand.UNASSIGNED,
                 budget=contact_budget,
             )
         except Exception:  # noqa: BLE001

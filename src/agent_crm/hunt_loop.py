@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import Settings, get_settings
+from .comment_people_store import process_scraped_page_comment_people
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
 from .enums import AgentStatus, Brand, ContactAudience, HuntQueryStatus
 from .firecrawl_client import FirecrawlError, scrape
@@ -21,6 +22,7 @@ from .heartbeat import record_heartbeat
 from .hunt_feedback import (
     HuntFeedbackBudget,
     enqueue_community_terms,
+    enqueue_handle_terms,
     enqueue_person_terms,
 )
 from .hunt_seeds import audience_from_origin, seed_query_entries
@@ -61,6 +63,7 @@ class HuntLoopResult:
     branch_terms_enqueued: int = 0
     community_terms_enqueued: int = 0
     person_terms_enqueued: int = 0
+    handle_terms_enqueued: int = 0
     stop_reason: str = "queue_empty"
 
 
@@ -179,6 +182,7 @@ def run_hunt_loop(
         result.branch_terms_enqueued += stats["branch_terms_enqueued"]
         result.community_terms_enqueued += stats["community_terms_enqueued"]
         result.person_terms_enqueued += stats["person_terms_enqueued"]
+        result.handle_terms_enqueued += stats["handle_terms_enqueued"]
         store.mark_query_completed(pending.id)
 
         if deadline is not None and time.monotonic() >= deadline:
@@ -232,6 +236,7 @@ def _run_queued_query(
     ]
 
     feedback_budget = feedback_budget or HuntFeedbackBudget.from_settings()
+    contact_budget = contact_budget or ContactExtractionBudget.from_settings()
     resources, community_terms, person_terms = _collect_from_results(
         store,
         query,
@@ -243,6 +248,7 @@ def _run_queued_query(
     )
 
     pages_scraped = 0
+    handle_terms = 0
     if results and max_pages > 0:
         store.set_heartbeat(
             AgentStatus.WORKING,
@@ -298,6 +304,25 @@ def _run_queued_query(
                             budget=feedback_budget,
                             audience=audience,
                         )
+                    comment_people = process_scraped_page_comment_people(
+                        markdown=page.markdown,
+                        html=getattr(page, "html", None),
+                        source_url=hit.url,
+                        brand=brand,
+                        budget=contact_budget,
+                        audience=audience,
+                    )
+                    for person in comment_people:
+                        handle_terms += enqueue_handle_terms(
+                            store,
+                            platform=person.platform,
+                            handle=person.handle,
+                            display_name=person.display_name,
+                            brand=brand,
+                            run_id=run_id,
+                            budget=feedback_budget,
+                            audience=audience,
+                        )
                 except Exception:  # noqa: BLE001
                     pass
         resources += pages_scraped
@@ -324,6 +349,7 @@ def _run_queued_query(
         "branch_terms_enqueued": enqueued,
         "community_terms_enqueued": community_terms,
         "person_terms_enqueued": person_terms,
+        "handle_terms_enqueued": handle_terms,
     }
 
 
