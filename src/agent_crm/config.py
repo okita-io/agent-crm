@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     # Contact worker drain loops (job dispatcher)
     job_dispatcher_poll_seconds: int = 45
     job_dispatcher_batch_size: int = 20
+    job_dispatcher_idle_verify_limit: int = 50
 
     @property
     def is_sqlite(self) -> bool:

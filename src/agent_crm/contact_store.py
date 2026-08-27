@@ -15,6 +15,8 @@ from .contact_quality import (
     EmailQualityFilter,
     clean_contact_data,
     filter_socials,
+    is_filename_as_email,
+    is_placeholder_email,
     is_relevant_contact,
     is_role_inbox_email,
     profile_matches_quality_filter,
@@ -28,7 +30,7 @@ from .contact_people_enrichment import (
 from .contact_social_lookup import lookup_social_profiles
 from .db import session_scope
 from .enums import Brand, ContactAudience, LeadSource, LeadStatus
-from .job_store import enqueue_enrich_contact_job
+from .job_store import enqueue_enrich_contact_job, enqueue_verify_lead_job
 from .models import ContactProfile, HuntResource, Lead, Opportunity
 from .schemas import (
     ContactBackfillResultOut,
@@ -218,11 +220,30 @@ def upsert_contact_profile(
         session.flush()
         profile_out = ContactProfileOut.model_validate(row)
         enqueue_after = _should_enqueue_enrich_job(row)
+        enqueue_verify_after = _should_enqueue_verify_job(normalized_email, lead_id=lead.id)
         profile_id = row.id
+        verify_lead_id = lead.id
 
     if enqueue_after:
         enqueue_enrich_contact_job(profile_id)
+    if enqueue_verify_after:
+        enqueue_verify_lead_job(verify_lead_id)
     return profile_out
+
+
+def _should_enqueue_verify_job(email: str, *, lead_id: int | None) -> bool:
+    if lead_id is None:
+        return False
+    normalized = email.strip().lower()
+    if not normalized or "@" not in normalized:
+        return False
+    if is_role_inbox_email(normalized):
+        return False
+    if is_placeholder_email(normalized):
+        return False
+    if is_filename_as_email(normalized):
+        return False
+    return True
 
 
 def _should_enqueue_enrich_job(row: ContactProfile) -> bool:

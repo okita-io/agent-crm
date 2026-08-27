@@ -101,5 +101,44 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  hunt-loop:
+    build: .
+    command: ["agent-crm", "hunt-loop"]
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_SEARXNG_URL: http://host.docker.internal:8080
+      CRM_FIRECRAWL_URL: http://host.docker.internal:3002
+      CRM_HUNTER_MAX_QUERIES_DEFAULT: "0"
+      CRM_HUNTER_MAX_MINUTES_DEFAULT: "0"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      spark-queue:
+        condition: service_started
+    restart: unless-stopped
+
+  research-loop:
+    build: .
+    command: ["agent-crm", "research-loop"]
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_SEARXNG_URL: http://host.docker.internal:8080
+      CRM_FIRECRAWL_URL: http://host.docker.internal:3002
+      CRM_RESEARCH_MAX_QUERIES_DEFAULT: "0"
+      CRM_RESEARCH_MAX_PAGES_PER_RUN: "0"
+      CRM_RESEARCH_MAX_MINUTES_DEFAULT: "0"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      spark-queue:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   crm_pgdata:

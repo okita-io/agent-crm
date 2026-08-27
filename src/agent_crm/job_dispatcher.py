@@ -22,7 +22,7 @@ from .job_store import (
     reset_stale_running_jobs,
 )
 from .models import ContactProfile
-from .verifier import verify_lead
+from .verifier import seed_verify_jobs_for_unverified, verify_lead
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +126,7 @@ def run_job_dispatcher(
     poll = poll_seconds if poll_seconds is not None else settings.job_dispatcher_poll_seconds
 
     record_heartbeat(ACTOR, status=AgentStatus.IDLE, task="job dispatcher starting")
+    seed_verify_jobs_for_unverified(limit=settings.job_dispatcher_idle_verify_limit)
     while True:
         work_done = False
         while count_pending_jobs() > 0:
@@ -134,10 +135,16 @@ def run_job_dispatcher(
                 break
             work_done = True
         if not work_done:
+            seeded = seed_verify_jobs_for_unverified(
+                limit=settings.job_dispatcher_idle_verify_limit
+            )
+            idle_task = f"idle ({count_pending_jobs()} pending)"
+            if seeded:
+                idle_task = f"idle, seeded {seeded} verify jobs"
             record_heartbeat(
                 ACTOR,
                 status=AgentStatus.IDLE,
-                task=f"idle ({count_pending_jobs()} pending)",
+                task=idle_task,
             )
             time.sleep(poll)
 
