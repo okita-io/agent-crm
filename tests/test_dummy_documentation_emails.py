@@ -113,6 +113,21 @@ def test_verifier_marks_dummy_local_invalid_despite_mx() -> None:
     assert any("dummy" in reason.lower() for reason in result.reasons)
 
 
+@pytest.mark.parametrize(
+    "email",
+    [
+        "info@example.com",
+        "hello@helpy.io",
+        "name@domain.com",
+        "our.team@vocabulary.com",
+    ],
+)
+def test_verifier_rejects_role_and_placeholder_before_mx(email: str) -> None:
+    result = check_email(email, resolver=_mozilla_mx_resolver())
+    assert result.status == ContactVerificationStatus.INVALID
+    assert result.status != ContactVerificationStatus.VALID
+
+
 def test_backfill_removes_dummy_documentation_profiles(db_url) -> None:
     upsert_contact_profile(
         email="nowhere@mozilla.org",

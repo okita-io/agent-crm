@@ -214,6 +214,10 @@ Results in `contact_verifications` (one row per lead + contact).
 
 For `source=CONTACT` leads, the verifier also applies the source-relevance / support-email quality gate before DNS/MX checks.
 
+**Role inboxes and placeholders** (`info@`, `hello@`, `careers@`, `name@domain.com`, dotted role locals like `our.team@…`) are marked **invalid** by `check_email()` using the same `contact_quality` helpers as extraction and seeding — even when MX is valid. This keeps `contact_verifications` aligned with orchestrator gap checks (`Dummy or role inbox marked valid`).
+
+To scrub historical rows that were marked valid before this gate: re-run verification on affected leads (`agent-crm verify --lead-id N` or `POST /leads/{id}/verify`). Rows update in place; no migration required. The orchestrator stops raising the gap note once no recent `valid` rows match role/placeholder filters.
+
 ---
 
 ## Data model (implemented tables)

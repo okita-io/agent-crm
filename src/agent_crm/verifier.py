@@ -56,17 +56,6 @@ _EMAIL_EXTRACT_RE = re.compile(
 )
 _URL_EXTRACT_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
 
-_PLACEHOLDER_DOMAINS = frozenset(
-    {
-        "example.com",
-        "example.org",
-        "example.net",
-        "invalid",
-        "localhost",
-        "test",
-        "test.com",
-    }
-)
 _DISPOSABLE_DOMAINS = frozenset(
     {
         "mailinator.com",
@@ -79,19 +68,6 @@ _DISPOSABLE_DOMAINS = frozenset(
         "trashmail.com",
         "sharklasers.com",
         "getnada.com",
-    }
-)
-_ROLE_LOCAL_PARTS = frozenset(
-    {
-        "noreply",
-        "no-reply",
-        "donotreply",
-        "do-not-reply",
-        "abuse",
-        "postmaster",
-        "mailer-daemon",
-        "bounce",
-        "unsubscribe",
     }
 )
 _DEAD_HTTP_STATUSES = frozenset({404, 410})
@@ -196,20 +172,23 @@ def check_email(
             reasons=["email syntax invalid"],
         )
 
-    if domain in _PLACEHOLDER_DOMAINS:
-        return EmailCheckResult(
-            status=ContactVerificationStatus.INVALID,
-            reasons=[f"placeholder domain: {domain}"],
-        )
-
     if is_dummy_documentation_email(email):
         return EmailCheckResult(
             status=ContactVerificationStatus.INVALID,
             reasons=["documentation dummy email local-part (not a prospect)"],
         )
 
-    if local in _ROLE_LOCAL_PARTS:
-        reasons.append("role or no-reply local-part — risky for outreach")
+    if is_placeholder_email(email):
+        return EmailCheckResult(
+            status=ContactVerificationStatus.INVALID,
+            reasons=["placeholder or template email (not a prospect)"],
+        )
+
+    if is_role_inbox_email(email):
+        return EmailCheckResult(
+            status=ContactVerificationStatus.INVALID,
+            reasons=["role or shared inbox — not a direct prospect address"],
+        )
 
     if domain in _DISPOSABLE_DOMAINS:
         reasons.append(f"disposable provider: {domain}")
@@ -314,7 +293,7 @@ def check_email(
         except Exception:
             pass
 
-    if domain in _DISPOSABLE_DOMAINS or local in _ROLE_LOCAL_PARTS:
+    if domain in _DISPOSABLE_DOMAINS:
         return EmailCheckResult(
             status=ContactVerificationStatus.RISKY,
             reasons=reasons,
@@ -519,8 +498,10 @@ def _should_disqualify(results: list[ContactVerification]) -> bool:
         "domain does not exist",
         "page gone",
         "connection failed",
-        "placeholder domain",
+        "placeholder",
+        "template email",
         "documentation dummy email",
+        "role or shared inbox",
         "email syntax invalid",
     )
     all_invalid = all(r.status == ContactVerificationStatus.INVALID for r in results)
