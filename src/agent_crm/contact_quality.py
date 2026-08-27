@@ -198,6 +198,28 @@ _PLACEHOLDER_EMAIL_LOCALS: frozenset[str] = frozenset(
     }
 )
 
+# Documentation / sample dummy locals (e.g. MDN nowhere@mozilla.org).
+_DUMMY_DOCUMENTATION_LOCAL_PARTS: frozenset[str] = frozenset(
+    {
+        "nowhere",
+        "nobody",
+        "noone",
+        "no-one",
+        "null",
+        "nil",
+        "na",
+        "n/a",
+        "invalid",
+        "discard",
+        "drop",
+        "fake",
+        "dummy",
+        # MDN WebExtension sample add-on IDs — not real people.
+        "borderify",
+        "beastify",
+    }
+)
+
 _LOCAL_PART_SEPARATOR_RE = re.compile(r"[._\-]")
 _ALPHA_TOKEN_RE = re.compile(r"[a-z]+", re.IGNORECASE)
 _PERSON_NAME_WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]{0,}")
@@ -580,10 +602,21 @@ def is_filename_as_email(email: str) -> bool:
     return False
 
 
+def is_dummy_documentation_email(email: str) -> bool:
+    """Return True for documentation/sample dummy locals (nowhere@, nobody@, etc.)."""
+    local, _, domain = email.strip().lower().partition("@")
+    if not local or not domain:
+        return False
+    base_local = local.split("+", 1)[0]
+    return base_local in _DUMMY_DOCUMENTATION_LOCAL_PARTS
+
+
 def is_placeholder_email(email: str) -> bool:
     """Return True for template placeholders like name@domain.com."""
     local, _, domain = email.strip().lower().partition("@")
     if not local or not domain:
+        return True
+    if is_dummy_documentation_email(email):
         return True
     if domain in _PLACEHOLDER_EMAIL_DOMAINS:
         return True
@@ -874,7 +907,10 @@ def clean_contact_data(
             elif isinstance(socials.get(key), str) and socials.get(key) != cleaned_socials.get(key):
                 cleanup.stripped_social_keys.append(key)
 
-    if is_generic_support_email(email):
+    if is_placeholder_email(email):
+        cleanup.kept = False
+        cleanup.reasons.append("placeholder or documentation dummy email")
+    elif is_generic_support_email(email):
         cleanup.kept = False
         cleanup.reasons.append("generic support or role email")
     elif not kept_urls:

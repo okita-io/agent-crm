@@ -158,7 +158,7 @@ Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 S
 
 After every successful Firecrawl scrape (hunter, hunt-loop, research), the stack extracts contacts from page markdown/HTML:
 
-- **Emails** via regex and `mailto:` links; skip noreply, no-reply, donotreply, privacy, mailer-daemon, notifications@, example.com, sentry.io, wixpress, cloudflare, githubnoreply
+- **Emails** via regex and `mailto:` links; skip noreply, no-reply, donotreply, privacy, mailer-daemon, notifications@, example.com, sentry.io, wixpress, cloudflare, githubnoreply, and documentation dummy locals (`nowhere@`, `nobody@`, `borderify@`, …). `mailto:` query strings (`?cc=`, `&subject=`, `&body=`) and comma-glued addresses are stripped before storage.
 - **Names** only when clearly present (`Name <email>`, prior line, mailto anchor text) — **never invented**
 - **Social URLs** already on the page (x.com, linkedin.com/in, instagram.com, facebook.com)
 - **Comment authors** (public usernames/handles from thread comment sections) — Reddit `u/username`, blog/Disqus comment blocks, etc. Stored in **`comment_people`** keyed by `(platform, handle)` with no fake email. Skips bots, `[deleted]`, AutoModerator, and 4chan anonymous IDs. Capped at `CRM_COMMENT_PEOPLE_PER_PAGE` (default **40**) unique handles per page.
@@ -169,6 +169,7 @@ Each email upserts a row in **`contact_profiles`** (unique lowercase email) and 
 
 - **Source relevance** — inspect `source_urls` / scrape page URL; drop contacts found only on ad/tracking hosts or legal boilerplate pages unrelated to the email domain. Community platforms (Reddit, Discord, etc.) and matching-domain pages stay relevant.
 - **Generic support emails** — `support@`, `helpdesk@`, and similar role inboxes are not kept as prospects.
+- **Documentation dummy emails** — `nowhere@mozilla.org`, `nobody@`, MDN sample add-on IDs, and similar template locals are dropped at extraction, marked invalid by the verifier (even when MX is valid), and removed by backfill.
 - **Social scrub** — strip share-link templates (`/intent/tweet`, `sharer.php`, …), ad-firm accounts, and generic platform handles (`@support`, `@help`, …).
 - **Notes scrub** — remove tracking-pixel / open-beacon URLs from `hunt_resources.notes` snippets during backfill.
 

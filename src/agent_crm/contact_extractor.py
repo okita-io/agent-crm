@@ -12,6 +12,7 @@ from urllib.parse import unquote
 
 from .contact_quality import (
     filter_socials,
+    is_dummy_documentation_email,
     is_low_quality_social_url,
     is_role_inbox_email,
 )
@@ -168,7 +169,16 @@ class ExtractedContact:
 
 
 def normalize_email(email: str) -> str:
-    return unquote(email.strip()).lower().rstrip(".,;)")
+    """Normalize a single addr-spec; strip mailto/query garbage before storage."""
+    text = unquote(email.strip())
+    lowered = text.lower()
+    if lowered.startswith("mailto:"):
+        text = text[7:]
+    # mailto:?cc=, &subject=, &body= query strings are not part of the address.
+    text = text.split("?", 1)[0].split("#", 1)[0].strip()
+    if "," in text:
+        text = text.split(",", 1)[0].strip()
+    return text.lower().rstrip(".,;)")
 
 
 def is_skipped_email(email: str) -> bool:
@@ -188,6 +198,8 @@ def is_skipped_email(email: str) -> bool:
         if domain == fragment or domain.endswith(f".{fragment}"):
             return True
     if domain.endswith(".example") or domain.endswith(".invalid"):
+        return True
+    if is_dummy_documentation_email(normalized):
         return True
     return False
 
