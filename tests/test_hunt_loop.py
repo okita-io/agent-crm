@@ -451,3 +451,18 @@ def test_reset_stale_running_queries(loop_db) -> None:
     assert pending is not None
     assert pending.status == HuntQueryStatus.PENDING
 
+
+def test_reset_stale_running_queries_zero_minutes_clears_all(loop_db) -> None:
+    from agent_crm.enums import HuntQueryStatus
+
+    store = HuntStore()
+    store.enqueue_query(query="fresh running", brand=Brand.MIDNIGHTSATIN, origin="seed")
+    claimed = store.claim_next_pending_query(brand=Brand.MIDNIGHTSATIN)
+    assert claimed is not None
+    assert store.reset_stale_running_queries(stale_minutes=30) == 0
+    assert store.reset_stale_running_queries(stale_minutes=0) == 1
+    pending = store.next_pending_query(brand=Brand.MIDNIGHTSATIN)
+    assert pending is not None
+    assert pending.status == HuntQueryStatus.PENDING
+    assert pending.query == "fresh running"
+

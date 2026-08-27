@@ -110,6 +110,16 @@ def test_agent_routes_are_get_only(api_client) -> None:
     assert response.status_code in {405, 404, 422}
 
 
+def test_agent_search_treats_like_wildcards_as_literals(api_client) -> None:
+    _seed()
+    wild = api_client.get("/agent/contacts", params={"q": "%"})
+    assert wild.status_code == 200
+    assert wild.json()["total"] == 0
+    exact = api_client.get("/agent/contacts", params={"q": "jane.doe"})
+    assert exact.status_code == 200
+    assert exact.json()["total"] >= 1
+
+
 def test_agent_requires_token_when_configured(tmp_path, monkeypatch) -> None:
     db_path = tmp_path / "agent_auth.db"
     monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")

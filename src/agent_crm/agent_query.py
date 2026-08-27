@@ -31,9 +31,11 @@ from .schemas import (
 )
 
 
-def _ilike(column, pattern: str):
-    """Case-insensitive LIKE that works on SQLite and Postgres."""
-    return func.lower(column).like(pattern.lower())
+def _contains(column, q: str):
+    """Case-insensitive substring match that treats ``%``/``_`` as literals."""
+    needle = q.strip().lower()
+    escaped = needle.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    return func.lower(column).like(f"%{escaped}%", escape="\\")
 
 
 def agent_catalog() -> AgentCatalogOut:
@@ -98,11 +100,11 @@ def query_contacts(
                 ContactProfile.email_kind == ContactEmailKind.ROLE
             )
         if q:
-            pattern = f"%{q.strip()}%"
+            needle = q.strip()
             clause = or_(
-                _ilike(ContactProfile.email, pattern),
-                _ilike(ContactProfile.name, pattern),
-                _ilike(ContactProfile.organization, pattern),
+                _contains(ContactProfile.email, needle),
+                _contains(ContactProfile.name, needle),
+                _contains(ContactProfile.organization, needle),
             )
             stmt = stmt.where(clause)
             count_stmt = count_stmt.where(clause)
@@ -162,12 +164,12 @@ def query_websites(
             stmt = stmt.where(HuntResource.url == url.strip())
             count_stmt = count_stmt.where(HuntResource.url == url.strip())
         if q:
-            pattern = f"%{q.strip()}%"
+            needle = q.strip()
             clause = or_(
-                _ilike(HuntResource.url, pattern),
-                _ilike(HuntResource.domain, pattern),
-                _ilike(HuntResource.title, pattern),
-                _ilike(HuntResource.notes, pattern),
+                _contains(HuntResource.url, needle),
+                _contains(HuntResource.domain, needle),
+                _contains(HuntResource.title, needle),
+                _contains(HuntResource.notes, needle),
             )
             stmt = stmt.where(clause)
             count_stmt = count_stmt.where(clause)
@@ -203,12 +205,12 @@ def query_findings(
             stmt = stmt.where(ResearchFinding.kind == kind)
             count_stmt = count_stmt.where(ResearchFinding.kind == kind)
         if q:
-            pattern = f"%{q.strip()}%"
+            needle = q.strip()
             clause = or_(
-                _ilike(ResearchFinding.url, pattern),
-                _ilike(ResearchFinding.domain, pattern),
-                _ilike(ResearchFinding.title, pattern),
-                _ilike(ResearchFinding.summary, pattern),
+                _contains(ResearchFinding.url, needle),
+                _contains(ResearchFinding.domain, needle),
+                _contains(ResearchFinding.title, needle),
+                _contains(ResearchFinding.summary, needle),
             )
             stmt = stmt.where(clause)
             count_stmt = count_stmt.where(clause)
@@ -260,10 +262,10 @@ def query_comment_people(
             count_stmt = count_stmt.where(
                 CommentPerson.platform == platform.strip().lower()
             )
-        pattern = f"%{q.strip()}%"
+        needle = q.strip()
         clause = or_(
-            _ilike(CommentPerson.handle, pattern),
-            _ilike(CommentPerson.display_name, pattern),
+            _contains(CommentPerson.handle, needle),
+            _contains(CommentPerson.display_name, needle),
         )
         stmt = stmt.where(clause)
         count_stmt = count_stmt.where(clause)
@@ -283,7 +285,7 @@ def query_pipeline_leads(
 ) -> AgentPageOut:
     # Pull a bounded verified set then filter/page in Python for q support.
     # Pipeline visibility already requires VALID verification.
-    fetch_limit = max(limit + offset, 200)
+    fetch_limit = 5000 if q else max(limit + offset, 500)
     leads = list_pipeline_leads(brand=brand, audience=audience, limit=fetch_limit)
     if q:
         needle = q.strip().lower()

@@ -67,6 +67,7 @@ def test_compose_binds_sensitive_ports_to_localhost() -> None:
     assert '"127.0.0.1:8501:8501"' in content
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}" in content
     assert "CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}" in content
+    assert "CRM_DASHBOARD_PASSWORD: ${CRM_DASHBOARD_PASSWORD:-}" in content
 
 
 def test_workers_wait_for_api_migrations() -> None:

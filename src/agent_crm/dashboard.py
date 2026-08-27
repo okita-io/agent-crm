@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 from datetime import timedelta
 
@@ -930,9 +931,29 @@ def _observer_fragment(refresh_seconds: int) -> None:
     _observer()
 
 
+def _require_dashboard_access() -> bool:
+    """Optional Streamlit password gate. Empty ``CRM_DASHBOARD_PASSWORD`` skips it."""
+    expected = get_settings().dashboard_password.strip()
+    if not expected:
+        return True
+    if st.session_state.get("dashboard_unlocked") is True:
+        return True
+    st.title("Agent CRM")
+    st.caption("This dashboard is password-protected.")
+    entered = st.text_input("Password", type="password", key="dashboard_password_input")
+    if st.button("Unlock", type="primary"):
+        if hmac.compare_digest(entered, expected):
+            st.session_state.dashboard_unlocked = True
+            st.rerun()
+        st.error("Invalid password")
+    return False
+
+
 def main() -> None:
     st.set_page_config(page_title="Agent CRM", layout="wide")
     init_db()
+    if not _require_dashboard_access():
+        return
 
     settings = get_settings()
     refresh_seconds = settings.observer_refresh_seconds

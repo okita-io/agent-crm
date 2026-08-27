@@ -190,7 +190,8 @@ async def health() -> dict:
 
 
 @app.get("/v1/models", tags=["openai"])
-async def list_models() -> Response:
+async def list_models(request: Request) -> Response:
+    _require_queue_token(request)
     upstream = await _client().get(_upstream_url("models"))
     return Response(
         content=upstream.content,

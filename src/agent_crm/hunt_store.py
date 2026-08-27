@@ -171,18 +171,17 @@ class HuntStore:
             row.completed_at = datetime.now(UTC)
 
     def reset_stale_running_queries(self, *, stale_minutes: int = 30) -> int:
-        """Return stuck RUNNING hunt queries to PENDING (crash recovery)."""
-        cutoff = datetime.now(UTC) - timedelta(minutes=stale_minutes)
+        """Return stuck RUNNING hunt queries to PENDING (crash recovery).
+
+        ``stale_minutes=0`` resets every RUNNING row (single hunt-loop restart).
+        """
+        filters = [HuntQuery.status == HuntQueryStatus.RUNNING]
+        if stale_minutes > 0:
+            cutoff = datetime.now(UTC) - timedelta(minutes=stale_minutes)
+            filters.append(HuntQuery.updated_at < cutoff)
         reset = 0
         with session_scope() as session:
-            rows = list(
-                session.scalars(
-                    select(HuntQuery).where(
-                        HuntQuery.status == HuntQueryStatus.RUNNING,
-                        HuntQuery.updated_at < cutoff,
-                    )
-                )
-            )
+            rows = list(session.scalars(select(HuntQuery).where(*filters)))
             for row in rows:
                 row.status = HuntQueryStatus.PENDING
                 row.error_message = None

@@ -27,7 +27,6 @@ from .hunt_relevance import assess_topical_relevance, is_obvious_off_topic_url
 from .hunt_seeds import audience_from_origin, seed_query_entries
 from .hunt_store import HuntStore
 from .hunt_utils import extract_heuristic_terms, is_junk_title
-from .hunt_utils import extract_heuristic_terms, is_junk_title
 from .job_store import enqueue_topical_relevance_job
 from .llm_client import chat_completions
 from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
@@ -104,7 +103,9 @@ def run_hunt_loop(
     store = HuntStore()
     result = HuntLoopResult()
     deadline = _wall_clock_deadline(budget.max_minutes)
-    store.reset_stale_running_queries()
+    # This process is the only hunt-loop worker; reclaim rows left RUNNING
+    # by a previous container restart instead of waiting 30 minutes.
+    store.reset_stale_running_queries(stale_minutes=0)
 
     pending_existing = store.count_pending(brand if brand != Brand.UNASSIGNED else None)
 
