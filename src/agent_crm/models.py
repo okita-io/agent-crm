@@ -53,6 +53,7 @@ from .enums import (
     Priority,
     ResearchFindingKind,
     Stage,
+    TopicalRelevanceVerdict,
 )
 
 
@@ -414,6 +415,26 @@ class ContactVerification(Base, TimestampMixin):
     http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     lead: Mapped[Lead] = relationship(back_populates="contact_verifications")
+
+
+class UrlTopicRelevance(Base, TimestampMixin):
+    """Topical relevance verdict for a URL under a specific brand."""
+
+    __tablename__ = "url_topic_relevance"
+    __table_args__ = (UniqueConstraint("url", "brand", name="uq_url_topic_brand"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
+    brand: Mapped[Brand] = mapped_column(existing_brand_enum(), nullable=False, index=True)
+    verdict: Mapped[TopicalRelevanceVerdict] = mapped_column(
+        str_enum(TopicalRelevanceVerdict), nullable=False, index=True
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    page_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AgentImprovementNote(Base, TimestampMixin):

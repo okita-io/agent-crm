@@ -36,6 +36,7 @@ from agent_crm.heartbeat import list_heartbeats
 from agent_crm.hunt_store import HuntStore
 from agent_crm.improvement_store import count_open_improvement_notes, list_improvement_notes
 from agent_crm.pipeline import PipelineManager
+from agent_crm.pipeline_leads import list_pipeline_leads, normalize_audience
 from agent_crm.presence import (
     build_observer_rows,
     fetch_spark_queue_health,
@@ -53,28 +54,16 @@ _STATUS_EMOJI = {
 }
 
 
-def _lead_rows() -> pd.DataFrame:
-    crm = CRMToolkit(actor="dashboard")
-    leads = crm.list_leads(limit=500)
+def _lead_rows(
+    *,
+    audience: ContactAudience | None = None,
+    brand: Brand | None = None,
+) -> pd.DataFrame:
+    leads = list_pipeline_leads(audience=audience, brand=brand, limit=500)
     if not leads:
         return pd.DataFrame()
     rows = []
     for lead in leads:
-        verification_status = "—"
-        try:
-            verifications = list_verifications(lead.id)
-            if verifications:
-                statuses = {v.status.value for v in verifications}
-                if ContactVerificationStatus.INVALID.value in statuses:
-                    verification_status = "invalid"
-                elif ContactVerificationStatus.RISKY.value in statuses:
-                    verification_status = "risky"
-                elif ContactVerificationStatus.UNKNOWN.value in statuses:
-                    verification_status = "unknown"
-                else:
-                    verification_status = "valid"
-        except Exception:
-            verification_status = "—"
         rows.append(
             {
                 "id": lead.id,
@@ -85,8 +74,13 @@ def _lead_rows() -> pd.DataFrame:
                 "score": lead.score,
                 "priority": lead.priority.value if lead.priority else None,
                 "brand": lead.brand.value,
+                "qualification": (
+                    normalize_audience(lead.audience).value
+                    if lead.audience
+                    else None
+                ),
                 "status": lead.status.value,
-                "verified": verification_status,
+                "verified": "valid",
                 "created": lead.created_at,
             }
         )
@@ -358,7 +352,30 @@ def _render_pipeline_tab() -> None:
     st.bar_chart(stage_df)
 
     st.subheader("Leads")
-    df = _lead_rows()
+    st.caption(
+        "Only leads with a DNS/MX **valid** primary email appear here. "
+        "Unverified, invalid, role-inbox, placeholder, filename, and disqualified rows stay in Contacts."
+    )
+    qual_filter = st.selectbox(
+        "Qualification filter",
+        options=[
+            "all",
+            "end_user",
+            "influencer",
+            "b2b",
+            "client",
+            "marketing",
+        ],
+        key="pipeline_qualification",
+    )
+    brand_filter = st.selectbox(
+        "Brand filter",
+        options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
+        key="pipeline_brand",
+    )
+    audience = None if qual_filter == "all" else ContactAudience(qual_filter)
+    brand = None if brand_filter == "all" else Brand(brand_filter)
+    df = _lead_rows(audience=audience, brand=brand)
     if df.empty:
         st.info("No leads yet. Run `agent-crm seed` or POST to /intake/webhook.")
     else:
@@ -588,7 +605,15 @@ def _render_contacts_tab() -> None:
     )
     audience_filter = st.selectbox(
         "Audience filter",
-        options=["all", "marketing", "influencer", "user"],
+        options=[
+            "all",
+            "marketing",
+            "influencer",
+            "end_user",
+            "b2b",
+            "client",
+            "user",
+        ],
         key="contacts_audience",
     )
     quality_filter = st.selectbox(

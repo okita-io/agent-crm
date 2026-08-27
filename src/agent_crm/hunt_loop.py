@@ -16,7 +16,7 @@ import httpx
 from .config import Settings, get_settings
 from .comment_people_store import process_scraped_page_comment_people
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
-from .enums import AgentStatus, Brand, ContactAudience, HuntQueryStatus
+from .enums import AgentStatus, Brand, ContactAudience, HuntQueryStatus, TopicalRelevanceVerdict
 from .firecrawl_client import FirecrawlError, scrape
 from .heartbeat import record_heartbeat
 from .hunt_feedback import (
@@ -25,11 +25,13 @@ from .hunt_feedback import (
     enqueue_handle_terms,
     enqueue_person_terms,
 )
+from .hunt_relevance import assess_topical_relevance, is_obvious_off_topic_url
 from .hunt_seeds import audience_from_origin, seed_query_entries
 from .hunt_store import HuntStore
 from .hunt_utils import extract_heuristic_terms, is_junk_title
 from .llm_client import chat_completions
 from .searxng_client import SearchResult, search
+from .topic_relevance_store import upsert_url_topic_relevance
 
 ACTOR = "outbound_hunter"
 
@@ -238,6 +240,11 @@ def _run_queued_query(
         limit=settings.hunter_search_result_limit,
         client=searx_client,
         **search_kwargs,
+    )
+    results = _filter_relevant_hunt_results(
+        results,
+        brand=brand,
+        query=query,
     )
     result_dicts = [
         {"title": hit.title, "url": hit.url, "content": hit.snippet} for hit in results
@@ -475,6 +482,43 @@ def _llm_branch_terms(query: str, results: list[dict[str, Any]], *, max_terms: i
         if len(cleaned) >= max_terms:
             break
     return cleaned
+
+
+def _filter_relevant_hunt_results(
+    results: list[SearchResult],
+    *,
+    brand: Brand,
+    query: str,
+) -> list[SearchResult]:
+    if brand == Brand.UNASSIGNED:
+        return results
+    kept: list[SearchResult] = []
+    for hit in results:
+        assessment = assess_topical_relevance(
+            brand=brand,
+            url=hit.url,
+            title=hit.title,
+            snippet=hit.snippet,
+            query=query,
+            allow_spark=is_obvious_off_topic_url(hit.url) is None,
+        )
+        if assessment.verdict == TopicalRelevanceVerdict.OFF_TOPIC:
+            upsert_url_topic_relevance(
+                url=hit.url,
+                brand=brand,
+                assessment=assessment,
+                source_kind="hunt_serp",
+            )
+            continue
+        if assessment.verdict == TopicalRelevanceVerdict.ON_TOPIC:
+            upsert_url_topic_relevance(
+                url=hit.url,
+                brand=brand,
+                assessment=assessment,
+                source_kind="hunt_serp",
+            )
+        kept.append(hit)
+    return kept
 
 
 def _is_scrapable_url(url: str) -> bool:
