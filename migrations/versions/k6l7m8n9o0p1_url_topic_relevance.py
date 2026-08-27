@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 revision: str = "k6l7m8n9o0p1"
@@ -36,29 +37,39 @@ topical_verdict_enum = postgresql.ENUM(
 )
 
 
-def upgrade() -> None:
-    bind = op.get_bind()
+def _ensure_topical_verdict_enum(bind) -> None:
+    """Create the enum when missing; no-op when a worker/create_all raced ahead."""
     if bind.dialect.name == "postgresql":
         topical_verdict_enum.create(bind, checkfirst=True)
-        op.execute(
-            "ALTER TYPE agentjobkind ADD VALUE IF NOT EXISTS 'check_topical_relevance'"
-        )
+        return
 
-    verdict_type = sa.Enum(
+    sa.Enum(
         "on_topic",
         "off_topic",
         "uncertain",
         name="topicalrelevanceverdict",
-    )
-    if bind.dialect.name != "postgresql":
-        verdict_type.create(bind, checkfirst=True)
+    ).create(bind, checkfirst=True)
+
+
+def upgrade() -> None:
+    bind = op.get_bind()
+    _ensure_topical_verdict_enum(bind)
+
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            "ALTER TYPE agentjobkind ADD VALUE IF NOT EXISTS 'check_topical_relevance'"
+        )
+
+    inspector = inspect(bind)
+    if inspector.has_table("url_topic_relevance"):
+        return
 
     op.create_table(
         "url_topic_relevance",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("url", sa.String(length=2048), nullable=False),
         sa.Column("brand", brand_enum, nullable=False),
-        sa.Column("verdict", verdict_type, nullable=False),
+        sa.Column("verdict", topical_verdict_enum, nullable=False),
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("checked_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("source_kind", sa.String(length=64), nullable=True),
@@ -85,10 +96,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_url_topic_relevance_verdict"), table_name="url_topic_relevance")
-    op.drop_index(op.f("ix_url_topic_relevance_brand"), table_name="url_topic_relevance")
-    op.drop_index(op.f("ix_url_topic_relevance_url"), table_name="url_topic_relevance")
-    op.drop_table("url_topic_relevance")
     bind = op.get_bind()
+    inspector = inspect(bind)
+    if inspector.has_table("url_topic_relevance"):
+        op.drop_index(
+            op.f("ix_url_topic_relevance_verdict"), table_name="url_topic_relevance"
+        )
+        op.drop_index(
+            op.f("ix_url_topic_relevance_brand"), table_name="url_topic_relevance"
+        )
+        op.drop_index(
+            op.f("ix_url_topic_relevance_url"), table_name="url_topic_relevance"
+        )
+        op.drop_table("url_topic_relevance")
+
     if bind.dialect.name == "postgresql":
         op.execute("DROP TYPE IF EXISTS topicalrelevanceverdict")
