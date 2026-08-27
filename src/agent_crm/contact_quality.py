@@ -145,6 +145,46 @@ _FILENAME_EMAIL_DOMAIN_RE = re.compile(
     re.IGNORECASE,
 )
 
+_RETINA_ASSET_DOMAIN_RE = re.compile(
+    r"^\d+x(?:\.[a-f0-9]{4,})?\.(?:png|jpe?g|gif|svg|webp)$",
+    re.IGNORECASE,
+)
+
+_IMAGE_EXTENSION_TLD_RE = re.compile(
+    r"^(?:png|jpe?g|gif|svg|webp|bmp|tiff?)$",
+    re.IGNORECASE,
+)
+
+_ASSET_EMAIL_LOCAL_MARKERS: tuple[str, ...] = (
+    "screenshot",
+    "screen-shot",
+    "screen_shot",
+    "cleanshot",
+    "clean-shot",
+    "whatsapp-image",
+    "whatsapp_image",
+    "whatsapp image",
+    "untitled",
+)
+
+_JUNK_PERSON_NAME_RE = re.compile(
+    r"(?:"
+    r"screenshot|screen[\s\-_]?shot|"
+    r"img[\s\-_]?\d+|^img_\d+|^dsc[\-_]?\d+|^photo[\-_]?\d+|"
+    r"\.(?:png|jpe?g|gif|svg|webp|pdf|docx?|xlsx?|zip|mp[34])"
+    r")",
+    re.IGNORECASE,
+)
+
+_JUNK_EMAIL_LOCAL_RE = re.compile(
+    r"^(?:"
+    r"\d{6,}|"
+    r"[a-f0-9]{16,}|"
+    r"(?:screenshot|screen[\s\-_]?shot|img[\s\-_]?\d+|image\d*)"
+    r")$",
+    re.IGNORECASE,
+)
+
 _PLACEHOLDER_EMAIL_DOMAINS: frozenset[str] = frozenset(
     {
         "domain.com",
@@ -597,9 +637,79 @@ def is_filename_as_email(email: str) -> bool:
         return False
     if _FILENAME_EMAIL_DOMAIN_RE.search(domain):
         return True
+    if _RETINA_ASSET_DOMAIN_RE.match(domain):
+        return True
+    if _IMAGE_EXTENSION_TLD_RE.match(domain):
+        return True
     if re.search(r"\.(?:png|jpe?g|gif|svg|webp|ico|bmp)$", local, re.IGNORECASE):
         return True
+    if any(marker in local for marker in _ASSET_EMAIL_LOCAL_MARKERS):
+        return True
+    if re.search(r"@(?:\d+x|[\d.]+(?:am|pm)?)", local):
+        return True
+    if re.fullmatch(r"\d+x\d+", local) and _FILENAME_EMAIL_DOMAIN_RE.search(domain):
+        return True
     return False
+
+
+def is_junk_person_name(name: str | None) -> bool:
+    """Return True when a display name looks like a screenshot or filename."""
+    if not name:
+        return False
+    text = name.strip()
+    if not text:
+        return False
+    if _JUNK_PERSON_NAME_RE.search(text):
+        return True
+    if re.fullmatch(
+        r"[\w.\-]+\.(?:png|jpe?g|gif|svg|webp|pdf|docx?|xlsx?|zip|mp[34])",
+        text,
+        re.IGNORECASE,
+    ):
+        return True
+    return False
+
+
+def is_obviously_junk_email(email: str) -> bool:
+    """Return True for addresses that should never be stored as contacts."""
+    normalized = email.strip().lower()
+    if not normalized or "@" not in normalized:
+        return True
+    if is_dummy_documentation_email(normalized):
+        return True
+    if is_filename_as_email(normalized):
+        return True
+    local, _, _domain = normalized.partition("@")
+    base_local = local.split("+", 1)[0]
+    if _JUNK_EMAIL_LOCAL_RE.fullmatch(base_local):
+        return True
+    return False
+
+
+def prepare_contact_for_ingest(
+    email: str,
+    name: str | None = None,
+) -> tuple[str, str | None] | None:
+    """Return sanitized contact fields or None when ingest should be skipped."""
+    normalized = email.strip().lower()
+    if is_obviously_junk_email(normalized):
+        return None
+    clean_name = name.strip()[:255] if isinstance(name, str) and name.strip() else None
+    if is_junk_person_name(clean_name):
+        clean_name = None
+    return normalized, clean_name
+
+
+def ingest_needs_immediate_invalid_verification(email: str) -> tuple[bool, list[str]]:
+    """Return whether a stored contact should be marked INVALID without DNS."""
+    normalized = email.strip().lower()
+    if is_role_inbox_email(normalized):
+        return True, ["role or shared inbox — not a direct prospect address"]
+    if is_placeholder_email(normalized):
+        return True, ["placeholder or template email (not a prospect)"]
+    if is_filename_as_email(normalized):
+        return True, ["filename-as-email (not a prospect)"]
+    return False, []
 
 
 def is_dummy_documentation_email(email: str) -> bool:
@@ -910,6 +1020,12 @@ def clean_contact_data(
     if is_placeholder_email(email):
         cleanup.kept = False
         cleanup.reasons.append("placeholder or documentation dummy email")
+    elif is_role_inbox_email(email):
+        cleanup.kept = False
+        cleanup.reasons.append("role or shared inbox email")
+    elif is_filename_as_email(email):
+        cleanup.kept = False
+        cleanup.reasons.append("filename-as-email")
     elif is_generic_support_email(email):
         cleanup.kept = False
         cleanup.reasons.append("generic support or role email")

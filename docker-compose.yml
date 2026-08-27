@@ -97,8 +97,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      spark-queue:
-        condition: service_started
     restart: unless-stopped
 
   hunt-loop:
@@ -158,8 +156,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      spark-queue:
-        condition: service_started
       api:
         condition: service_started
     restart: unless-stopped

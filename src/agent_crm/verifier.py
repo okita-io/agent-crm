@@ -662,6 +662,46 @@ def count_unverified_hunter_leads() -> int:
         return int(session.scalar(stmt) or 0)
 
 
+def count_unverified_email_leads() -> int:
+    """Count email leads lacking any contact verification row."""
+    with session_scope() as session:
+        verified_lead_ids = select(ContactVerification.lead_id).distinct()
+        stmt = (
+            select(func.count())
+            .select_from(Lead)
+            .where(Lead.email.is_not(None))
+            .where(func.length(func.trim(Lead.email)) > 0)
+            .where(Lead.id.not_in(verified_lead_ids))
+        )
+        return int(session.scalar(stmt) or 0)
+
+
+def record_immediate_invalid_email(
+    *,
+    lead_id: int,
+    email: str,
+    reasons: list[str],
+) -> None:
+    """Persist INVALID verification at ingest without DNS/MX checks."""
+    checked_at = datetime.now(UTC)
+    with session_scope() as session:
+        lead = session.get(Lead, lead_id)
+        if lead is not None and lead.status == LeadStatus.NEW:
+            lead.status = LeadStatus.DISQUALIFIED
+        _upsert_verification(
+            session,
+            lead_id=lead_id,
+            contact=email.strip().lower(),
+            contact_kind=ContactKind.EMAIL,
+            status=ContactVerificationStatus.INVALID,
+            reasons=reasons,
+            checked_at=checked_at,
+            dns_summary=None,
+            mx_summary=None,
+            http_status=None,
+        )
+
+
 def seed_verify_jobs_for_unverified(*, limit: int = 50) -> int:
     """Enqueue verify_lead jobs for email leads lacking verification rows."""
     from .job_store import enqueue_verify_lead_job

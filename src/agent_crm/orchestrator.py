@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from .config import get_settings
 from .contact_quality import is_placeholder_email, is_role_inbox_email
 from .db import session_scope
+from .idle_backlog import seed_idle_backlog_jobs
 from .enums import (
     AgentJobKind,
     AgentJobStatus,
@@ -298,6 +299,7 @@ def _check_dummy_email_slips() -> None:
 
 def run_orchestrator_cycle() -> None:
     """Run one orchestration inspection pass."""
+    settings = get_settings()
     now = datetime.now(UTC)
     _check_stale_heartbeats(now)
     _check_failed_jobs()
@@ -305,18 +307,19 @@ def run_orchestrator_cycle() -> None:
     _check_verify_backlog()
     _check_verification_coverage()
     _check_dummy_email_slips()
+    seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
 
 
 def run_orchestrator(*, poll_seconds: int | None = None) -> None:
     """Run forever: inspect stack health and record improvement notes."""
     from .heartbeat import record_heartbeat
-    from .verifier import seed_verify_jobs_for_unverified
+    from .idle_backlog import seed_idle_backlog_jobs
 
     settings = get_settings()
     poll = poll_seconds if poll_seconds is not None else settings.orchestrator_poll_seconds
 
     record_heartbeat(ACTOR, status=AgentStatus.IDLE, task="orchestrator starting")
-    seed_verify_jobs_for_unverified(limit=settings.job_dispatcher_idle_verify_limit)
+    seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
     while True:
         record_heartbeat(
             ACTOR,

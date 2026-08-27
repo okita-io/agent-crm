@@ -13,6 +13,7 @@ from .contact_store import _persist_enrichment
 from .db import session_scope
 from .enums import AgentJobKind, AgentJobStatus, AgentStatus
 from .heartbeat import record_heartbeat
+from .idle_backlog import seed_idle_backlog_jobs
 from .job_store import (
     claim_non_spark_jobs,
     claim_spark_jobs,
@@ -24,7 +25,7 @@ from .job_store import (
 )
 from .models import ContactProfile
 from .orchestrator import note_job_failure
-from .verifier import seed_verify_jobs_for_unverified, verify_lead
+from .verifier import verify_lead
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ def run_job_dispatcher(
     poll = poll_seconds if poll_seconds is not None else settings.job_dispatcher_poll_seconds
 
     record_heartbeat(ACTOR, status=AgentStatus.IDLE, task="job dispatcher starting")
-    seed_verify_jobs_for_unverified(limit=settings.job_dispatcher_idle_verify_limit)
+    seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
     while True:
         work_done = False
         while count_pending_jobs() > 0:
@@ -142,19 +143,19 @@ def run_job_dispatcher(
             if cycle.jobs_claimed == 0:
                 break
             work_done = True
-        if not work_done:
-            seeded = seed_verify_jobs_for_unverified(
-                limit=settings.job_dispatcher_idle_verify_limit
-            )
-            idle_task = f"idle ({count_pending_jobs()} pending)"
-            if seeded:
-                idle_task = f"idle, seeded {seeded} verify jobs"
-            record_heartbeat(
-                ACTOR,
-                status=AgentStatus.IDLE,
-                task=idle_task,
-            )
-            time.sleep(poll)
+        if work_done:
+            continue
+        seeded = seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
+        total_seeded = seeded["verify"] + seeded["enrich"]
+        if total_seeded > 0:
+            continue
+        idle_task = f"idle ({count_pending_jobs()} pending)"
+        record_heartbeat(
+            ACTOR,
+            status=AgentStatus.IDLE,
+            task=idle_task,
+        )
+        time.sleep(poll)
 
 
 def build_job_status() -> dict:
