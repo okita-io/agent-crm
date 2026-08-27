@@ -10,6 +10,10 @@ import pandas as pd
 import streamlit as st
 
 from agent_crm.config import get_settings
+from agent_crm.comment_people_store import (
+    count_comment_people,
+    list_comment_people,
+)
 from agent_crm.contact_store import (
     count_contact_profiles,
     count_contact_profiles_by_brand,
@@ -563,12 +567,19 @@ def _render_research_tab() -> None:
 def _render_contacts_tab() -> None:
     st.subheader("Contact profiles")
     st.caption(
-        "People found on scraped hunter/research pages, keyed by email. "
-        "Title, organization, and location come from public-web enrichment "
-        "(search snippets and public pages — not logged-in social scraping)."
+        "People found on scraped hunter/research pages. Email contacts are keyed by address; "
+        "comment authors are keyed by platform + handle (no email invented). "
+        "Title, organization, and location on email rows come from public-web enrichment."
     )
 
     CONTACTS_PAGE_SIZE = 100
+
+    view_filter = st.selectbox(
+        "View",
+        options=["emails", "commenters", "all"],
+        index=0,
+        key="contacts_view",
+    )
 
     brand_filter = st.selectbox(
         "Brand filter",
@@ -594,12 +605,24 @@ def _render_contacts_tab() -> None:
     )
     quality = quality_filter
 
-    filter_key = f"{brand_filter}:{audience_filter}:{quality_filter}"
+    filter_key = f"{view_filter}:{brand_filter}:{audience_filter}:{quality_filter}"
     if st.session_state.get("contacts_filter_key") != filter_key:
         st.session_state.contacts_filter_key = filter_key
         st.session_state.contacts_page = 0
     if "contacts_page" not in st.session_state:
         st.session_state.contacts_page = 0
+
+    if view_filter in {"commenters", "all"}:
+        comment_total = count_comment_people(brand=brand, audience=audience)
+        st.caption(f"Comment authors (handles): **{comment_total}**")
+
+    if view_filter == "commenters":
+        _render_comment_people_table(
+            brand=brand,
+            audience=audience,
+            page_size=CONTACTS_PAGE_SIZE,
+        )
+        return
 
     quality_counts = count_contact_profiles_by_quality(brand=brand, audience=audience)
     total = count_contact_profiles(brand=brand, audience=audience, quality=quality)
@@ -667,6 +690,92 @@ def _render_contacts_tab() -> None:
                     "updated": row.updated_at,
                 }
                 for row in profiles
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    if view_filter == "all":
+        st.divider()
+        st.subheader("Comment authors")
+        _render_comment_people_table(
+            brand=brand,
+            audience=audience,
+            page_size=CONTACTS_PAGE_SIZE,
+            key_prefix="all_",
+        )
+
+
+def _render_comment_people_table(
+    *,
+    brand: Brand | None,
+    audience: ContactAudience | None,
+    page_size: int,
+    key_prefix: str = "",
+) -> None:
+    total = count_comment_people(brand=brand, audience=audience)
+    if total == 0:
+        st.info("No comment authors yet. Run hunter or research scrapes on threads/articles.")
+        return
+
+    page_key = f"{key_prefix}comment_people_page"
+    if page_key not in st.session_state:
+        st.session_state[page_key] = 0
+    page = st.session_state[page_key]
+    max_page = max((total - 1) // page_size, 0)
+    page = min(page, max_page)
+    st.session_state[page_key] = page
+    offset = page * page_size
+
+    people = list_comment_people(
+        brand=brand,
+        audience=audience,
+        limit=page_size,
+        offset=offset,
+    )
+    if people:
+        showing_start = offset + 1
+        showing_end = offset + len(people)
+        st.caption(f"Showing {showing_start}–{showing_end} of {total} comment authors")
+    else:
+        st.caption(f"Showing 0 of {total} comment authors")
+
+    nav_prev, nav_next, _ = st.columns([1, 1, 6])
+    if nav_prev.button(
+        "Previous",
+        disabled=page <= 0,
+        key=f"{key_prefix}comment_people_prev",
+    ):
+        st.session_state[page_key] = max(page - 1, 0)
+        st.rerun()
+    if nav_next.button(
+        "Next",
+        disabled=page >= max_page,
+        key=f"{key_prefix}comment_people_next",
+    ):
+        st.session_state[page_key] = min(page + 1, max_page)
+        st.rerun()
+
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "platform": row.platform,
+                    "handle": row.handle,
+                    "display name": row.display_name,
+                    "profile": row.profile_url,
+                    "brand": row.brand.value,
+                    "audience": row.audience.value if row.audience else None,
+                    "source pages": ", ".join(row.source_urls or []),
+                    "snippet": (
+                        (row.comment_snippets or [{}])[-1].get("snippet")
+                        if row.comment_snippets
+                        else None
+                    ),
+                    "updated": row.updated_at,
+                }
+                for row in people
             ]
         ),
         use_container_width=True,

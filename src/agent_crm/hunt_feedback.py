@@ -39,10 +39,11 @@ _EMAIL_LOCAL_GARBAGE_RE = re.compile(
 
 @dataclass
 class HuntFeedbackBudget:
-    """Per-run caps on deterministic community/person query enqueue."""
+    """Per-run caps on deterministic community/person/handle query enqueue."""
 
     community_terms_remaining: int
     person_terms_remaining: int
+    handle_terms_remaining: int
 
     @classmethod
     def from_settings(cls) -> HuntFeedbackBudget:
@@ -50,6 +51,7 @@ class HuntFeedbackBudget:
         return cls(
             community_terms_remaining=settings.hunter_community_terms_per_run,
             person_terms_remaining=settings.hunter_person_terms_per_run,
+            handle_terms_remaining=settings.hunter_handle_terms_per_run,
         )
 
 
@@ -175,6 +177,60 @@ def person_search_terms(name: str, *, max_terms: int = 4) -> list[str]:
     return templates[:max_terms]
 
 
+def is_valid_hunt_handle(platform: str, handle: str) -> bool:
+    """True when a public handle is worth discovery queries."""
+    from .comment_extractor import is_valid_comment_handle
+
+    return is_valid_comment_handle(platform, handle)
+
+
+def handle_search_terms(
+    platform: str,
+    handle: str,
+    *,
+    display_name: str | None = None,
+    max_terms: int = 4,
+) -> list[str]:
+    """Build bounded search queries for a comment author handle."""
+    if not is_valid_hunt_handle(platform, handle):
+        return []
+
+    clean_handle = handle.strip().lower()
+    terms: list[str] = []
+    if platform == "reddit":
+        terms.extend(
+            [
+                f"site:reddit.com/u/{clean_handle}",
+                f'u/{clean_handle} reddit',
+                f'"{clean_handle}" site:reddit.com',
+            ]
+        )
+    else:
+        terms.extend(
+            [
+                f'"{clean_handle}" {platform} comments',
+                f'site:{platform}.com "{clean_handle}"',
+            ]
+        )
+
+    if display_name and is_valid_hunt_person_name(display_name):
+        quoted = f'"{display_name.strip()}"'
+        if f"{quoted} reddit" not in terms:
+            terms.append(f"{quoted} reddit")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        key = normalize_query(term)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(term.strip())
+        if len(deduped) >= max_terms:
+            break
+    return deduped
+
+
 def _origin_slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug[:80] or "unknown"
@@ -246,6 +302,43 @@ def enqueue_person_terms(
             run_id=run_id,
         ):
             budget.person_terms_remaining -= 1
+            enqueued += 1
+    return enqueued
+
+
+def enqueue_handle_terms(
+    store: HuntStore,
+    *,
+    platform: str,
+    handle: str,
+    brand: Brand,
+    run_id: str | None,
+    budget: HuntFeedbackBudget,
+    audience: ContactAudience | None = None,
+    display_name: str | None = None,
+) -> int:
+    """Enqueue handle-derived queries for a comment author."""
+    if not is_valid_hunt_handle(platform, handle):
+        return 0
+
+    origin = origin_with_audience(
+        f"handle:{platform}/{_origin_slug(handle)}",
+        audience,
+    )
+    enqueued = 0
+    for term in handle_search_terms(platform, handle, display_name=display_name):
+        if budget.handle_terms_remaining <= 0:
+            break
+        if "@" in term:
+            continue
+        if store.enqueue_query(
+            query=term,
+            brand=brand,
+            origin=origin,
+            params=None,
+            run_id=run_id,
+        ):
+            budget.handle_terms_remaining -= 1
             enqueued += 1
     return enqueued
 

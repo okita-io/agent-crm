@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from .db import session_scope
 from .contact_quality import (
+    is_dummy_documentation_email,
     is_filename_as_email,
     is_placeholder_email,
     is_relevant_contact,
@@ -199,6 +200,12 @@ def check_email(
         return EmailCheckResult(
             status=ContactVerificationStatus.INVALID,
             reasons=[f"placeholder domain: {domain}"],
+        )
+
+    if is_dummy_documentation_email(email):
+        return EmailCheckResult(
+            status=ContactVerificationStatus.INVALID,
+            reasons=["documentation dummy email local-part (not a prospect)"],
         )
 
     if local in _ROLE_LOCAL_PARTS:
@@ -513,6 +520,7 @@ def _should_disqualify(results: list[ContactVerification]) -> bool:
         "page gone",
         "connection failed",
         "placeholder domain",
+        "documentation dummy email",
         "email syntax invalid",
     )
     all_invalid = all(r.status == ContactVerificationStatus.INVALID for r in results)
@@ -704,6 +712,8 @@ def seed_verify_jobs_for_unverified(*, limit: int = 50) -> int:
         if is_placeholder_email(normalized):
             continue
         if is_filename_as_email(normalized):
+            continue
+        if is_dummy_documentation_email(normalized):
             continue
         if enqueue_verify_lead_job(lead_id):
             enqueued += 1

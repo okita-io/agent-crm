@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     hunter_max_branch_terms: int = 5
     hunter_community_terms_per_run: int = 30
     hunter_person_terms_per_run: int = 20
+    hunter_handle_terms_per_run: int = 20
     hunter_request_timeout: float = 60.0
 
     # Research agent defaults
@@ -72,6 +73,7 @@ class Settings(BaseSettings):
     contact_enrichment_queries_per_profile: int = 6
     contact_enrichments_per_run: int = 20
     contact_enrichment_spark_per_run: int = 10
+    comment_people_per_page: int = 40
 
     # Contact worker drain loops (job dispatcher)
     job_dispatcher_poll_seconds: int = 45

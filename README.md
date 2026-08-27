@@ -142,7 +142,7 @@ then rely on the standing `hunt-loop` service for ongoing collection. Spark LLM 
 
 Hunt-loop prompt explicitly forbids inventing emails or person names. Sites land in `hunt_resources`; people are handled by contact extraction (below).
 
-**Community & name feedback.** When the loop first sees a community/forum URL (e.g. `reddit.com/r/<sub>`, Discord invite, Facebook group), it enqueues bounded `community:` search terms (`site:reddit.com/r/<sub>`, `"<sub>" community`, etc.). After contact extraction on a scraped page, real person names (not emails, not single tokens like “Admin”) enqueue `person:` terms (`"Jane Doe" reddit`, `"Jane Doe" discord`, …). Caps per run: `CRM_HUNTER_COMMUNITY_TERMS_PER_RUN` (default **30**) and `CRM_HUNTER_PERSON_TERMS_PER_RUN` (default **20**). Dedupe uses `hunt_queries.dedupe_key` as usual. The dashboard **Hunter** tab lists catalogued communities and derived queued terms; `GET /hunt/queue` reports aggregate pending counts (inspect `hunt_queries.origin` for `community:` / `person:` prefixes).
+**Community & name feedback.** When the loop first sees a community/forum URL (e.g. `reddit.com/r/<sub>`, Discord invite, Facebook group), it enqueues bounded `community:` search terms (`site:reddit.com/r/<sub>`, `"<sub>" community`, etc.). After contact extraction on a scraped page, real person names (not emails, not single tokens like “Admin”) enqueue `person:` terms (`"Jane Doe" reddit`, `"Jane Doe" discord`, …). Comment authors with handles enqueue `handle:` terms (`site:reddit.com/u/<user>`, `u/<user> reddit`, …). Caps per run: `CRM_HUNTER_COMMUNITY_TERMS_PER_RUN` (default **30**), `CRM_HUNTER_PERSON_TERMS_PER_RUN` (default **20**), and `CRM_HUNTER_HANDLE_TERMS_PER_RUN` (default **20**). Dedupe uses `hunt_queries.dedupe_key` as usual. The dashboard **Hunter** tab lists catalogued communities and derived queued terms; `GET /hunt/queue` reports aggregate pending counts (inspect `hunt_queries.origin` for `community:` / `person:` / `handle:` prefixes).
 
 ### 4. Research agent
 
@@ -168,16 +168,18 @@ Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 S
 
 After every successful Firecrawl scrape (hunter, hunt-loop, research), the stack extracts contacts from page markdown/HTML:
 
-- **Emails** via regex and `mailto:` links; skip noreply, no-reply, donotreply, privacy, mailer-daemon, notifications@, example.com, sentry.io, wixpress, cloudflare, githubnoreply
+- **Emails** via regex and `mailto:` links; skip noreply, no-reply, donotreply, privacy, mailer-daemon, notifications@, example.com, sentry.io, wixpress, cloudflare, githubnoreply, and documentation dummy locals (`nowhere@`, `nobody@`, `borderify@`, …). `mailto:` query strings (`?cc=`, `&subject=`, `&body=`) and comma-glued addresses are stripped before storage.
 - **Names** only when clearly present (`Name <email>`, prior line, mailto anchor text) — **never invented**
 - **Social URLs** already on the page (x.com, linkedin.com/in, instagram.com, facebook.com)
+- **Comment authors** (public usernames/handles from thread comment sections) — Reddit `u/username`, blog/Disqus comment blocks, etc. Stored in **`comment_people`** keyed by `(platform, handle)` with no fake email. Skips bots, `[deleted]`, AutoModerator, and 4chan anonymous IDs. Capped at `CRM_COMMENT_PEOPLE_PER_PAGE` (default **40**) unique handles per page.
 
-Each email upserts a row in **`contact_profiles`** (unique lowercase email) and a matching **`Lead`** (`source=CONTACT`). `source_urls` and `socials` merge across pages.
+Each email upserts a row in **`contact_profiles`** (unique lowercase email) and a matching **`Lead`** (`source=CONTACT`). `source_urls` and `socials` merge across pages. Handle-only comment authors do **not** enqueue `enrich_contact` Spark jobs.
 
 **Contact-quality filters** run at extraction, verification, and via backfill:
 
 - **Source relevance** — inspect `source_urls` / scrape page URL; drop contacts found only on ad/tracking hosts or legal boilerplate pages unrelated to the email domain. Community platforms (Reddit, Discord, etc.) and matching-domain pages stay relevant.
 - **Generic support emails** — `support@`, `helpdesk@`, and similar role inboxes are not kept as prospects.
+- **Documentation dummy emails** — `nowhere@mozilla.org`, `nobody@`, MDN sample add-on IDs, and similar template locals are dropped at extraction, marked invalid by the verifier (even when MX is valid), and removed by backfill.
 - **Social scrub** — strip share-link templates (`/intent/tweet`, `sharer.php`, …), ad-firm accounts, and generic platform handles (`@support`, `@help`, …).
 - **Notes scrub** — remove tracking-pixel / open-beacon URLs from `hunt_resources.notes` snippets during backfill.
 
@@ -193,6 +195,7 @@ Skipped when the scrape already attached socials to that contact.
 | Entry | Command / API |
 |-------|---------------|
 | List profiles | `agent-crm contacts list [--brand …] [--audience marketing\|influencer\|user] [--email …]` · `GET /contacts?audience=…` |
+| List comment authors | `GET /comment-people?platform=reddit&brand=…` · dashboard **Contacts** tab → View: `commenters` |
 | Backfill filters | `agent-crm contacts backfill [--limit 500] [--dry-run]` · `POST /contacts/backfill` |
 
 ### 6. Lead verifier

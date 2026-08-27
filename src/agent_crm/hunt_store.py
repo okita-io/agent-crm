@@ -236,15 +236,17 @@ class HuntStore:
         brand: Brand | None = None,
         limit: int = 200,
     ) -> list[HuntQuery]:
-        """Queries enqueued from community or person feedback loops."""
+        """Queries enqueued from community, person, or handle feedback loops."""
         with session_scope() as session:
             stmt = (
                 select(HuntQuery)
                 .where(
                     HuntQuery.origin.startswith("community:")
                     | HuntQuery.origin.startswith("person:")
+                    | HuntQuery.origin.startswith("handle:")
                     | HuntQuery.origin.contains(":community:")
                     | HuntQuery.origin.contains(":person:")
+                    | HuntQuery.origin.contains(":handle:")
                 )
                 .order_by(HuntQuery.id.desc())
                 .limit(limit)
