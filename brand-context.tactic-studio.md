@@ -2,9 +2,10 @@
 
 ## Product
 
-**What it is:** tactic.studio is a WebAR / industrial AR training vendor built on 8th Wall and related immersive stack.
+**What it is:** tactic.studio is a WebAR / industrial AR training vendor built on 8th Wall and related immersive stack. We provide creative, technical, and visual services and provide full service AI assisted creative services for brands to create and deploy WebAR experiences, industrial AR training modules, and brand activation AR.
 
-**What it does:** Designs and deploys WebAR experiences, industrial AR training modules, and brand activation AR for enterprise and CPG/retail clients.
+
+**What it does:** Designs and deploys WebAR and creative experiences, industrial AR training modules, and brand activation AR for enterprise and CPG/retail clients.
 
 **What it does NOT do:** It is not an agency-first shop pitching through holding companies by default, and not a generic "we do all XR" freelancer collective.
 
@@ -22,7 +23,7 @@
 
 **Unpasteable claim:** `[NEED: specific industrial WebAR / 8th Wall migration positioning — fill from Pete]`
 
-**Category:** WebAR / industrial AR training vendor.
+**Category:** WebAR / industrial AR training vendor / AI assisted creative services.
 
 **Named competitors:** Other WebAR/XR studios, Snap AR agencies, enterprise AR training vendors.
 
