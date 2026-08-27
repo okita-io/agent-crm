@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 
 from .config import get_settings
 from .contact_extractor import ExtractedContact, extract_contacts
+from .contact_qualification import infer_audience_from_ingest
 from .contact_quality import (
     ContactBackfillResult,
     EmailQualityFilter,
@@ -535,6 +536,13 @@ def process_scraped_page_contacts(
             continue
         contact_email, contact_name = prepared
         cleaned_socials = filter_socials(contact.socials or None, email=contact_email)
+        resolved_audience = audience or infer_audience_from_ingest(
+            source_url=source_url,
+            email=contact_email,
+            name=contact_name,
+            socials=cleaned_socials,
+            hunt_audience=audience,
+        )
         try:
             profile = upsert_contact_profile(
                 email=contact_email,
@@ -542,7 +550,7 @@ def process_scraped_page_contacts(
                 brand=brand,
                 source_url=source_url,
                 socials=cleaned_socials,
-                audience=audience,
+                audience=resolved_audience,
             )
         except ValueError:
             logger.debug(
@@ -579,7 +587,7 @@ def process_scraped_page_contacts(
                         brand=brand,
                         source_url=source_url,
                         socials=cleaned_lookup_socials,
-                        audience=audience,
+                        audience=resolved_audience,
                     )
 
         profiles.append(profile)

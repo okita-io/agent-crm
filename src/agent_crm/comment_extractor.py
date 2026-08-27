@@ -96,7 +96,7 @@ class ExtractedCommentPerson:
     display_name: str | None = None
     profile_url: str | None = None
     comment_snippet: str | None = None
-    audience: ContactAudience | None = ContactAudience.USER
+    audience: ContactAudience | None = ContactAudience.END_USER
     source_url: str | None = None
 
 
@@ -219,7 +219,7 @@ def _default_profile_url(platform: str, handle: str) -> str | None:
 def _guess_audience(snippet: str) -> ContactAudience:
     if snippet and INFLUENCER_SNIPPET_RE.search(snippet):
         return ContactAudience.INFLUENCER
-    return ContactAudience.USER
+    return ContactAudience.END_USER
 
 
 def _split_article_and_comments(text: str) -> tuple[str, str]:

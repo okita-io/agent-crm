@@ -8,7 +8,9 @@ from dataclasses import dataclass, field
 
 from .config import get_settings
 from .contact_people_enrichment import enrich_contact_person
+from .contact_qualification import qualify_comment_person, qualify_contact_profile
 from .contact_quality import is_role_inbox_email
+from .topic_relevance_store import check_topical_relevance_job
 from .contact_store import _persist_enrichment
 from .db import session_scope
 from .enums import AgentJobKind, AgentJobStatus, AgentStatus
@@ -75,6 +77,38 @@ def execute_job(job_id: int, kind: AgentJobKind, payload: dict | None) -> None:
         if not isinstance(lead_id, int):
             raise ValueError("verify_lead job missing lead_id")
         verify_lead(lead_id)
+        return
+
+    if kind == AgentJobKind.QUALIFY_CONTACT:
+        profile_id = payload.get("contact_profile_id")
+        person_id = payload.get("comment_person_id")
+        if isinstance(profile_id, int):
+            qualify_contact_profile(profile_id, allow_spark=True)
+            return
+        if isinstance(person_id, int):
+            qualify_comment_person(person_id, allow_spark=True)
+            return
+        raise ValueError("qualify_contact job missing contact_profile_id or comment_person_id")
+
+    if kind == AgentJobKind.CHECK_TOPICAL_RELEVANCE:
+        url = payload.get("url")
+        brand_raw = payload.get("brand")
+        if not isinstance(url, str) or not isinstance(brand_raw, str):
+            raise ValueError("check_topical_relevance job missing url or brand")
+        from .enums import Brand
+
+        check_topical_relevance_job(
+            url=url,
+            brand=Brand(brand_raw),
+            source_kind=payload.get("source_kind")
+            if isinstance(payload.get("source_kind"), str)
+            else None,
+            source_id=payload.get("source_id")
+            if isinstance(payload.get("source_id"), int)
+            else None,
+            query=payload.get("query") if isinstance(payload.get("query"), str) else None,
+            allow_spark=True,
+        )
         return
 
     if kind == AgentJobKind.DECODE_EMAIL:
@@ -146,7 +180,12 @@ def run_job_dispatcher(
         if work_done:
             continue
         seeded = seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
-        total_seeded = seeded["verify"] + seeded["enrich"]
+        total_seeded = (
+            seeded["verify"]
+            + seeded["enrich"]
+            + seeded.get("qualify", 0)
+            + seeded.get("topical", 0)
+        )
         if total_seeded > 0:
             continue
         idle_task = f"idle ({count_pending_jobs()} pending)"

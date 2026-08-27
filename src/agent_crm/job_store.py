@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 
 from .config import get_settings
 from .db import session_scope
-from .enums import AgentJobKind, AgentJobStatus, SPARK_AGENT_JOB_KINDS
+from .enums import AgentJobKind, AgentJobStatus, Brand, SPARK_AGENT_JOB_KINDS
 from .models import AgentJob
 from .presence import fetch_spark_queue_health, spark_slot_summary
 
@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_ENRICH_PRIORITY = 80
 DEFAULT_VERIFY_PRIORITY = 60
 DEFAULT_DECODE_PRIORITY = 70
+DEFAULT_QUALIFY_PRIORITY = 75
+DEFAULT_TOPICAL_PRIORITY = 70
 
 
 def _utcnow() -> datetime:
@@ -157,6 +159,61 @@ def enqueue_decode_email_job(
         dedupe_key=key[:512],
         payload={"source_url": source_url, "span": obfuscation_span[:2000]},
         priority=priority or DEFAULT_DECODE_PRIORITY,
+    )
+
+
+def enqueue_qualify_contact_job(
+    *,
+    contact_profile_id: int | None = None,
+    comment_person_id: int | None = None,
+    priority: int | None = None,
+) -> bool:
+    if contact_profile_id is not None and comment_person_id is not None:
+        raise ValueError("specify contact_profile_id or comment_person_id, not both")
+    if contact_profile_id is not None:
+        dedupe_key = f"qualify_contact:profile:{contact_profile_id}"
+        payload: dict[str, Any] = {"contact_profile_id": contact_profile_id}
+    elif comment_person_id is not None:
+        dedupe_key = f"qualify_contact:comment:{comment_person_id}"
+        payload = {"comment_person_id": comment_person_id}
+    else:
+        raise ValueError("contact_profile_id or comment_person_id required")
+    return enqueue_job(
+        kind=AgentJobKind.QUALIFY_CONTACT,
+        dedupe_key=dedupe_key,
+        payload=payload,
+        priority=priority or DEFAULT_QUALIFY_PRIORITY,
+    )
+
+
+def enqueue_topical_relevance_job(
+    *,
+    url: str,
+    brand: Brand,
+    source_kind: str | None = None,
+    source_id: int | None = None,
+    query: str | None = None,
+    priority: int | None = None,
+) -> bool:
+    from .enums import Brand as BrandEnum
+    from .topic_relevance_store import normalize_url
+
+    if not isinstance(brand, BrandEnum):
+        brand = BrandEnum(brand)
+    normalized = normalize_url(url)
+    dedupe_key = f"check_topical:{brand.value}:{normalized}"[:512]
+    payload: dict[str, Any] = {"url": normalized, "brand": brand.value}
+    if source_kind:
+        payload["source_kind"] = source_kind
+    if source_id is not None:
+        payload["source_id"] = source_id
+    if query:
+        payload["query"] = query
+    return enqueue_job(
+        kind=AgentJobKind.CHECK_TOPICAL_RELEVANCE,
+        dedupe_key=dedupe_key,
+        payload=payload,
+        priority=priority or DEFAULT_TOPICAL_PRIORITY,
     )
 
 

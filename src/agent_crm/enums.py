@@ -21,11 +21,20 @@ class Brand(str, enum.Enum):
 
 
 class ContactAudience(str, enum.Enum):
-    """Outbound audience bucket for tactic.studio contacts (null for other brands)."""
+    """Lead/contact qualification bucket (audience). Expandable via Alembic."""
 
     MARKETING = "marketing"
     INFLUENCER = "influencer"
-    USER = "user"
+    USER = "user"  # legacy ingest label; prefer END_USER for new rows
+    END_USER = "end_user"
+    B2B = "b2b"
+    CLIENT = "client"
+
+
+# Hunt origins and older rows may still emit ``user``; treat as end-user.
+CONTACT_AUDIENCE_ALIASES: dict[ContactAudience, ContactAudience] = {
+    ContactAudience.USER: ContactAudience.END_USER,
+}
 
 
 class LeadSource(str, enum.Enum):
@@ -144,6 +153,8 @@ class AgentJobKind(str, enum.Enum):
     ENRICH_CONTACT = "enrich_contact"
     VERIFY_LEAD = "verify_lead"
     DECODE_EMAIL = "decode_email"
+    QUALIFY_CONTACT = "qualify_contact"
+    CHECK_TOPICAL_RELEVANCE = "check_topical_relevance"
 
 
 class AgentJobStatus(str, enum.Enum):
@@ -156,7 +167,12 @@ class AgentJobStatus(str, enum.Enum):
 
 
 SPARK_AGENT_JOB_KINDS: frozenset[AgentJobKind] = frozenset(
-    {AgentJobKind.ENRICH_CONTACT, AgentJobKind.DECODE_EMAIL}
+    {
+        AgentJobKind.ENRICH_CONTACT,
+        AgentJobKind.DECODE_EMAIL,
+        AgentJobKind.QUALIFY_CONTACT,
+        AgentJobKind.CHECK_TOPICAL_RELEVANCE,
+    }
 )
 
 
@@ -231,3 +247,11 @@ class ContactVerificationStatus(str, enum.Enum):
     INVALID = "invalid"
     RISKY = "risky"
     UNKNOWN = "unknown"
+
+
+class TopicalRelevanceVerdict(str, enum.Enum):
+    """Whether a URL/page is on-brand for a hunt target."""
+
+    ON_TOPIC = "on_topic"
+    OFF_TOPIC = "off_topic"
+    UNCERTAIN = "uncertain"

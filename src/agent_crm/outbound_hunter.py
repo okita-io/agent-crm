@@ -15,12 +15,15 @@ import httpx
 from .config import get_settings
 from .comment_people_store import process_scraped_page_comment_people
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
-from .enums import ActivityType, AgentStatus, Brand, LeadSource, Stage
+from .enums import ActivityType, AgentStatus, Brand, LeadSource, Stage, TopicalRelevanceVerdict
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
 from .llm_client import chat_completions
+from .hunt_relevance import assess_topical_relevance, is_obvious_off_topic_url
 from .pipeline import PipelineManager
 from .schemas import EnrichmentInput, HuntRequest, HuntResult, LeadCreate, LeadOut
 from .searxng_client import SearchResult, SearxngError, search
+from .topic_relevance_store import upsert_url_topic_relevance
+
 from .tooling import CRMToolkit
 
 ACTOR = "outbound_hunter"
@@ -79,11 +82,30 @@ def run_hunt(
     )
 
     scraped_count = 0
+    brand = request.brand or Brand.UNASSIGNED
     for hit in results:
         if scraped_count >= page_cap:
             break
         if not _is_scrapable_url(hit.url):
             continue
+
+        if brand != Brand.UNASSIGNED:
+            assessment = assess_topical_relevance(
+                brand=brand,
+                url=hit.url,
+                title=hit.title,
+                snippet=hit.snippet,
+                query=request.query,
+                allow_spark=is_obvious_off_topic_url(hit.url) is None,
+            )
+            upsert_url_topic_relevance(
+                url=hit.url,
+                brand=brand,
+                assessment=assessment,
+                source_kind="hunt_run",
+            )
+            if assessment.verdict == TopicalRelevanceVerdict.OFF_TOPIC:
+                continue
 
         crm.record_heartbeat(
             status=AgentStatus.WORKING,

@@ -93,15 +93,26 @@ SEED_PACKS_BY_AUDIENCE: dict[str, dict[str, list[str]]] = {
 }
 
 _AUDIENCE_PREFIXES: frozenset[str] = frozenset(
-    {ContactAudience.MARKETING.value, ContactAudience.INFLUENCER.value, ContactAudience.USER.value}
+    {
+        ContactAudience.MARKETING.value,
+        ContactAudience.INFLUENCER.value,
+        ContactAudience.USER.value,
+        ContactAudience.END_USER.value,
+        ContactAudience.B2B.value,
+        ContactAudience.CLIENT.value,
+    }
 )
 
 
 def audience_from_origin(origin: str) -> ContactAudience | None:
     """Parse an audience bucket from a hunt query origin string."""
+    from .pipeline_leads import normalize_audience
+
     for part in origin.split(":"):
         if part in _AUDIENCE_PREFIXES:
-            return ContactAudience(part)
+            if part == ContactAudience.USER.value:
+                return ContactAudience.END_USER
+            return normalize_audience(ContactAudience(part))
     return None
 
 
