@@ -14,7 +14,8 @@ from .db import session_scope
 from .enums import AgentJobKind, AgentJobStatus, AgentStatus
 from .heartbeat import record_heartbeat
 from .job_store import (
-    claim_jobs,
+    claim_non_spark_jobs,
+    claim_spark_jobs,
     count_pending_jobs,
     job_status_breakdown,
     mark_job_completed,
@@ -22,7 +23,8 @@ from .job_store import (
     reset_stale_running_jobs,
 )
 from .models import ContactProfile
-from .verifier import verify_lead
+from .orchestrator import note_job_failure
+from .verifier import seed_verify_jobs_for_unverified, verify_lead
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +87,14 @@ def run_dispatcher_cycle(
     batch_size: int = 20,
     actor: str = ACTOR,
 ) -> JobDispatcherCycle:
-    """Claim and execute up to ``batch_size`` pending jobs in one cycle."""
+    """Claim and execute pending jobs — non-Spark work drains before Spark jobs."""
     reset_stale_running_jobs()
     cycle = JobDispatcherCycle()
-    jobs = claim_jobs(max_claim=batch_size, actor=actor)
+
+    non_spark_jobs = claim_non_spark_jobs(max_claim=batch_size, actor=actor)
+    spark_slots = max(batch_size - len(non_spark_jobs), 0)
+    spark_jobs = claim_spark_jobs(max_claim=spark_slots, actor=actor) if spark_slots else []
+    jobs = non_spark_jobs + spark_jobs
     cycle.jobs_claimed = len(jobs)
 
     for job in jobs:
@@ -103,7 +109,9 @@ def run_dispatcher_cycle(
             cycle.jobs_completed += 1
         except Exception as exc:  # noqa: BLE001
             logger.exception("Job %s failed", job.id)
-            mark_job_failed(job.id, str(exc))
+            error_text = str(exc)
+            mark_job_failed(job.id, error_text)
+            note_job_failure(kind=job.kind, error_text=error_text, job_id=job.id)
             cycle.jobs_failed += 1
             cycle.errors.append(f"job {job.id}: {exc}")
 
@@ -126,6 +134,7 @@ def run_job_dispatcher(
     poll = poll_seconds if poll_seconds is not None else settings.job_dispatcher_poll_seconds
 
     record_heartbeat(ACTOR, status=AgentStatus.IDLE, task="job dispatcher starting")
+    seed_verify_jobs_for_unverified(limit=settings.job_dispatcher_idle_verify_limit)
     while True:
         work_done = False
         while count_pending_jobs() > 0:
@@ -134,10 +143,16 @@ def run_job_dispatcher(
                 break
             work_done = True
         if not work_done:
+            seeded = seed_verify_jobs_for_unverified(
+                limit=settings.job_dispatcher_idle_verify_limit
+            )
+            idle_task = f"idle ({count_pending_jobs()} pending)"
+            if seeded:
+                idle_task = f"idle, seeded {seeded} verify jobs"
             record_heartbeat(
                 ACTOR,
                 status=AgentStatus.IDLE,
-                task=f"idle ({count_pending_jobs()} pending)",
+                task=idle_task,
             )
             time.sleep(poll)
 

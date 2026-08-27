@@ -43,6 +43,10 @@ from .enums import (
     ContactVerificationStatus,
     HuntQueryStatus,
     HuntResourceKind,
+    ImprovementNoteKind,
+    ImprovementNoteSeverity,
+    ImprovementNoteStatus,
+    ImprovementSourceAgent,
     JourneyStatus,
     LeadSource,
     LeadStatus,
@@ -410,6 +414,34 @@ class ContactVerification(Base, TimestampMixin):
     http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     lead: Mapped[Lead] = relationship(back_populates="contact_verifications")
+
+
+class AgentImprovementNote(Base, TimestampMixin):
+    """Self-learning gap/performance note for orchestrator and Cursor follow-up."""
+
+    __tablename__ = "agent_improvement_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[ImprovementNoteKind] = mapped_column(
+        str_enum(ImprovementNoteKind), nullable=False, index=True
+    )
+    severity: Mapped[ImprovementNoteSeverity] = mapped_column(
+        str_enum(ImprovementNoteSeverity), nullable=False, index=True
+    )
+    source_agent: Mapped[ImprovementSourceAgent] = mapped_column(
+        str_enum(ImprovementSourceAgent), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    suggested_fix: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[ImprovementNoteStatus] = mapped_column(
+        str_enum(ImprovementNoteStatus),
+        default=ImprovementNoteStatus.OPEN,
+        nullable=False,
+        index=True,
+    )
+    fingerprint: Mapped[str] = mapped_column(String(512), nullable=False)
 
 
 class Journey(Base, TimestampMixin):

@@ -34,6 +34,7 @@ from agent_crm.hunt_feedback import parse_community_notes
 from agent_crm.hunt_status import STALE_RUNNING_MINUTES, build_hunt_status
 from agent_crm.heartbeat import list_heartbeats
 from agent_crm.hunt_store import HuntStore
+from agent_crm.improvement_store import count_open_improvement_notes, list_improvement_notes
 from agent_crm.pipeline import PipelineManager
 from agent_crm.presence import (
     build_observer_rows,
@@ -842,6 +843,50 @@ def _render_verifier_tab() -> None:
     )
 
 
+def _render_improvement_tab() -> None:
+    st.subheader("Improvement / gaps")
+    st.caption(
+        "Self-learning notes from the orchestrator and workers. "
+        "Manager/Cursor can pull open items via GET /improvement-notes?status=open."
+    )
+
+    open_count = count_open_improvement_notes()
+    st.metric("Open notes", open_count)
+
+    notes = list_improvement_notes(limit=200)
+    if not notes:
+        st.info("No improvement notes yet. The orchestrator records gaps as it inspects the stack.")
+        return
+
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "id": note.id,
+                    "severity": note.severity.value,
+                    "kind": note.kind.value,
+                    "source": note.source_agent.value,
+                    "title": note.title,
+                    "status": note.status.value,
+                    "suggested_fix": note.suggested_fix,
+                    "created": note.created_at,
+                }
+                for note in notes
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    for note in notes[:10]:
+        with st.expander(f"[{note.severity.value}] {note.title}"):
+            st.write(note.body)
+            if note.metrics:
+                st.json(note.metrics)
+            if note.suggested_fix:
+                st.caption(f"Suggested fix: {note.suggested_fix}")
+
+
 def _observer_fragment(refresh_seconds: int) -> None:
     try:
         fragment = st.fragment(run_every=timedelta(seconds=refresh_seconds))
@@ -865,8 +910,8 @@ def main() -> None:
     st.title("Agent CRM")
     st.caption(f"Store: {database_kind()}")
 
-    observer_tab, pipeline_tab, hunter_tab, research_tab, contacts_tab, verifier_tab = st.tabs(
-        ["Live agents", "Pipeline & leads", "Hunter", "Research", "Contacts", "Verifier"]
+    observer_tab, pipeline_tab, hunter_tab, research_tab, contacts_tab, verifier_tab, improvement_tab = st.tabs(
+        ["Live agents", "Pipeline & leads", "Hunter", "Research", "Contacts", "Verifier", "Improvement"]
     )
 
     with observer_tab:
@@ -886,6 +931,9 @@ def main() -> None:
 
     with verifier_tab:
         _render_verifier_tab()
+
+    with improvement_tab:
+        _render_improvement_tab()
 
 
 if __name__ == "__main__":

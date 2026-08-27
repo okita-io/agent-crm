@@ -160,6 +160,42 @@ SPARK_AGENT_JOB_KINDS: frozenset[AgentJobKind] = frozenset(
 )
 
 
+class ImprovementNoteKind(str, enum.Enum):
+    """Category of self-learning orchestration note."""
+
+    GAP = "gap"
+    PERFORMANCE = "performance"
+    REPAIR = "repair"
+
+
+class ImprovementNoteSeverity(str, enum.Enum):
+    """How urgently a note needs attention."""
+
+    INFO = "info"
+    WARN = "warn"
+    CRITICAL = "critical"
+
+
+class ImprovementNoteStatus(str, enum.Enum):
+    """Lifecycle of an improvement note."""
+
+    OPEN = "open"
+    INVESTIGATING = "investigating"
+    PATCHED = "patched"
+    WONTFIX = "wontfix"
+
+
+class ImprovementSourceAgent(str, enum.Enum):
+    """Agent or service that raised an improvement note."""
+
+    JOB_DISPATCHER = "job-dispatcher"
+    HUNT_LOOP = "hunt-loop"
+    RESEARCH_LOOP = "research-loop"
+    LEAD_VERIFIER = "lead_verifier"
+    SPARK_QUEUE = "spark-queue"
+    ORCHESTRATOR = "orchestrator"
+
+
 class HuntResourceKind(str, enum.Enum):
     """What kind of site/resource the hunter discovered."""
 

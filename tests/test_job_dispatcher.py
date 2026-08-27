@@ -11,6 +11,8 @@ from agent_crm.db import session_scope
 from agent_crm.enums import AgentJobKind, AgentJobStatus
 from agent_crm.job_store import (
     claim_jobs,
+    claim_non_spark_jobs,
+    claim_spark_jobs,
     enqueue_enrich_contact_job,
     pick_furthest_behind_kind,
     pending_kind_lag_metrics,
@@ -52,7 +54,9 @@ def test_claim_prefers_enrich_when_enrich_backlog_is_larger() -> None:
         )
 
     with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True):
-        claimed = claim_jobs(max_claim=1)
+        from agent_crm.job_store import claim_spark_jobs
+
+        claimed = claim_spark_jobs(max_claim=1)
     assert len(claimed) == 1
     assert claimed[0].kind == AgentJobKind.ENRICH_CONTACT
 
@@ -90,13 +94,7 @@ def test_claim_switches_to_verify_when_verify_lag_is_worse() -> None:
     with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True):
         first_batch = claim_jobs(max_claim=3)
     assert len(first_batch) == 3
-    assert all(job.kind == AgentJobKind.ENRICH_CONTACT for job in first_batch)
-
-    metrics = pending_kind_lag_metrics()
-    assert metrics[AgentJobKind.ENRICH_CONTACT][0] == 7
-    assert metrics[AgentJobKind.VERIFY_LEAD][0] == 8
-    lag_kind = pick_furthest_behind_kind(metrics, spark_running=0)
-    assert lag_kind == AgentJobKind.VERIFY_LEAD
+    assert all(job.kind == AgentJobKind.VERIFY_LEAD for job in first_batch)
 
     with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True):
         next_claim = claim_jobs(max_claim=1)
@@ -123,6 +121,50 @@ def test_verify_claimed_when_spark_full_and_enrich_pending() -> None:
         claimed = claim_jobs(max_claim=2)
     assert len(claimed) == 2
     assert all(job.kind == AgentJobKind.VERIFY_LEAD for job in claimed)
+
+
+def test_claim_non_spark_jobs_skips_enrich_backlog() -> None:
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    for index in range(20):
+        _enqueue_kind(
+            AgentJobKind.ENRICH_CONTACT,
+            f"enrich-{index}",
+            base + timedelta(seconds=index),
+        )
+    for index in range(4):
+        _enqueue_kind(
+            AgentJobKind.VERIFY_LEAD,
+            f"verify-{index}",
+            base + timedelta(hours=1, seconds=index),
+        )
+
+    claimed = claim_non_spark_jobs(max_claim=10)
+    assert len(claimed) == 4
+    assert all(job.kind == AgentJobKind.VERIFY_LEAD for job in claimed)
+
+
+def test_claim_jobs_prioritizes_non_spark_before_spark() -> None:
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    for index in range(10):
+        _enqueue_kind(
+            AgentJobKind.ENRICH_CONTACT,
+            f"enrich-{index}",
+            base + timedelta(seconds=index),
+        )
+    for index in range(3):
+        _enqueue_kind(
+            AgentJobKind.VERIFY_LEAD,
+            f"verify-{index}",
+            base + timedelta(seconds=index),
+        )
+
+    with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True):
+        claimed = claim_jobs(max_claim=5)
+    assert len(claimed) == 5
+    assert claimed[0].kind == AgentJobKind.VERIFY_LEAD
+    assert claimed[1].kind == AgentJobKind.VERIFY_LEAD
+    assert claimed[2].kind == AgentJobKind.VERIFY_LEAD
+    assert all(job.kind == AgentJobKind.ENRICH_CONTACT for job in claimed[3:])
 
 
 def test_enqueue_on_upsert_is_idempotent() -> None:

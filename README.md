@@ -15,14 +15,24 @@ cp .env.example .env   # adjust if needed
 docker compose up -d --build
 ```
 
+`docker compose up -d` starts the full self-organizing pipeline — no extra CLI required:
+
 | Service | Port | Role |
 |---------|------|------|
 | `api` | 8000 | FastAPI — runs `alembic upgrade head` on boot, then serves |
 | `dashboard` | 8501 | Streamlit observer + pipeline/hunter/research/contacts/verifier |
 | `db` | 5432 | Postgres 16 |
 | `spark-queue` | 8088 | GPU-aware LLM queue proxy |
+| `contact-worker` | — | Job dispatcher — enrich + verify (`agent-crm jobs`) |
+| `hunt-loop` | — | Standing outbound hunter (`agent-crm hunt-loop`, global priority queue) |
+| `research-loop` | — | Standing ad-placement research (20 queries / 60 min / 200 pages per cycle) |
+| `orchestrator` | — | Self-learning stack inspector (`agent-crm orchestrate`) — writes improvement notes |
 
 API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+The `contact-worker` enqueues and runs `verify_lead` jobs automatically when contact profiles are upserted with an email, and backfills unverified leads when idle. Non-Spark verify jobs drain even when Spark enrich jobs are stuck on 500s. You do **not** need to run `agent-crm verify` by hand for the pipeline to work — that CLI remains for one-off debugging.
+
+The `orchestrator` inspects heartbeats, job failures, Spark health, verification coverage, and worker errors every few minutes. It writes deduped rows to `agent_improvement_notes` (gaps, performance issues, repairs). Manager/Cursor pulls open notes via `GET /improvement-notes?status=open`, investigates, patches the container, and rebuilds — no outbound mail, no Spark unless you choose to summarize notes later.
 
 ### Host services (not in Compose)
 
@@ -120,13 +130,13 @@ Each search hit can be scraped to markdown via the host Firecrawl API. Hunter de
 | List sites | `GET /hunt/resources` |
 | Queue status | `GET /hunt/queue` |
 
-**Ranch ops:** run **one** global `agent-crm hunt-loop` (no `--brand`) so tactic.studio marketing seeds jump ahead of pending MidnightSatin work. Stop any MidnightSatin-only loop that would keep draining MS rows in FIFO order. After merge, seed tactic with:
+**Ranch ops:** Compose runs **one** global `hunt-loop` service (no `--brand`) so tactic.studio marketing seeds jump ahead of pending MidnightSatin work. Do **not** run a second MidnightSatin-only loop alongside it. To seed tactic.studio once after deploy, either wait for pending `hunt_queries` rows or temporarily run:
 
 ```bash
 docker compose run -d --rm --no-deps api agent-crm hunt-loop --brand tactic-studio
 ```
 
-then switch to the global loop for ongoing collection. Spark LLM still routes through spark-queue (4 concurrent cap).
+then rely on the standing `hunt-loop` service for ongoing collection. Spark LLM still routes through spark-queue (4 concurrent cap).
 
 **Dequeue priority (highest first):** tactic `marketing` → tactic `influencer` → tactic `user` → MidnightSatin influencer/user → Celestial-Nexus influencer/user → HeyBuddy influencer/user → unlisted (30).
 
@@ -192,10 +202,12 @@ Skipped when the scrape already attached socials to that contact.
 
 Defensive contact checks — **DNS, MX, HTTP only**. No SMTP, no RCPT/VRFY, no sending.
 
+Verification runs automatically: the `contact-worker` enqueues `verify_lead` jobs when contact profiles are upserted with a real email (skipping role inboxes and placeholders), and seeds a bounded batch of unverified leads on startup and when idle. Verify jobs do **not** consume Spark slots.
+
 | Entry | Command / API |
 |-------|---------------|
-| One lead | `agent-crm verify --lead-id N` · `POST /leads/{id}/verify` |
-| Batch | `agent-crm verify --unverified [--limit 50]` · `POST /verify/batch` |
+| One lead | `agent-crm verify --lead-id N` · `POST /leads/{id}/verify` (manual/debug) |
+| Batch | `agent-crm verify --unverified [--limit 50]` · `POST /verify/batch` (manual/debug) |
 | Raw | `agent-crm verify --email a@b.com` · `POST /verify/raw` |
 
 Results in `contact_verifications` (one row per lead + contact).
@@ -218,6 +230,8 @@ For `source=CONTACT` leads, the verifier also applies the source-relevance / sup
 | `research_findings` | Research agent output |
 | `contact_profiles` | **People** keyed by email — name, socials, source pages |
 | `contact_verifications` | Verifier results per lead contact |
+| `agent_jobs` | Background job queue (enrich, verify, decode) |
+| `agent_improvement_notes` | Self-learning gap/performance notes for orchestrator + Cursor |
 | `agent_heartbeats` | Live agent observer state |
 
 `Account.socials` is for companies. Person socials live on `contact_profiles` (and in lead `raw_payload`), not on accounts.
@@ -240,6 +254,7 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 | **Research** | `research_findings` with brand/kind filters |
 | **Contacts** | `contact_profiles` — name, email, socials, source pages |
 | **Verifier** | Hunter leads and verification status |
+| **Improvement** | Open orchestrator gap/performance notes |
 
 ### Agent roster (as implemented)
 
@@ -250,7 +265,9 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 | Brand Router | `brand_router` | Assign brand |
 | Research | `research` | Competitor / nonprofit / ad-placement runs → `research_findings` |
 | Outbound Hunter | `outbound_hunter` | Hunt + hunt-loop → sites and page leads |
-| Lead Verifier | `lead_verifier` | DNS/MX/HTTP checks |
+| Lead Verifier | `lead_verifier` | DNS/MX/HTTP checks (auto via `contact-worker`) |
+| Job dispatcher | `job-dispatcher` | Drains `agent_jobs` — verify before Spark enrich |
+| Orchestrator | `orchestrator` | Stack health inspection → improvement notes |
 | CRM / Pipeline | `api`, `dashboard`, … | Stage transitions, reporting |
 
 Outreach, nurture sends, and orchestrator scheduling are **not** implemented.
@@ -265,6 +282,8 @@ agent-crm serve                          # API on CRM_API_PORT (default 8000)
 agent-crm init-db                        # SQLite only — Postgres uses Alembic
 agent-crm seed                           # Demo leads
 agent-crm report                         # Weekly JSON report
+agent-crm jobs                           # Job dispatcher (runs in contact-worker)
+agent-crm orchestrate                    # Orchestrator (runs in orchestrator service)
 
 # Hunter
 agent-crm hunt "boutique design NYC" \
@@ -336,6 +355,8 @@ streamlit run src/agent_crm/dashboard.py
 | POST | `/agents/{name}/heartbeat` | Agent heartbeat |
 | GET | `/agents` | Observer roster |
 | GET | `/agents/spark` | Spark queue slot summary |
+| GET | `/jobs/status` | Agent job queue counts |
+| GET | `/improvement-notes` | Self-learning gap notes (`?status=open`) |
 
 Full OpenAPI at `/docs`.
 
@@ -393,4 +414,4 @@ alembic upgrade head      # apply all revisions
 alembic current           # show head
 ```
 
-Current chain ends at `c5d6e7f8a9b0` (`contact_profiles` + `CONTACT` lead source). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.
+Current chain includes `i4j5k6l7m8n9` (`agent_improvement_notes` + `activitytype.VERIFIED`, after `h3i4j5k6l7m8` comment_people). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.

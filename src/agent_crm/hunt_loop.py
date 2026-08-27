@@ -174,6 +174,14 @@ def run_hunt_loop(
                 audience=query_audience,
             )
         except Exception as exc:  # noqa: BLE001
+            from .enums import ImprovementSourceAgent
+            from .orchestrator import note_worker_failure
+
+            note_worker_failure(
+                source_agent=ImprovementSourceAgent.HUNT_LOOP,
+                error_text=str(exc),
+                context=f"hunt query {pending.id}",
+            )
             store.mark_query_failed(pending.id, str(exc))
             continue
 

@@ -17,7 +17,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .db import session_scope
-from .contact_quality import is_dummy_documentation_email, is_relevant_contact
+from .contact_quality import (
+    is_dummy_documentation_email,
+    is_filename_as_email,
+    is_placeholder_email,
+    is_relevant_contact,
+    is_role_inbox_email,
+)
 from .enums import (
     ActivityType,
     AgentStatus,
@@ -673,6 +679,45 @@ def count_unverified_hunter_leads() -> int:
             .where(Lead.id.not_in(verified_lead_ids))
         )
         return int(session.scalar(stmt) or 0)
+
+
+def seed_verify_jobs_for_unverified(*, limit: int = 50) -> int:
+    """Enqueue verify_lead jobs for email leads lacking verification rows."""
+    from .job_store import enqueue_verify_lead_job
+
+    if limit <= 0:
+        return 0
+
+    with session_scope() as session:
+        verified_lead_ids = select(ContactVerification.lead_id).distinct()
+        stmt = (
+            select(Lead.id, Lead.email)
+            .where(Lead.email.is_not(None))
+            .where(func.length(func.trim(Lead.email)) > 0)
+            .where(Lead.id.not_in(verified_lead_ids))
+            .order_by(Lead.created_at.asc(), Lead.id.asc())
+            .limit(limit * 3)
+        )
+        candidates = list(session.execute(stmt))
+
+    enqueued = 0
+    for lead_id, email in candidates:
+        if enqueued >= limit:
+            break
+        if not email:
+            continue
+        normalized = email.strip().lower()
+        if is_role_inbox_email(normalized):
+            continue
+        if is_placeholder_email(normalized):
+            continue
+        if is_filename_as_email(normalized):
+            continue
+        if is_dummy_documentation_email(normalized):
+            continue
+        if enqueue_verify_lead_job(lead_id):
+            enqueued += 1
+    return enqueued
 
 
 def verify_batch_unverified(
