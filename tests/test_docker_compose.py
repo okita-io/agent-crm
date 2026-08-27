@@ -57,3 +57,15 @@ def test_contact_worker_and_orchestrator_do_not_require_spark_queue() -> None:
         assert "spark-queue:" not in depends_block, (
             f"{service} should not depend on spark-queue to start verify jobs"
         )
+
+
+def test_workers_wait_for_api_migrations() -> None:
+    """Standing workers must start after api so Alembic finishes before init_db."""
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    for service in ("contact-worker", "hunt-loop", "research-loop", "orchestrator"):
+        start = content.index(f"  {service}:")
+        end = content.index("\n\n", start)
+        block = content[start:end]
+        depends_start = block.index("depends_on:")
+        depends_block = block[depends_start:]
+        assert "api:" in depends_block, f"{service} should depend on api migrations"

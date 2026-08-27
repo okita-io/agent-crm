@@ -77,6 +77,17 @@ def existing_brand_enum(**kwargs) -> SAEnum:
     return SAEnum(Brand, name="brand", create_type=False, **kwargs)
 
 
+def existing_topical_verdict_enum(**kwargs) -> SAEnum:
+    """Reuse the Postgres ``topicalrelevanceverdict`` enum from Alembic."""
+    return SAEnum(
+        TopicalRelevanceVerdict,
+        name="topicalrelevanceverdict",
+        values_callable=_str_enum_values,
+        create_type=False,
+        **kwargs,
+    )
+
+
 class Base(DeclarativeBase):
     """Declarative base for all CRM tables."""
 
@@ -427,7 +438,7 @@ class UrlTopicRelevance(Base, TimestampMixin):
     url: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
     brand: Mapped[Brand] = mapped_column(existing_brand_enum(), nullable=False, index=True)
     verdict: Mapped[TopicalRelevanceVerdict] = mapped_column(
-        str_enum(TopicalRelevanceVerdict), nullable=False, index=True
+        existing_topical_verdict_enum(), nullable=False, index=True
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
