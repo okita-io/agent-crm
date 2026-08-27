@@ -316,7 +316,18 @@ def check_url(
     resolver: DnsResolver | None = None,
 ) -> UrlCheckResult:
     """HTTP(S) HEAD/GET with redirect follow — flag dead links and interstitials."""
+    from .url_safety import UnsafeURLError, assert_public_http_url
+
     reasons: list[str] = []
+    try:
+        # Literal private/loopback hosts rejected without DNS; full resolve below.
+        assert_public_http_url(url, resolve_dns=False)
+    except UnsafeURLError as exc:
+        return UrlCheckResult(
+            status=ContactVerificationStatus.INVALID,
+            reasons=[f"URL blocked: {exc}"],
+        )
+
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return UrlCheckResult(

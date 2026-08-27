@@ -193,3 +193,16 @@ def test_spark_claim_stops_at_four_running() -> None:
     ):
         claimed = claim_jobs(max_claim=5)
     assert claimed == []
+
+
+def test_claim_marks_job_running_before_return() -> None:
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    _enqueue_kind(AgentJobKind.VERIFY_LEAD, "v1", base)
+    claimed = claim_non_spark_jobs(max_claim=1, actor="tester")
+    assert len(claimed) == 1
+    assert claimed[0].status == AgentJobStatus.RUNNING
+    assert claimed[0].actor == "tester"
+    assert claimed[0].claimed_at is not None
+
+    claimed_again = claim_non_spark_jobs(max_claim=1, actor="tester")
+    assert claimed_again == []

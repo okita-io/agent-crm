@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from sqlalchemy import select
 
 from .config import get_settings
 from .comment_people_store import process_scraped_page_comment_people
@@ -16,6 +16,7 @@ from .contact_store import ContactExtractionBudget, process_scraped_page_contact
 from .enums import ActivityType, AgentStatus, Brand, ResearchFindingKind
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
 from .llm_client import chat_completions
+from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, wrap_untrusted
 from .research_seeds import BRAND_DISPLAY, default_kind_for_brand, seed_queries
 from .research_store import upsert_finding
 from .research_utils import (
@@ -243,21 +244,25 @@ def _maybe_summarize(
 ) -> tuple[str, dict[str, Any] | None]:
     brand_label = BRAND_DISPLAY.get(brand, brand.value)
     brand_context = brand_context_snippet(brand)
+    page_block = (
+        f"{wrap_untrusted('url', hit.url, max_chars=500)}\n"
+        f"{wrap_untrusted('title', page.title or hit.title, max_chars=300)}\n"
+        f"{wrap_untrusted('snippet', hit.snippet, max_chars=500)}\n"
+        f"{wrap_untrusted('page_excerpt', page.markdown, max_chars=3500)}"
+    )
     if kind == ResearchFindingKind.COMPETITOR:
         system = (
             "You analyze competitor websites for a CRM research agent. "
             "Summarize positioning, audience, and product angle vs the target brand. "
             "Be factual; do not invent contact details, stats, or testimonials.\n\n"
             f"{competitor_summarizer_guidance()}"
+            + UNTRUSTED_DATA_SYSTEM_SUFFIX
         )
         if brand_context:
             system += f"\n\n--- brand context (excerpt) ---\n{brand_context}"
         user = (
             f"Target brand: {brand_label}\n"
-            f"URL: {hit.url}\n"
-            f"Title: {page.title or hit.title}\n"
-            f"Snippet: {hit.snippet}\n"
-            f"Page excerpt:\n{(page.markdown or '')[:3500]}\n\n"
+            f"{page_block}\n\n"
             'Return JSON: {"summary": "...", "why_it_matters": "..."}'
         )
     elif kind == ResearchFindingKind.NONPROFIT:
@@ -266,12 +271,10 @@ def _maybe_summarize(
             "prospecting with an AI companion app (HeyBuddy). Focus on mission overlap: "
             "loneliness, mental wellness, elder companionship, veterans, youth digital wellbeing. "
             "Only include ein if it appears verbatim in the source text; never invent tax status."
+            + UNTRUSTED_DATA_SYSTEM_SUFFIX
         )
         user = (
-            f"URL: {hit.url}\n"
-            f"Title: {page.title or hit.title}\n"
-            f"Snippet: {hit.snippet}\n"
-            f"Page excerpt:\n{(page.markdown or '')[:3500]}\n\n"
+            f"{page_block}\n\n"
             'Return JSON: {"summary": "...", "org_name": "...", "mission": "...", '
             '"ein": null or "XX-XXXXXXX", "why_it_matters": "..."}'
         )
@@ -282,26 +285,21 @@ def _maybe_summarize(
             "Discovery only — do not invent pricing or contact emails. "
             "Assess brand fit and brand safety honestly (imageboards like 4chan often warrant caution).\n\n"
             f"{ad_placement_summarizer_guidance()}"
+            + UNTRUSTED_DATA_SYSTEM_SUFFIX
         )
         if brand_context:
             system += f"\n\n--- brand context (excerpt) ---\n{brand_context}"
         user = (
             f"Target brand: {brand_label}\n"
-            f"URL: {hit.url}\n"
-            f"Title: {page.title or hit.title}\n"
-            f"Snippet: {hit.snippet}\n"
-            f"Page excerpt:\n{(page.markdown or '')[:3500]}\n\n"
+            f"{page_block}\n\n"
             'Return JSON: {"summary": "...", "site_name": "...", "audience": "...", '
             '"ad_product": "display|newsletter|sticky|board|sponsorship|discord boost|other", '
             '"how_to_buy": "URL or unknown", "brand_fit": "...", '
             '"brand_safety": "ok|caution|avoid — brief reason", "why_it_matters": "..."}'
         )
     else:
-        system = "You write concise CRM research summaries. Be factual."
-        user = (
-            f"URL: {hit.url}\nTitle: {page.title or hit.title}\n"
-            f"Snippet: {hit.snippet}\nPage:\n{(page.markdown or '')[:3500]}"
-        )
+        system = "You write concise CRM research summaries. Be factual." + UNTRUSTED_DATA_SYSTEM_SUFFIX
+        user = page_block
 
     try:
         response = chat_completions(
@@ -478,22 +476,9 @@ def _normalize_extra(
 
 
 def _parse_json_object(content: str) -> dict[str, Any] | None:
-    content = content.strip()
-    try:
-        parsed = json.loads(content)
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if match:
-        try:
-            parsed = json.loads(match.group(0))
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            return None
-    return None
+    from .llm_text import extract_json_object
+
+    return extract_json_object(content)
 
 
 def _extract_chat_content(response: dict[str, Any]) -> str | None:
@@ -538,15 +523,42 @@ def _maybe_write_account_note(
     """Optional pipeline visibility: account note + activity without fake emails."""
     from .db import session_scope
     from .models import Account
+    from .research_utils import canonical_url
 
     domain = extract_domain(url)
     org_name = None
     if extra:
         org_name = extra.get("org_name") or extra.get("site_name")
     account_name = org_name or title or domain
+    site_key = canonical_url(url) or url
 
     with session_scope() as session:
-        account = Account(name=str(account_name)[:255], website=url)
+        account = session.scalar(
+            select(Account).where(Account.website.in_([site_key, url])).limit(1)
+        )
+        if account is None and domain:
+            candidates = list(
+                session.scalars(
+                    select(Account)
+                    .where(Account.website.is_not(None))
+                    .where(Account.website.contains(domain))
+                    .limit(50)
+                )
+            )
+            for row in candidates:
+                if extract_domain(row.website or "") == domain:
+                    account = row
+                    break
+        if account is None:
+            account = Account(name=str(account_name)[:255], website=site_key)
+            session.add(account)
+        else:
+            if org_name or (
+                title and len(str(account_name)) > len(account.name or "")
+            ):
+                account.name = str(account_name)[:255]
+            account.website = site_key
+
         note_parts = [summary[:2000]]
         if extra:
             if extra.get("mission"):
@@ -562,7 +574,6 @@ def _maybe_write_account_note(
             if extra.get("why_it_matters"):
                 note_parts.append(f"Why it matters: {extra['why_it_matters']}")
         account.notes = "\n\n".join(note_parts)
-        session.add(account)
         session.flush()
 
     crm.log_note(

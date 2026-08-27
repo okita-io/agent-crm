@@ -13,10 +13,10 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: crm
-      POSTGRES_PASSWORD: crm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}
       POSTGRES_DB: agent_crm
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - crm_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -33,19 +33,22 @@ services:
       SPARK_LLM_BASE_URL: http://spark:8888/v1
       SPARK_LLM_MODEL: qwen3.8-27b-sglang
       SPARK_LLM_MAX_CONCURRENCY: "4"
+      SPARK_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
     extra_hosts:
       - "spark:10.0.1.9"
     ports:
-      - "8088:8088"
+      - "127.0.0.1:8088:8088"
 
   api:
     build: .
     command: ["api"]
     environment:
-      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_API_HOST: 0.0.0.0
       CRM_API_PORT: "8000"
+      CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_SEARXNG_URL: http://host.docker.internal:8080
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
       CRM_HUNTER_MAX_PAGES_PER_RUN: "50"
@@ -59,7 +62,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -70,12 +73,14 @@ services:
     build: .
     command: ["dashboard"]
     environment:
-      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_DASHBOARD_PORT: "8501"
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_API_BASE_URL: http://api:8000
+      CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     depends_on:
       db:
         condition: service_healthy
@@ -88,8 +93,9 @@ services:
     build: .
     command: ["agent-crm", "jobs"]
     environment:
-      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_SEARXNG_URL: http://host.docker.internal:8080
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
     extra_hosts:
@@ -105,8 +111,9 @@ services:
     build: .
     command: ["agent-crm", "hunt-loop"]
     environment:
-      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_SEARXNG_URL: http://host.docker.internal:8080
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
       CRM_HUNTER_MAX_QUERIES_DEFAULT: "0"
@@ -134,8 +141,9 @@ services:
       - --max-minutes
       - "60"
     environment:
-      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_SEARXNG_URL: http://host.docker.internal:8080
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
       CRM_RESEARCH_MAX_QUERIES_DEFAULT: "20"
@@ -156,8 +164,9 @@ services:
     build: .
     command: ["agent-crm", "orchestrate"]
     environment:
-      CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/agent_crm
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_ORCHESTRATOR_POLL_SECONDS: "180"
     depends_on:
       db:

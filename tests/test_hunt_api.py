@@ -33,12 +33,44 @@ def test_hunt_loop_endpoint(tmp_path, monkeypatch):
         )
         response = client.post(
             "/hunt/loop",
-            json={"brand": "midnightsatin", "max_queries": 2},
+            json={"brand": "midnightsatin", "max_queries": 2, "max_minutes": 5},
         )
     assert response.status_code == 200
     payload = response.json()
     assert payload["queries_run"] == 2
     assert payload["resources_found"] == 5
+    reset_engine()
+    get_settings.cache_clear()
+
+
+def test_hunt_loop_rejects_unlimited_without_flag(tmp_path, monkeypatch):
+    db_path = tmp_path / "api-loop-unlimited.db"
+    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    get_settings.cache_clear()
+    reset_engine()
+    init_db()
+    client = TestClient(app)
+    response = client.post(
+        "/hunt/loop",
+        json={"brand": "midnightsatin", "max_queries": 0, "max_minutes": 0},
+    )
+    assert response.status_code == 400
+    reset_engine()
+    get_settings.cache_clear()
+
+
+def test_api_token_required_when_configured(tmp_path, monkeypatch):
+    db_path = tmp_path / "api-token.db"
+    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("CRM_API_TOKEN", "secret-token")
+    get_settings.cache_clear()
+    reset_engine()
+    init_db()
+    client = TestClient(app)
+    assert client.get("/health").status_code == 200
+    assert client.get("/contacts").status_code == 401
+    ok = client.get("/contacts", headers={"X-CRM-Token": "secret-token"})
+    assert ok.status_code == 200
     reset_engine()
     get_settings.cache_clear()
 

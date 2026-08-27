@@ -102,6 +102,10 @@ def test_is_role_inbox_email_skips_generic_addresses() -> None:
     assert is_role_inbox_email("hello@acme.com")
     assert is_role_inbox_email("contact@acme.com")
     assert is_role_inbox_email("support@acme.com")
+    assert is_role_inbox_email("ceo@acme.com")
+    assert is_role_inbox_email("billing@acme.com")
+    assert is_role_inbox_email("founder@acme.com")
+    assert is_role_inbox_email("noreply@acme.com")
     assert not is_role_inbox_email("jane.doe@acme.com")
 
 
@@ -200,10 +204,10 @@ def test_process_scraped_page_contacts_enqueues_enrich_job(db_url) -> None:
 
 def test_backfill_contact_enrichment_cli_shape(db_url) -> None:
     upsert_contact_profile(
-        email="found@example.com",
+        email="found@helpy.io",
         name="Found Person",
         brand=Brand.UNASSIGNED,
-        source_url="https://example.com",
+        source_url="https://helpy.io",
     )
 
     with patch("agent_crm.contact_store.enrich_contact_person") as mock_enrich:
@@ -219,10 +223,10 @@ def test_backfill_contact_enrichment_cli_shape(db_url) -> None:
 
 def test_contacts_enrich_api(api_client, db_url) -> None:
     upsert_contact_profile(
-        email="api@example.com",
+        email="api@helpy.io",
         name="API Person",
         brand=Brand.UNASSIGNED,
-        source_url="https://example.com",
+        source_url="https://helpy.io",
     )
     with patch("agent_crm.contact_store.enrich_contact_person") as mock_enrich:
         mock_enrich.return_value = PeopleEnrichmentResult(

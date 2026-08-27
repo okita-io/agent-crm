@@ -75,7 +75,7 @@ def test_process_scraped_page_sets_qualification() -> None:
 
 def test_unqualified_contact_gets_qualify_job_on_idle_tick() -> None:
     upsert_contact_profile(
-        email="mystery@example.com",
+        email="mystery@forum-site.io",
         name=None,
         brand=Brand.MIDNIGHTSATIN,
         source_url="https://forum.example/thread",
@@ -93,7 +93,7 @@ def test_unqualified_contact_gets_qualify_job_on_idle_tick() -> None:
 
 def test_idle_backlog_seeds_qualify_jobs() -> None:
     upsert_contact_profile(
-        email="weak@example.com",
+        email="weak@forum-site.io",
         name="Commenter",
         brand=Brand.MIDNIGHTSATIN,
         source_url="https://reddit.com/r/romancebooks/comments/abc",
@@ -115,8 +115,8 @@ def test_spark_qualify_promo_media() -> None:
     from agent_crm.contact_qualification import qualify_contact_profile
 
     profile = upsert_contact_profile(
-        email="media@brandstudio.com",
-        name="Media Desk",
+        email="jane.smith@brandstudio.com",
+        name="Jane Smith",
         brand=Brand.TACTIC_STUDIO,
         source_url="https://brandstudio.com/press-kit",
         audience=ContactAudience.END_USER,
@@ -142,6 +142,90 @@ def test_spark_qualify_promo_media() -> None:
     assert result.audience == ContactAudience.MARKETING
 
     with session_scope() as session:
-        lead = session.scalar(select(Lead).where(Lead.email == "media@brandstudio.com"))
+        lead = session.scalar(
+            select(Lead).where(Lead.email == "jane.smith@brandstudio.com")
+        )
         assert lead is not None
         assert lead.audience == ContactAudience.MARKETING
+
+
+def test_spark_discovered_email_rejects_role_and_placeholder() -> None:
+    from agent_crm.contact_qualification import (
+        QualificationResult,
+        _persist_qualification_on_profile,
+        _spark_qualification,
+    )
+
+    profile = upsert_contact_profile(
+        email="handle-only-placeholder@forum-site.io",
+        name="Mystery",
+        brand=Brand.TACTIC_STUDIO,
+        source_url="https://forum-site.io/u/mystery",
+        audience=ContactAudience.END_USER,
+    )
+    with session_scope() as session:
+        lead = session.get(Lead, profile.lead_id)
+        assert lead is not None
+        lead.email = None
+        session.flush()
+
+    with patch("agent_crm.contact_qualification.chat_completions") as mock_llm:
+        mock_llm.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"audience":"end_user","evidence":["forum"],'
+                            '"public_email":"info@agency.com"}'
+                        )
+                    }
+                }
+            ]
+        }
+        spark_result = _spark_qualification(
+            email=None,
+            name="Mystery",
+            handle="mystery",
+            platform="reddit",
+            serp_snippets=[],
+        )
+    assert spark_result is not None
+    assert spark_result.discovered_email is None
+
+    with patch("agent_crm.contact_qualification.chat_completions") as mock_llm:
+        mock_llm.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"audience":"end_user","evidence":["forum"],'
+                            '"public_email":"name@domain.com"}'
+                        )
+                    }
+                }
+            ]
+        }
+        spark_result = _spark_qualification(
+            email=None,
+            name="Mystery",
+            handle="mystery",
+            platform="reddit",
+            serp_snippets=[],
+        )
+    assert spark_result is not None
+    assert spark_result.discovered_email is None
+
+    _persist_qualification_on_profile(
+        profile.id,
+        QualificationResult(
+            audience=ContactAudience.END_USER,
+            evidence=["forced"],
+            confidence="spark",
+            discovered_email="info@agency.com",
+            spark_used=True,
+        ),
+    )
+    with session_scope() as session:
+        lead = session.get(Lead, profile.lead_id)
+        assert lead is not None
+        assert lead.email is None

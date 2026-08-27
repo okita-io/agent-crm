@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
-from agent_crm.db import session_scope
+from agent_crm.db import session_scope, with_row_lock
 from agent_crm.enums import AgentStatus, Brand, HuntQueryStatus, HuntResourceKind
 from agent_crm.hunt_priority import hunt_query_priority
 from agent_crm.hunt_seeds import audience_from_origin
@@ -57,33 +58,49 @@ class HuntStore:
         run_id: str | None = None,
         priority: int | None = None,
     ) -> bool:
-        """Enqueue a query if not already present. Returns True if enqueued."""
+        """Enqueue a query if not already present. Returns True if enqueued.
+
+        Failed rows with the same dedupe_key are reset to PENDING (retry).
+        """
         dedupe_key = make_dedupe_key(query, params)
         if priority is None:
             priority = hunt_query_priority(brand, audience_from_origin(origin))
-        with session_scope() as session:
-            existing = session.scalar(
-                select(HuntQuery).where(HuntQuery.dedupe_key == dedupe_key)
-            )
-            if existing is not None:
-                return False
-            session.add(
-                HuntQuery(
-                    query=query.strip(),
-                    params=params,
-                    origin=origin,
-                    brand=brand,
-                    priority=priority,
-                    status=HuntQueryStatus.PENDING,
-                    dedupe_key=dedupe_key,
-                    run_id=run_id,
+        try:
+            with session_scope() as session:
+                existing = session.scalar(
+                    select(HuntQuery).where(HuntQuery.dedupe_key == dedupe_key)
                 )
-            )
-            return True
+                if existing is not None:
+                    if existing.status == HuntQueryStatus.FAILED:
+                        existing.status = HuntQueryStatus.PENDING
+                        existing.error_message = None
+                        existing.completed_at = None
+                        existing.priority = priority
+                        existing.origin = origin
+                        if run_id is not None:
+                            existing.run_id = run_id
+                        return True
+                    return False
+                session.add(
+                    HuntQuery(
+                        query=query.strip(),
+                        params=params,
+                        origin=origin,
+                        brand=brand,
+                        priority=priority,
+                        status=HuntQueryStatus.PENDING,
+                        dedupe_key=dedupe_key,
+                        run_id=run_id,
+                    )
+                )
+                return True
+        except IntegrityError:
+            return False
 
     def next_pending_query(
         self, run_id: str | None = None, brand: Brand | None = None
     ) -> HuntQuery | None:
+        """Return the next pending query without claiming it (read-only)."""
         with session_scope() as session:
             stmt = (
                 select(HuntQuery)
@@ -95,6 +112,28 @@ class HuntStore:
             if brand is not None:
                 stmt = stmt.where(HuntQuery.brand == brand)
             return session.scalar(stmt)
+
+    def claim_next_pending_query(
+        self, run_id: str | None = None, brand: Brand | None = None
+    ) -> HuntQuery | None:
+        """Atomically select the next pending query and mark it RUNNING."""
+        with session_scope() as session:
+            stmt = (
+                select(HuntQuery)
+                .where(HuntQuery.status == HuntQueryStatus.PENDING)
+                .order_by(HuntQuery.priority.desc(), HuntQuery.id.asc())
+            )
+            if run_id is not None:
+                stmt = stmt.where(HuntQuery.run_id == run_id)
+            if brand is not None:
+                stmt = stmt.where(HuntQuery.brand == brand)
+            stmt = stmt.limit(1)
+            row = session.scalar(with_row_lock(stmt, session))
+            if row is None:
+                return None
+            row.status = HuntQueryStatus.RUNNING
+            session.flush()
+            return row
 
     def count_pending(self, brand: Brand | None = None) -> int:
         with session_scope() as session:
@@ -130,6 +169,25 @@ class HuntStore:
             row.status = HuntQueryStatus.FAILED
             row.error_message = error[:2000]
             row.completed_at = datetime.now(UTC)
+
+    def reset_stale_running_queries(self, *, stale_minutes: int = 30) -> int:
+        """Return stuck RUNNING hunt queries to PENDING (crash recovery)."""
+        cutoff = datetime.now(UTC) - timedelta(minutes=stale_minutes)
+        reset = 0
+        with session_scope() as session:
+            rows = list(
+                session.scalars(
+                    select(HuntQuery).where(
+                        HuntQuery.status == HuntQueryStatus.RUNNING,
+                        HuntQuery.updated_at < cutoff,
+                    )
+                )
+            )
+            for row in rows:
+                row.status = HuntQueryStatus.PENDING
+                row.error_message = None
+                reset += 1
+        return reset
 
     def upsert_resource(
         self,

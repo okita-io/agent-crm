@@ -24,9 +24,13 @@ def get_llm_base_url() -> str:
 
 
 def _agent_headers(actor: str | None) -> dict[str, str]:
-    if not actor:
-        return {}
-    return {AGENT_IDENTITY_HEADER: actor}
+    headers: dict[str, str] = {}
+    if actor:
+        headers[AGENT_IDENTITY_HEADER] = actor
+    token = get_settings().llm_queue_token.strip()
+    if token:
+        headers["X-CRM-Token"] = token
+    return headers
 
 
 def get_llm_client(timeout: float | None = None, *, actor: str | None = None) -> httpx.Client:

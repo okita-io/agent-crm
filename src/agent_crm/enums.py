@@ -240,6 +240,14 @@ class ContactKind(str, enum.Enum):
     URL = "url"
 
 
+class ContactEmailKind(str, enum.Enum):
+    """Persisted contact-profile quality bucket for SQL filtering."""
+
+    PERSON = "person"
+    ROLE = "role"
+    JUNK = "junk"
+
+
 class ContactVerificationStatus(str, enum.Enum):
     """Outcome of a defensive contact check (no SMTP / no sending)."""
 

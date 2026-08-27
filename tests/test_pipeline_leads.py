@@ -71,7 +71,7 @@ def test_pipeline_shows_valid_verified_lead() -> None:
 
 def test_pipeline_hides_invalid_verification() -> None:
     profile = upsert_contact_profile(
-        email="info@romanceblog.com",
+        email="reader@romanceblog.com",
         name="Reader",
         brand=Brand.MIDNIGHTSATIN,
         source_url="https://romanceblog.example/readers",
@@ -81,8 +81,8 @@ def test_pipeline_hides_invalid_verification() -> None:
         assert lead is not None
         record_immediate_invalid_email(
             lead_id=lead.id,
-            email="info@romanceblog.com",
-            reasons=["role inbox"],
+            email="reader@romanceblog.com",
+            reasons=["manual invalid"],
         )
     assert list_pipeline_leads() == []
 

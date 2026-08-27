@@ -128,10 +128,10 @@ def test_backfill_romance_article_stays_on_pipeline_when_valid() -> None:
 
 def test_idle_tick_seeds_topical_relevance_job() -> None:
     upsert_contact_profile(
-        email="pending@example.com",
+        email="pending@romanceblog.com",
         name="Pending",
         brand=Brand.MIDNIGHTSATIN,
-        source_url="https://romanceblog.example/pending-thread",
+        source_url="https://romanceblog.com/pending-thread",
     )
     with session_scope() as session:
         for row in session.scalars(select(AgentJob)):
@@ -149,7 +149,7 @@ def test_idle_tick_seeds_topical_relevance_job() -> None:
 def test_dispatcher_executes_topical_relevance_job() -> None:
     url = "https://developer.mozilla.org/en-US/docs/Web/API"
     upsert_contact_profile(
-        email="hidden@example.com",
+        email="hidden@romanceblog.com",
         name="Hidden",
         brand=Brand.MIDNIGHTSATIN,
         source_url=url,

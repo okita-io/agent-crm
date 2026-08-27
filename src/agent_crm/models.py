@@ -39,6 +39,7 @@ from .enums import (
     AgentStatus,
     Brand,
     ContactAudience,
+    ContactEmailKind,
     ContactKind,
     ContactVerificationStatus,
     HuntQueryStatus,
@@ -359,6 +360,12 @@ class ContactProfile(Base, TimestampMixin):
     )
     audience: Mapped[ContactAudience | None] = mapped_column(
         str_enum(ContactAudience), nullable=True, index=True
+    )
+    email_kind: Mapped[ContactEmailKind] = mapped_column(
+        str_enum(ContactEmailKind),
+        default=ContactEmailKind.PERSON,
+        nullable=False,
+        index=True,
     )
     socials: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)

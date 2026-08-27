@@ -156,13 +156,29 @@ def test_build_hunt_status_includes_email_counts_and_completed(db_url):
         source_url="https://tactic.studio/creator",
         audience=ContactAudience.INFLUENCER,
     )
-    upsert_contact_profile(
-        email="info@tactic.studio",
-        name=None,
-        brand=Brand.TACTIC_STUDIO,
-        source_url="https://tactic.studio/contact",
-        audience=ContactAudience.MARKETING,
-    )
+    from agent_crm.enums import ContactEmailKind, LeadSource, LeadStatus
+    from agent_crm.models import ContactProfile, Lead
+
+    with session_scope() as session:
+        lead = Lead(
+            email="info@tactic.studio",
+            brand=Brand.TACTIC_STUDIO,
+            source=LeadSource.CONTACT,
+            status=LeadStatus.NEW,
+            audience=ContactAudience.MARKETING,
+        )
+        session.add(lead)
+        session.flush()
+        session.add(
+            ContactProfile(
+                email="info@tactic.studio",
+                brand=Brand.TACTIC_STUDIO,
+                audience=ContactAudience.MARKETING,
+                email_kind=ContactEmailKind.ROLE,
+                source_urls=["https://tactic.studio/contact"],
+                lead_id=lead.id,
+            )
+        )
 
     status = build_hunt_status(store=store, queue_health=None, now=datetime.now(UTC))
     assert status["phase"] == "idle / queue empty"

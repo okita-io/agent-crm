@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -423,6 +422,8 @@ def _evidence_block(
 
 
 def _extract_chat_json(response: dict[str, Any]) -> dict[str, Any] | None:
+    from .llm_text import extract_json_object
+
     choices = response.get("choices")
     if not isinstance(choices, list) or not choices:
         return None
@@ -435,11 +436,7 @@ def _extract_chat_json(response: dict[str, Any]) -> dict[str, Any] | None:
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
         return None
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, dict) else None
+    return extract_json_object(content)
 
 
 def extract_with_spark(
@@ -455,6 +452,8 @@ def extract_with_spark(
     if not evidence_text.strip():
         return existing
 
+    from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, wrap_untrusted
+
     prompt = (
         "Extract person facts for this email contact from the evidence below. "
         "Return JSON with keys: name, title, organization, location, bio. "
@@ -462,7 +461,7 @@ def extract_with_spark(
         "Do not invent facts. bio should be one short sentence max.\n\n"
         f"Email: {email}\n"
         f"Known name hint: {name or 'unknown'}\n\n"
-        f"Evidence:\n{evidence_text}"
+        f"{wrap_untrusted('evidence', evidence_text, max_chars=6000)}"
     )
     try:
         response = chat_completions(
@@ -471,8 +470,11 @@ def extract_with_spark(
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You extract structured contact facts from public web evidence. "
-                        "Respond with JSON only.",
+                        "content": (
+                            "You extract structured contact facts from public web evidence. "
+                            "Respond with JSON only."
+                            + UNTRUSTED_DATA_SYSTEM_SUFFIX
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -515,10 +517,12 @@ def enrich_contact_person(
     firecrawl_client: httpx.Client | None = None,
     allow_spark: bool = True,
     max_pages: int = 2,
+    budget: Any | None = None,
 ) -> PeopleEnrichmentResult | None:
     """Run public people-enrichment for one contact email.
 
     Returns None when the email is a role inbox or enrichment is ineligible.
+    When ``budget`` is provided, Spark enrichment consumes ``consume_spark()``.
     """
     if is_role_inbox_email(email):
         return None
@@ -546,7 +550,10 @@ def enrich_contact_person(
     merged = _merge_fields(serp_fields, page_fields)
     spark_used = False
 
-    if allow_spark and not serp_fields_sufficient(merged):
+    use_spark = allow_spark
+    if use_spark and budget is not None:
+        use_spark = budget.consume_spark()
+    if use_spark and not serp_fields_sufficient(merged):
         merged = extract_with_spark(
             email=email,
             name=name or merged.name,

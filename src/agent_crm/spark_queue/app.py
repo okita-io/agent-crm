@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from agent_crm.presence import AGENT_IDENTITY_HEADER
@@ -66,6 +66,18 @@ def _request_actor(request: Request) -> str:
     return request.headers.get(AGENT_IDENTITY_HEADER, "external")
 
 
+def _require_queue_token(request: Request) -> None:
+    expected = settings.queue_token.strip()
+    if not expected:
+        return
+    provided = request.headers.get("X-CRM-Token", "").strip()
+    authorization = request.headers.get("Authorization", "")
+    if not provided and authorization.lower().startswith("bearer "):
+        provided = authorization[7:].strip()
+    if provided != expected:
+        raise HTTPException(status_code=401, detail="invalid or missing spark queue token")
+
+
 def _serialize_actor_entries(entries: list) -> list[dict[str, str | float]]:
     now = time.monotonic()
     return [
@@ -78,12 +90,20 @@ def _serialize_actor_entries(entries: list) -> list[dict[str, str | float]]:
 
 
 async def _proxy_request(request: Request, upstream_path: str) -> Response:
+    _require_queue_token(request)
     body = await request.body()
     actor = _request_actor(request)
     headers = {
         key: value
         for key, value in request.headers.items()
-        if key.lower() not in {"host", "content-length", "connection"}
+        if key.lower()
+        not in {
+            "host",
+            "content-length",
+            "connection",
+            "authorization",
+            "x-crm-token",
+        }
     }
     is_stream = False
     if body:
@@ -94,7 +114,7 @@ async def _proxy_request(request: Request, upstream_path: str) -> Response:
             pass
 
     try:
-        await gate.acquire(actor)
+        ticket = await gate.acquire(actor)
     except QueueTimeoutError as exc:
         return JSONResponse(
             status_code=503,
@@ -109,7 +129,7 @@ async def _proxy_request(request: Request, upstream_path: str) -> Response:
 
     if is_stream:
         return StreamingResponse(
-            _stream_upstream(request.method, upstream_path, body, headers, actor),
+            _stream_upstream(request.method, upstream_path, body, headers, ticket),
             media_type="text/event-stream",
             status_code=200,
         )
@@ -128,7 +148,7 @@ async def _proxy_request(request: Request, upstream_path: str) -> Response:
             media_type=upstream.headers.get("content-type"),
         )
     finally:
-        await gate.release(actor)
+        await gate.release(ticket)
 
 
 async def _stream_upstream(
@@ -136,7 +156,7 @@ async def _stream_upstream(
     upstream_path: str,
     body: bytes,
     headers: dict[str, str],
-    actor: str,
+    ticket: str,
 ) -> AsyncIterator[bytes]:
     try:
         async with _client().stream(
@@ -148,7 +168,7 @@ async def _stream_upstream(
             async for chunk in upstream.aiter_bytes():
                 yield chunk
     finally:
-        await gate.release(actor)
+        await gate.release(ticket)
 
 
 @app.get("/health", tags=["system"])

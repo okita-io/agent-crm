@@ -59,6 +59,16 @@ def test_contact_worker_and_orchestrator_do_not_require_spark_queue() -> None:
         )
 
 
+def test_compose_binds_sensitive_ports_to_localhost() -> None:
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    assert '"127.0.0.1:5432:5432"' in content
+    assert '"127.0.0.1:8088:8088"' in content
+    assert '"127.0.0.1:8000:8000"' in content
+    assert '"127.0.0.1:8501:8501"' in content
+    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}" in content
+    assert "CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}" in content
+
+
 def test_workers_wait_for_api_migrations() -> None:
     """Standing workers must start after api so Alembic finishes before init_db."""
     content = COMPOSE_PATH.read_text(encoding="utf-8")

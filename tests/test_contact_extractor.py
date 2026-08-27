@@ -134,12 +134,12 @@ def test_process_scraped_page_contacts_creates_profiles_and_leads(db_url) -> Non
             spark_enrichments_remaining=0,
         ),
     )
-    # support@ is filtered as a generic support identity
-    assert len(profiles) == 2
+    # info@ and support@ are rejected as role/support inboxes at ingest
+    assert len(profiles) == 1
 
     with session_scope() as session:
         rows = session.scalars(select(ContactProfile)).all()
-        assert len(rows) == 2
+        assert len(rows) == 1
         lead = session.scalar(select(Lead).where(Lead.email == "jane@novastudio.com"))
         assert lead is not None
         assert lead.source == LeadSource.CONTACT
@@ -171,12 +171,57 @@ def test_social_lookup_mocked_searxng(db_url) -> None:
     assert socials.get("x") == "https://x.com/janedoe"
 
 
+def test_matches_contact_rejects_short_local_substring() -> None:
+    from agent_crm.contact_social_lookup import _matches_contact
+
+    assert not _matches_contact(
+        email="art@studio.com",
+        name=None,
+        url="https://linkedin.com/in/arthur-smith",
+        title="Arthur Smith",
+        snippet="XR designer at Arthur Labs",
+    )
+    assert not _matches_contact(
+        email="ann@studio.com",
+        name=None,
+        url="https://x.com/anniversary",
+        title="Anniversary Account",
+        snippet="announcements",
+    )
+    assert not _matches_contact(
+        email="mail@studio.com",
+        name=None,
+        url="https://linkedin.com/in/email-marketer",
+        title="Email Marketer",
+        snippet="mailing list tips",
+    )
+
+
+def test_matches_contact_accepts_word_boundary_local() -> None:
+    from agent_crm.contact_social_lookup import _matches_contact
+
+    assert _matches_contact(
+        email="janedoe@studio.com",
+        name=None,
+        url="https://x.com/other",
+        title="Profile",
+        snippet="Contact janedoe for collabs",
+    )
+    assert _matches_contact(
+        email="jane.doe@studio.com",
+        name="Jane Doe",
+        url="https://linkedin.com/in/janedoe",
+        title="Jane Doe",
+        snippet="Designer",
+    )
+
+
 def test_build_social_queries_respects_cap(monkeypatch) -> None:
     monkeypatch.setenv("CRM_CONTACT_SOCIAL_QUERIES_PER_PROFILE", "2")
     from agent_crm.config import get_settings
 
     get_settings.cache_clear()
-    queries = build_social_queries("jane@example.com", "Jane Doe")
+    queries = build_social_queries("jane@novastudio.com", "Jane Doe")
     assert len(queries) == 2
     get_settings.cache_clear()
 
@@ -190,8 +235,8 @@ def test_social_lookup_budget_skips_after_cap(db_url) -> None:
             spark_enrichments_remaining=0,
         )
         process_scraped_page_contacts(
-            markdown="a@example.org\nb@example.org",
-            source_url="https://example.org",
+            markdown="alice@novastudio.com\nbob@novastudio.com",
+            source_url="https://novastudio.com/team",
             brand=Brand.UNASSIGNED,
             budget=budget,
         )
@@ -201,40 +246,40 @@ def test_social_lookup_budget_skips_after_cap(db_url) -> None:
 
 def test_list_contacts_api(api_client, db_url) -> None:
     upsert_contact_profile(
-        email="found@example.com",
+        email="found@helpy.io",
         name="Found Person",
         brand=Brand.HEYBUDDY,
-        source_url="https://example.com",
+        source_url="https://helpy.io",
         socials={"x": "https://x.com/found"},
     )
     response = api_client.get("/contacts?brand=heybuddy")
     assert response.status_code == 200
     payload = response.json()
     assert len(payload) == 1
-    assert payload[0]["email"] == "found@example.com"
+    assert payload[0]["email"] == "found@helpy.io"
     assert payload[0]["socials"]["x"] == "https://x.com/found"
     assert response.headers["X-Total-Count"] == "1"
 
 
 def test_contacts_summary_and_pagination(db_url) -> None:
     upsert_contact_profile(
-        email="ms-one@example.com",
+        email="ms-one@novastudio.com",
         name="MS One",
         brand=Brand.MIDNIGHTSATIN,
-        source_url="https://example.com/ms-one",
+        source_url="https://novastudio.com/ms-one",
     )
     upsert_contact_profile(
-        email="ts-one@example.com",
+        email="ts-one@tactic.studio",
         name="TS One",
         brand=Brand.TACTIC_STUDIO,
-        source_url="https://example.com/ts-one",
+        source_url="https://tactic.studio/ts-one",
         audience=ContactAudience.MARKETING,
     )
     upsert_contact_profile(
-        email="ts-two@example.com",
+        email="ts-two@tactic.studio",
         name="TS Two",
         brand=Brand.TACTIC_STUDIO,
-        source_url="https://example.com/ts-two",
+        source_url="https://tactic.studio/ts-two",
         audience=ContactAudience.MARKETING,
     )
 
@@ -250,16 +295,16 @@ def test_contacts_summary_and_pagination(db_url) -> None:
 
 def test_contacts_summary_api(api_client, db_url) -> None:
     upsert_contact_profile(
-        email="alpha@example.com",
+        email="alpha@novastudio.com",
         name=None,
         brand=Brand.MIDNIGHTSATIN,
-        source_url="https://example.com/alpha",
+        source_url="https://novastudio.com/alpha",
     )
     upsert_contact_profile(
-        email="beta@example.com",
+        email="beta@tactic.studio",
         name=None,
         brand=Brand.TACTIC_STUDIO,
-        source_url="https://example.com/beta",
+        source_url="https://tactic.studio/beta",
         audience=ContactAudience.MARKETING,
     )
 
@@ -279,10 +324,10 @@ def test_contacts_summary_api(api_client, db_url) -> None:
 def test_list_contacts_api_offset_and_total_header(api_client, db_url) -> None:
     for index in range(3):
         upsert_contact_profile(
-            email=f"user{index}@example.com",
+            email=f"user{index}@helpy.io",
             name=None,
             brand=Brand.HEYBUDDY,
-            source_url=f"https://example.com/{index}",
+            source_url=f"https://helpy.io/{index}",
         )
 
     response = api_client.get("/contacts?brand=heybuddy&limit=1&offset=1")
@@ -292,10 +337,10 @@ def test_list_contacts_api_offset_and_total_header(api_client, db_url) -> None:
 
 
 def test_process_scraped_page_does_not_invent_names(db_url) -> None:
-    markdown = "Email us at hello@studio.test\nhttps://x.com/studio"
+    markdown = "Email us at jane@studio.io\nhttps://x.com/studio"
     profiles = process_scraped_page_contacts(
         markdown=markdown,
-        source_url="https://studio.test",
+        source_url="https://studio.io",
         brand=Brand.UNASSIGNED,
         budget=ContactExtractionBudget(
             social_lookups_remaining=0,

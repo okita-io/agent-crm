@@ -56,8 +56,9 @@ def extract_domain(url: str) -> str:
 
 
 def is_scrapable_url(url: str) -> bool:
-    parsed = urlparse(url)
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    from .url_safety import is_public_http_url
+
+    return is_public_http_url(url, resolve_dns=False)
 
 
 def is_junk_finding(

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
-from agent_crm.enums import Brand, HuntResourceKind
+from agent_crm.enums import Brand, HuntResourceKind, TopicalRelevanceVerdict
 from agent_crm.hunt_loop import HuntBudget, run_hunt_loop
 from agent_crm.hunt_store import HuntStore
 from agent_crm.searxng_client import SearchResult
@@ -245,7 +245,13 @@ def test_loop_scrapes_beyond_legacy_eight_page_cap(loop_db):
         return httpx.Response(404)
 
     http = httpx.Client(transport=httpx.MockTransport(transport))
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+    on_topic = MagicMock()
+    on_topic.verdict = TopicalRelevanceVerdict.ON_TOPIC
+    on_topic.reason = "test"
+    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm, patch(
+        "agent_crm.hunt_loop.assess_topical_relevance",
+        return_value=on_topic,
+    ):
         mock_llm.return_value = {"choices": [{"message": {"content": '{"terms": []}'}}]}
         result = run_hunt_loop(
             query="wide query",
@@ -323,7 +329,7 @@ def test_community_and_person_feedback_enqueue(loop_db, monkeypatch):
                 200,
                 json={
                     "data": {
-                        "markdown": "Ada Vega <ada.vega@romancebooks.test> moderates the community.",
+                        "markdown": "Ada Vega <ada.vega@romancebooks.io> moderates the community.",
                         "metadata": {"title": "Romance Books subreddit"},
                     }
                 },
@@ -395,4 +401,53 @@ def test_resume_with_pending_still_enqueues_missing_seed_pack(loop_db) -> None:
     seed_text = " ".join(row.query for row in seed_pack).lower()
     assert "ai generated romance novel communities" in seed_text
     assert len(seed_pack) >= 2
+
+
+def test_claim_next_pending_marks_running(loop_db) -> None:
+    from agent_crm.enums import HuntQueryStatus
+
+    store = HuntStore()
+    assert store.enqueue_query(query="claim me", brand=Brand.MIDNIGHTSATIN, origin="seed")
+    first = store.claim_next_pending_query(brand=Brand.MIDNIGHTSATIN)
+    assert first is not None
+    assert first.status == HuntQueryStatus.RUNNING
+    second = store.claim_next_pending_query(brand=Brand.MIDNIGHTSATIN)
+    assert second is None
+
+
+def test_enqueue_retries_failed_query(loop_db) -> None:
+    from agent_crm.enums import HuntQueryStatus
+
+    store = HuntStore()
+    assert store.enqueue_query(query="retry me", brand=Brand.MIDNIGHTSATIN, origin="seed")
+    claimed = store.claim_next_pending_query(brand=Brand.MIDNIGHTSATIN)
+    assert claimed is not None
+    store.mark_query_failed(claimed.id, "boom")
+    assert store.enqueue_query(query="retry me", brand=Brand.MIDNIGHTSATIN, origin="seed")
+    pending = store.next_pending_query(brand=Brand.MIDNIGHTSATIN)
+    assert pending is not None
+    assert pending.status == HuntQueryStatus.PENDING
+    assert pending.query == "retry me"
+
+
+def test_reset_stale_running_queries(loop_db) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from agent_crm.db import session_scope
+    from agent_crm.enums import HuntQueryStatus
+    from agent_crm.models import HuntQuery
+    from sqlalchemy import select
+
+    store = HuntStore()
+    store.enqueue_query(query="stale", brand=Brand.MIDNIGHTSATIN, origin="seed")
+    claimed = store.claim_next_pending_query(brand=Brand.MIDNIGHTSATIN)
+    assert claimed is not None
+    with session_scope() as session:
+        row = session.get(HuntQuery, claimed.id)
+        assert row is not None
+        row.updated_at = datetime.now(UTC) - timedelta(minutes=60)
+    assert store.reset_stale_running_queries(stale_minutes=30) == 1
+    pending = store.next_pending_query(brand=Brand.MIDNIGHTSATIN)
+    assert pending is not None
+    assert pending.status == HuntQueryStatus.PENDING
 

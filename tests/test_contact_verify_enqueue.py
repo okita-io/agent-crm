@@ -53,22 +53,24 @@ def test_upsert_verify_enqueue_is_idempotent() -> None:
 
 
 def test_upsert_skips_verify_for_role_inbox() -> None:
-    upsert_contact_profile(
-        email="info@novastudio.com",
-        name=None,
-        brand=Brand.MIDNIGHTSATIN,
-        source_url="https://novastudio.com/contact",
-    )
+    with pytest.raises(ValueError, match="rejected at ingest"):
+        upsert_contact_profile(
+            email="info@novastudio.com",
+            name=None,
+            brand=Brand.MIDNIGHTSATIN,
+            source_url="https://novastudio.com/contact",
+        )
     assert count_pending_jobs(kind=AgentJobKind.VERIFY_LEAD) == 0
 
 
 def test_upsert_skips_verify_for_placeholder() -> None:
-    upsert_contact_profile(
-        email="name@domain.com",
-        name=None,
-        brand=Brand.MIDNIGHTSATIN,
-        source_url="https://novastudio.com/template",
-    )
+    with pytest.raises(ValueError, match="rejected at ingest"):
+        upsert_contact_profile(
+            email="name@domain.com",
+            name=None,
+            brand=Brand.MIDNIGHTSATIN,
+            source_url="https://novastudio.com/template",
+        )
     assert count_pending_jobs(kind=AgentJobKind.VERIFY_LEAD) == 0
 
 
@@ -99,18 +101,27 @@ def test_seed_verify_jobs_for_unverified() -> None:
 
 
 def test_seed_skips_role_inboxes() -> None:
-    upsert_contact_profile(
-        email="support@novastudio.com",
-        name=None,
-        brand=Brand.MIDNIGHTSATIN,
-        source_url="https://novastudio.com/support",
-    )
+    from agent_crm.enums import ContactEmailKind, LeadSource, LeadStatus
+    from agent_crm.models import ContactProfile, Lead
 
     with session_scope() as session:
-        rows = list(session.scalars(select(AgentJob)))
-        for row in rows:
-            session.delete(row)
+        lead = Lead(
+            email="support@novastudio.com",
+            brand=Brand.MIDNIGHTSATIN,
+            source=LeadSource.CONTACT,
+            status=LeadStatus.NEW,
+        )
+        session.add(lead)
         session.flush()
+        session.add(
+            ContactProfile(
+                email="support@novastudio.com",
+                brand=Brand.MIDNIGHTSATIN,
+                email_kind=ContactEmailKind.ROLE,
+                source_urls=["https://novastudio.com/support"],
+                lead_id=lead.id,
+            )
+        )
 
     seeded = seed_verify_jobs_for_unverified(limit=10)
     assert seeded == 0

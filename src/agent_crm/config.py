@@ -28,12 +28,16 @@ class Settings(BaseSettings):
     # API service
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    # Shared ranch token. Empty disables auth (tests/local). Compose must set one.
+    api_token: str = ""
 
     # Dashboard
     dashboard_port: int = 8501
+    dashboard_password: str = ""
 
     # LLM (Spark queue proxy — never point agents at Spark directly)
     llm_base_url: str = "http://spark-queue:8088/v1"
+    llm_queue_token: str = ""
 
     # Local ranch search + scrape (SearXNG + Firecrawl on the host)
     searxng_url: str = "http://host.docker.internal:8080"

@@ -485,29 +485,6 @@ GENERIC_SUPPORT_LOCAL_PARTS: frozenset[str] = frozenset(
     }
 )
 
-ROLE_INBOX_LOCAL_PARTS: frozenset[str] = frozenset(
-    {
-        "info",
-        "hello",
-        "contact",
-        "inquiries",
-        "inquiry",
-        "general",
-        "sales",
-        "team",
-        "office",
-        "press",
-        "media",
-        "hr",
-        "jobs",
-        "careers",
-        "recruiting",
-        "marketing",
-        "partners",
-        "partner",
-    }
-)
-
 _TRACKING_PIXEL_URL_RE = re.compile(
     r"https?://[^\s<>\"')\]]+?"
     r"(?:pixel|beacon|/track(?:ing)?|/open\.gif|/sp\.gif|/imp\.|doubleclick|"
@@ -597,8 +574,8 @@ def is_relevant_source_url(url: str, email: str) -> bool:
         return True
     if is_legal_boilerplate_path(url):
         return False
-    # Hunt pages on third-party sites that are not ad/tracking hosts stay relevant.
-    return True
+    # Third-party pages without domain match or contact-context paths are not relevant.
+    return False
 
 
 def is_generic_support_email(email: str) -> bool:
@@ -693,6 +670,10 @@ def prepare_contact_for_ingest(
     """Return sanitized contact fields or None when ingest should be skipped."""
     normalized = email.strip().lower()
     if is_obviously_junk_email(normalized):
+        return None
+    if is_role_inbox_email(normalized):
+        return None
+    if is_placeholder_email(normalized):
         return None
     clean_name = name.strip()[:255] if isinstance(name, str) and name.strip() else None
     if is_junk_person_name(clean_name):
@@ -836,6 +817,25 @@ def classify_email_quality(
     if is_filename_as_email(email) or is_placeholder_email(email):
         return None
     return None
+
+
+def compute_email_kind(
+    email: str,
+    *,
+    name: str | None = None,
+    decoded_from_obfuscation: bool = False,
+) -> str:
+    """Return persisted email_kind value: person, role, or junk."""
+    classification = classify_email_quality(
+        email,
+        name=name,
+        decoded_from_obfuscation=decoded_from_obfuscation,
+    )
+    if classification == "person":
+        return "person"
+    if classification == "role":
+        return "role"
+    return "junk"
 
 
 def profile_matches_quality_filter(

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -348,12 +347,10 @@ def _extract_blog_handles(
 
 
 def _parse_spark_handles_json(content: str) -> list[dict[str, str | None]]:
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if not match:
-        return []
-    try:
-        payload = json.loads(match.group(0))
-    except json.JSONDecodeError:
+    from .llm_text import extract_json_object
+
+    payload = extract_json_object(content)
+    if not payload:
         return []
     people = payload.get("people")
     if not isinstance(people, list):
@@ -398,8 +395,8 @@ def extract_comment_people_spark(
         return
 
     from .llm_client import chat_completions
+    from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, wrap_untrusted
 
-    snippet = text[:3000]
     prompt = (
         "Extract public comment author usernames/handles from the thread snippet below. "
         "Return JSON only: "
@@ -408,7 +405,7 @@ def extract_comment_people_spark(
         "Skip bots, [deleted], AutoModerator, anonymous 4chan posts, and site accounts. "
         "Do NOT invent emails. Handles only.\n\n"
         f"Source URL: {source_url}\n\n"
-        f"Snippet:\n{snippet}"
+        f"{wrap_untrusted('comment_thread', text, max_chars=3000)}"
     )
     try:
         response = chat_completions(
@@ -417,7 +414,10 @@ def extract_comment_people_spark(
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You extract comment usernames. Output JSON only.",
+                        "content": (
+                            "You extract comment usernames. Output JSON only."
+                            + UNTRUSTED_DATA_SYSTEM_SUFFIX
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],

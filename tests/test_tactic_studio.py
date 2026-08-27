@@ -60,7 +60,7 @@ def test_marketing_origin_labels_contact_profile(db_url) -> None:
 
 def test_list_contacts_by_audience(db_url) -> None:
     upsert_contact_profile(
-        email="marketing@brandstudio.com",
+        email="alex@brandstudio.com",
         name="Marketing Lead",
         brand=Brand.TACTIC_STUDIO,
         source_url="https://brandstudio.com/team",
@@ -81,7 +81,7 @@ def test_list_contacts_by_audience(db_url) -> None:
         audience=ContactAudience.MARKETING,
     )
     assert len(marketing_only) == 1
-    assert marketing_only[0].email == "marketing@brandstudio.com"
+    assert marketing_only[0].email == "alex@brandstudio.com"
 
     with session_scope() as session:
         rows = session.scalars(select(ContactProfile)).all()

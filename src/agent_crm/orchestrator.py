@@ -299,8 +299,13 @@ def _check_dummy_email_slips() -> None:
 
 def run_orchestrator_cycle() -> None:
     """Run one orchestration inspection pass."""
+    from .hunt_store import HuntStore
+    from .job_store import reset_stale_running_jobs
+
     settings = get_settings()
     now = datetime.now(UTC)
+    reset_stale_running_jobs()
+    HuntStore().reset_stale_running_queries()
     _check_stale_heartbeats(now)
     _check_failed_jobs()
     _check_spark_queue()

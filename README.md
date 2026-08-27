@@ -1,6 +1,6 @@
 # Agent CRM
 
-A local, agent-driven CRM for the ranch creative/tech brands **MidnightSatin**, **Celestial-Nexus**, and **HeyBuddy**. It captures leads, runs outbound research and hunting, extracts contact profiles from scraped pages, and tracks pipeline state — all on your own hardware.
+A local, agent-driven CRM for the ranch creative/tech brands **Tactic-Studio**, **MidnightSatin**, **Celestial-Nexus**, and **HeyBuddy**. It captures leads, runs outbound research and hunting, extracts contact profiles from scraped pages, and tracks pipeline state — all on your own hardware.
 
 **There is no outreach or sending in this stack.** The lead verifier checks DNS, MX, and HTTP only. tactic.studio outbound (direct mail, DMs) remains gated by Pete (`pete@tactic.studio`) and naming-rights — this repo collects and categorizes only.
 
@@ -239,6 +239,39 @@ To scrub historical rows that were marked valid before this gate: re-run verific
 | `agent_heartbeats` | Live agent observer state |
 
 `Account.socials` is for companies. Person socials live on `contact_profiles` (and in lead `raw_payload`), not on accounts.
+
+---
+
+## Hermes (read-only query API)
+
+Hermes asks what the ranch has already collected via `GET /agent/*` (OpenAPI tag `hermes`). Same shared token as the rest of the API (`CRM_API_TOKEN`). Send `Authorization: Bearer …` or `X-CRM-Token`, plus `X-CRM-Agent: hermes` for spark-queue occupancy attribution.
+
+Base URL on the Mini (loopback): `http://127.0.0.1:8000`. There is **no** send/outreach path on this prefix — catalog, search, and list only.
+
+| Route | Purpose |
+|-------|---------|
+| `GET /agent/catalog` | Brands, audiences, resource/finding kinds |
+| `GET /agent/search?q=` | Federated hits across contacts, websites, findings, comment people (~10/collection) |
+| `GET /agent/contacts` | People with `q` / brand / audience / quality / verified + page envelope |
+| `GET /agent/websites` | `hunt_resources` site catalog |
+| `GET /agent/findings` | Research findings |
+| `GET /agent/comment-people` | Comment authors (no inventing emails) |
+| `GET /agent/pipeline-leads` | VALID, non-disqualified leads Pete can work |
+
+Every list returns `{ "items", "total", "offset", "limit" }` (default `limit=50`, max `200`).
+
+```bash
+curl -s -H "X-CRM-Token: $CRM_API_TOKEN" -H "X-CRM-Agent: hermes" \
+  http://127.0.0.1:8000/agent/catalog | jq .
+
+curl -s -H "X-CRM-Token: $CRM_API_TOKEN" -H "X-CRM-Agent: hermes" \
+  'http://127.0.0.1:8000/agent/contacts?quality=person&limit=20' | jq .
+
+curl -s -H "X-CRM-Token: $CRM_API_TOKEN" -H "X-CRM-Agent: hermes" \
+  'http://127.0.0.1:8000/agent/websites?q=studio&limit=20' | jq .
+```
+
+Dashboard list GETs stay unchanged for the Streamlit UI.
 
 ---
 

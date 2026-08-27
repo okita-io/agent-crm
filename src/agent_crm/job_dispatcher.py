@@ -11,9 +11,9 @@ from .contact_people_enrichment import enrich_contact_person
 from .contact_qualification import qualify_comment_person, qualify_contact_profile
 from .contact_quality import is_role_inbox_email
 from .topic_relevance_store import check_topical_relevance_job
-from .contact_store import _persist_enrichment
+from .contact_store import ContactExtractionBudget, _persist_enrichment
 from .db import session_scope
-from .enums import AgentJobKind, AgentJobStatus, AgentStatus
+from .enums import AgentJobKind, AgentJobStatus, AgentStatus, Brand
 from .heartbeat import record_heartbeat
 from .idle_backlog import seed_idle_backlog_jobs
 from .job_store import (
@@ -25,7 +25,7 @@ from .job_store import (
     mark_job_failed,
     reset_stale_running_jobs,
 )
-from .models import ContactProfile
+from .models import ContactProfile, HuntResource
 from .orchestrator import note_job_failure
 from .verifier import verify_lead
 
@@ -42,7 +42,13 @@ class JobDispatcherCycle:
     errors: list[str] = field(default_factory=list)
 
 
-def execute_job(job_id: int, kind: AgentJobKind, payload: dict | None) -> None:
+def execute_job(
+    job_id: int,
+    kind: AgentJobKind,
+    payload: dict | None,
+    *,
+    budget: ContactExtractionBudget | None = None,
+) -> None:
     """Run one claimed job."""
     payload = payload or {}
     if kind == AgentJobKind.ENRICH_CONTACT:
@@ -62,6 +68,7 @@ def execute_job(job_id: int, kind: AgentJobKind, payload: dict | None) -> None:
             email=email,
             name=name,
             allow_spark=True,
+            budget=budget,
         )
         if result is None:
             with session_scope() as session:
@@ -95,7 +102,6 @@ def execute_job(job_id: int, kind: AgentJobKind, payload: dict | None) -> None:
         brand_raw = payload.get("brand")
         if not isinstance(url, str) or not isinstance(brand_raw, str):
             raise ValueError("check_topical_relevance job missing url or brand")
-        from .enums import Brand
 
         check_topical_relevance_job(
             url=url,
@@ -112,10 +118,53 @@ def execute_job(job_id: int, kind: AgentJobKind, payload: dict | None) -> None:
         return
 
     if kind == AgentJobKind.DECODE_EMAIL:
-        raise NotImplementedError("decode_email jobs are not executed yet")
+        _execute_decode_email(payload)
+        return
 
     raise ValueError(f"unknown job kind: {kind}")
 
+
+def _execute_decode_email(payload: dict) -> None:
+    """Decode an obfuscated email span via Spark and upsert contacts."""
+    from sqlalchemy import select
+
+    from .contact_extractor import decode_obfuscated_emails_spark
+    from .contact_store import upsert_contact_profile
+
+    source_url = payload.get("source_url")
+    span = payload.get("span")
+    if not isinstance(source_url, str) or not source_url.strip():
+        raise ValueError("decode_email job missing source_url")
+    if not isinstance(span, str) or not span.strip():
+        raise ValueError("decode_email job missing span")
+
+    brand = Brand.UNASSIGNED
+    with session_scope() as session:
+        resource = session.scalar(
+            select(HuntResource).where(HuntResource.url == source_url).limit(1)
+        )
+        if resource is not None:
+            brand = resource.brand
+
+    # Explicit decode jobs always get one Spark decode attempt.
+    decoded = decode_obfuscated_emails_spark(
+        span,
+        budget=ContactExtractionBudget(
+            social_lookups_remaining=0,
+            spark_decode_remaining=1,
+        ),
+        max_spans=1,
+    )
+    for email, name in decoded:
+        try:
+            upsert_contact_profile(
+                email=email,
+                name=name,
+                brand=brand,
+                source_url=source_url,
+            )
+        except ValueError:
+            continue
 
 def run_dispatcher_cycle(
     *,
@@ -125,6 +174,7 @@ def run_dispatcher_cycle(
     """Claim and execute pending jobs — non-Spark work drains before Spark jobs."""
     reset_stale_running_jobs()
     cycle = JobDispatcherCycle()
+    budget = ContactExtractionBudget.from_settings()
 
     non_spark_jobs = claim_non_spark_jobs(max_claim=batch_size, actor=actor)
     spark_slots = max(batch_size - len(non_spark_jobs), 0)
@@ -139,7 +189,7 @@ def run_dispatcher_cycle(
             task=f"{job.kind.value} job {job.id}",
         )
         try:
-            execute_job(job.id, job.kind, job.payload)
+            execute_job(job.id, job.kind, job.payload, budget=budget)
             mark_job_completed(job.id)
             cycle.jobs_completed += 1
         except Exception as exc:  # noqa: BLE001

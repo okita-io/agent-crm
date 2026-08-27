@@ -94,6 +94,14 @@ def session_scope() -> Iterator[Session]:
         session.close()
 
 
+def with_row_lock(stmt, session: Session):
+    """Apply ``FOR UPDATE SKIP LOCKED`` on Postgres; leave SQLite unchanged."""
+    bind = session.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        return stmt.with_for_update(skip_locked=True)
+    return stmt
+
+
 def init_db(settings: Settings | None = None) -> None:
     """Create tables for SQLite (tests/dev). Postgres schema is via Alembic only.
 

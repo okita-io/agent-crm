@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -342,12 +341,10 @@ def _collect_obfuscation_spans(text: str, *, max_spans: int = 6) -> list[str]:
 
 
 def _parse_spark_email_json(content: str) -> list[dict[str, str | None]]:
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if not match:
-        return []
-    try:
-        payload = json.loads(match.group(0))
-    except json.JSONDecodeError:
+    from .llm_text import extract_json_object
+
+    payload = extract_json_object(content)
+    if not payload:
         return []
     emails = payload.get("emails")
     if not isinstance(emails, list):
@@ -382,15 +379,19 @@ def decode_obfuscated_emails_spark(
         return []
 
     from .llm_client import chat_completions
+    from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, wrap_untrusted
 
+    snippet_block = "\n---\n".join(
+        wrap_untrusted(f"span_{idx}", span, max_chars=400)
+        for idx, span in enumerate(spans, start=1)
+    )
     prompt = (
         "Extract zero or more real email addresses from the obfuscated snippets below. "
         "Decode anti-scraper forms like 'jane at acme dot com'. "
         "Do NOT invent addresses. Skip role/shared inboxes (info@, hello@, support@). "
         "Respond with JSON only: "
         '{"emails":[{"email":"jane@acme.com","name":"Jane Doe"}]}\n\n'
-        "Snippets:\n"
-        + "\n---\n".join(spans)
+        f"Snippets:\n{snippet_block}"
     )
     try:
         response = chat_completions(
@@ -399,7 +400,10 @@ def decode_obfuscated_emails_spark(
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You extract emails from obfuscated text. Output JSON only.",
+                        "content": (
+                            "You extract emails from obfuscated text. Output JSON only."
+                            + UNTRUSTED_DATA_SYSTEM_SUFFIX
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],

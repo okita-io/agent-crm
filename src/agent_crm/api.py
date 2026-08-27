@@ -15,10 +15,23 @@ business logic so the same operations work from an agent process without HTTP.
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from . import __version__
+from .agent_query import (
+    agent_catalog,
+    agent_search,
+    get_contact,
+    get_finding,
+    get_website,
+    query_comment_people,
+    query_contacts,
+    query_findings,
+    query_pipeline_leads,
+    query_websites,
+)
+from .auth import require_api_token, require_known_agent
 from .config import get_settings
 from .comment_people_store import count_comment_people, list_comment_people
 from .contact_store import (
@@ -29,7 +42,7 @@ from .contact_store import (
     list_contact_profiles,
 )
 from .db import database_kind, init_db
-from .enums import Brand, ContactAudience, ImprovementNoteStatus, ResearchFindingKind, Stage
+from .enums import Brand, ContactAudience, ImprovementNoteStatus, HuntResourceKind, ResearchFindingKind, Stage
 from .errors import InvalidStageTransition, NotFoundError
 from .heartbeat import list_heartbeats, record_heartbeat
 from .improvement_store import list_improvement_notes
@@ -43,7 +56,10 @@ from .research import run_research
 from .research_store import list_findings
 from .schemas import (
     ActivityOut,
+    AgentCatalogOut,
     AgentObserverOut,
+    AgentPageOut,
+    AgentSearchOut,
     BatchVerifyRequest,
     BatchVerifyResult,
     ContactBackfillRequest,
@@ -80,6 +96,7 @@ app = FastAPI(
     title="Agent CRM",
     version=__version__,
     description="Local, agent-driven CRM. Milestone 1: store + intake + pipeline.",
+    dependencies=[Depends(require_api_token)],
 )
 
 
@@ -106,7 +123,12 @@ class StageChangeIn(BaseModel):
 # ---- health ----------------------------------------------------------------
 
 
-@app.get("/health", response_model=HealthOut, tags=["system"])
+@app.get(
+    "/health",
+    response_model=HealthOut,
+    tags=["system"],
+    dependencies=[],
+)
 def health() -> HealthOut:
     return HealthOut(status="ok", version=__version__, database=database_kind())
 
@@ -136,6 +158,14 @@ def hunt(payload: HuntRequest) -> HuntResult:
 @app.post("/hunt/loop", response_model=HuntLoopResultOut, tags=["hunter"])
 def hunt_loop(payload: HuntLoopRequest) -> HuntLoopResultOut:
     """Run a bounded branching hunt loop (sync)."""
+    if (payload.max_queries == 0 or payload.max_minutes == 0) and not payload.allow_unlimited:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "unlimited hunt/loop over HTTP requires allow_unlimited=true "
+                "(compose CLI workers are unchanged)"
+            ),
+        )
     settings = get_settings()
     budget = HuntBudget(
         max_queries=payload.max_queries,
@@ -210,8 +240,8 @@ def list_contacts(
     email: str | None = None,
     quality: str | None = None,
     person_only: bool = False,
-    offset: int = 0,
-    limit: int = 500,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
 ) -> list[ContactProfileOut]:
     """List contact profiles keyed by email."""
     from .contact_quality import EmailQualityFilter
@@ -419,6 +449,7 @@ def weekly_report() -> dict:
 
 @app.post("/agents/{agent_name}/heartbeat", response_model=HeartbeatOut, tags=["agents"])
 def agent_heartbeat(agent_name: str, body: HeartbeatIn) -> HeartbeatOut:
+    require_known_agent(agent_name)
     snapshot = record_heartbeat(
         agent_name,
         status=body.status,
@@ -456,3 +487,132 @@ def list_agents() -> list[AgentObserverOut]:
 @app.get("/agents/spark", tags=["agents"])
 def spark_resources() -> dict:
     return spark_slot_summary(fetch_spark_queue_health())
+
+
+# ---- Hermes read-only query API --------------------------------------------
+
+
+@app.get("/agent/catalog", response_model=AgentCatalogOut, tags=["hermes"])
+def hermes_catalog() -> AgentCatalogOut:
+    """Discover collections and enum values Hermes can query."""
+    return agent_catalog()
+
+
+@app.get("/agent/search", response_model=AgentSearchOut, tags=["hermes"])
+def hermes_search(q: str = Query(..., min_length=1, max_length=200)) -> AgentSearchOut:
+    """Federated search across contacts, websites, findings, and comment people."""
+    return agent_search(q)
+
+
+@app.get("/agent/contacts", response_model=AgentPageOut, tags=["hermes"])
+def hermes_contacts(
+    q: str | None = None,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+    quality: str | None = None,
+    verified: bool | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentPageOut:
+    resolved = quality if quality in ("person", "role", "all") else "all"
+    return query_contacts(
+        q=q,
+        brand=brand,
+        audience=audience,
+        quality=resolved,  # type: ignore[arg-type]
+        verified=verified,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@app.get("/agent/contacts/{contact_id}", response_model=ContactProfileOut, tags=["hermes"])
+def hermes_contact_detail(contact_id: int) -> ContactProfileOut:
+    row = get_contact(contact_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="contact not found")
+    return row
+
+
+@app.get("/agent/websites", response_model=AgentPageOut, tags=["hermes"])
+def hermes_websites(
+    q: str | None = None,
+    brand: Brand | None = None,
+    kind: HuntResourceKind | None = None,
+    domain: str | None = None,
+    url: str | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentPageOut:
+    return query_websites(
+        q=q,
+        brand=brand,
+        kind=kind,
+        domain=domain,
+        url=url,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@app.get("/agent/websites/{resource_id}", response_model=HuntResourceOut, tags=["hermes"])
+def hermes_website_detail(resource_id: int) -> HuntResourceOut:
+    row = get_website(resource_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="website not found")
+    return row
+
+
+@app.get("/agent/findings", response_model=AgentPageOut, tags=["hermes"])
+def hermes_findings(
+    q: str | None = None,
+    brand: Brand | None = None,
+    kind: ResearchFindingKind | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentPageOut:
+    return query_findings(q=q, brand=brand, kind=kind, offset=offset, limit=limit)
+
+
+@app.get("/agent/findings/{finding_id}", response_model=ResearchFindingOut, tags=["hermes"])
+def hermes_finding_detail(finding_id: int) -> ResearchFindingOut:
+    row = get_finding(finding_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    return row
+
+
+@app.get("/agent/comment-people", response_model=AgentPageOut, tags=["hermes"])
+def hermes_comment_people(
+    q: str | None = None,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+    platform: str | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentPageOut:
+    return query_comment_people(
+        q=q,
+        brand=brand,
+        audience=audience,
+        platform=platform,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@app.get("/agent/pipeline-leads", response_model=AgentPageOut, tags=["hermes"])
+def hermes_pipeline_leads(
+    q: str | None = None,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentPageOut:
+    return query_pipeline_leads(
+        q=q,
+        brand=brand,
+        audience=audience,
+        offset=offset,
+        limit=limit,
+    )

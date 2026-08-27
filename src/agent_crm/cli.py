@@ -456,8 +456,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     contacts_list.add_argument(
         "--audience",
-        choices=["marketing", "influencer", "user"],
-        help="Filter by outbound audience bucket (tactic.studio)",
+        choices=["marketing", "influencer", "user", "end_user", "b2b", "client"],
+        help="Filter by audience bucket",
     )
     contacts_list.add_argument("--email", help="Filter by exact email")
     contacts_list.add_argument("--limit", type=int, default=500, help="Max profiles to return")

@@ -15,6 +15,7 @@ from .contact_quality import (
     ContactBackfillResult,
     EmailQualityFilter,
     clean_contact_data,
+    compute_email_kind,
     filter_socials,
     ingest_needs_immediate_invalid_verification,
     is_filename_as_email,
@@ -22,7 +23,6 @@ from .contact_quality import (
     is_relevant_contact,
     is_role_inbox_email,
     prepare_contact_for_ingest,
-    profile_matches_quality_filter,
     scrub_notes_value,
 )
 from .contact_people_enrichment import (
@@ -32,7 +32,7 @@ from .contact_people_enrichment import (
 )
 from .contact_social_lookup import lookup_social_profiles
 from .db import session_scope
-from .enums import Brand, ContactAudience, LeadSource, LeadStatus
+from .enums import Brand, ContactAudience, ContactEmailKind, LeadSource, LeadStatus
 from .job_store import enqueue_enrich_contact_job, enqueue_verify_lead_job
 from .models import ContactProfile, HuntResource, Lead, Opportunity
 from .schemas import (
@@ -181,6 +181,7 @@ def upsert_contact_profile(
     source_url: str,
     socials: dict | None = None,
     audience: ContactAudience | None = None,
+    enqueue_enrich: bool = True,
 ) -> ContactProfileOut:
     """Insert or merge a contact profile and link an email-keyed lead."""
     prepared = prepare_contact_for_ingest(email, name)
@@ -207,6 +208,9 @@ def upsert_contact_profile(
                 name=clean_name,
                 brand=brand,
                 audience=audience,
+                email_kind=ContactEmailKind(
+                    compute_email_kind(normalized_email, name=clean_name)
+                ),
                 socials=socials,
                 source_urls=[source_url],
                 lead_id=lead.id,
@@ -219,13 +223,16 @@ def upsert_contact_profile(
                 row.brand = brand
             if audience is not None and row.audience is None:
                 row.audience = audience
+            row.email_kind = ContactEmailKind(
+                compute_email_kind(normalized_email, name=row.name or clean_name)
+            )
             row.socials = merge_socials(row.socials, socials)
             row.source_urls = merge_source_urls(row.source_urls, source_url)
             row.lead_id = lead.id
 
         session.flush()
         profile_out = ContactProfileOut.model_validate(row)
-        enqueue_after = _should_enqueue_enrich_job(row)
+        enqueue_after = enqueue_enrich and _should_enqueue_enrich_job(row)
         enqueue_verify_after = _should_enqueue_verify_job(normalized_email, lead_id=lead.id)
         profile_id = row.id
         verify_lead_id = lead.id
@@ -321,6 +328,7 @@ def _apply_contact_profile_filters(
     brand: Brand | None = None,
     audience: ContactAudience | None = None,
     email: str | None = None,
+    quality: EmailQualityFilter = "all",
 ):
     if brand is not None:
         stmt = stmt.where(ContactProfile.brand == brand)
@@ -328,42 +336,11 @@ def _apply_contact_profile_filters(
         stmt = stmt.where(ContactProfile.audience == audience)
     if email is not None:
         stmt = stmt.where(ContactProfile.email == email.strip().lower())
+    if quality == "person":
+        stmt = stmt.where(ContactProfile.email_kind == ContactEmailKind.PERSON)
+    elif quality == "role":
+        stmt = stmt.where(ContactProfile.email_kind == ContactEmailKind.ROLE)
     return stmt
-
-
-def _load_profiles_for_quality_filter(
-    *,
-    brand: Brand | None = None,
-    audience: ContactAudience | None = None,
-    email: str | None = None,
-) -> list[ContactProfile]:
-    with session_scope() as session:
-        stmt = select(ContactProfile).order_by(ContactProfile.updated_at.desc())
-        stmt = _apply_contact_profile_filters(
-            stmt,
-            brand=brand,
-            audience=audience,
-            email=email,
-        )
-        return list(session.scalars(stmt))
-
-
-def _filter_profile_rows(
-    rows: list[ContactProfile],
-    *,
-    quality: EmailQualityFilter = "all",
-) -> list[ContactProfile]:
-    if quality == "all":
-        return rows
-    return [
-        row
-        for row in rows
-        if profile_matches_quality_filter(
-            row.email,
-            name=row.name,
-            quality=quality,
-        )
-    ]
 
 
 def count_contact_profiles_by_quality(
@@ -372,18 +349,22 @@ def count_contact_profiles_by_quality(
     audience: ContactAudience | None = None,
 ) -> dict[str, int]:
     """Count person, role, and total profiles for optional brand/audience filters."""
-    rows = _load_profiles_for_quality_filter(brand=brand, audience=audience)
-    person = sum(
-        1
-        for row in rows
-        if profile_matches_quality_filter(row.email, name=row.name, quality="person")
-    )
-    role = sum(
-        1
-        for row in rows
-        if profile_matches_quality_filter(row.email, name=row.name, quality="role")
-    )
-    return {"person": person, "role": role, "total": len(rows)}
+    with session_scope() as session:
+        base = select(ContactProfile.email_kind, func.count()).group_by(
+            ContactProfile.email_kind
+        )
+        base = _apply_contact_profile_filters(base, brand=brand, audience=audience)
+        counts = {kind.value: count for kind, count in session.execute(base)}
+        person = int(counts.get("person", 0))
+        role = int(counts.get("role", 0))
+        total = person + role + int(counts.get("junk", 0))
+        # Include any rows that somehow lack email_kind grouping under total.
+        all_stmt = select(func.count()).select_from(ContactProfile)
+        all_stmt = _apply_contact_profile_filters(
+            all_stmt, brand=brand, audience=audience
+        )
+        total = int(session.scalar(all_stmt) or 0)
+        return {"person": person, "role": role, "total": total}
 
 
 def count_contact_profiles(
@@ -394,22 +375,16 @@ def count_contact_profiles(
     quality: EmailQualityFilter = "all",
 ) -> int:
     """Count contact profiles matching optional brand/audience/email/quality filters."""
-    if quality == "all" and email is not None:
-        with session_scope() as session:
-            stmt = select(func.count()).select_from(ContactProfile)
-            stmt = _apply_contact_profile_filters(
-                stmt,
-                brand=brand,
-                audience=audience,
-                email=email,
-            )
-            return int(session.scalar(stmt) or 0)
-    rows = _load_profiles_for_quality_filter(
-        brand=brand,
-        audience=audience,
-        email=email,
-    )
-    return len(_filter_profile_rows(rows, quality=quality))
+    with session_scope() as session:
+        stmt = select(func.count()).select_from(ContactProfile)
+        stmt = _apply_contact_profile_filters(
+            stmt,
+            brand=brand,
+            audience=audience,
+            email=email,
+            quality=quality,
+        )
+        return int(session.scalar(stmt) or 0)
 
 
 def count_contact_profiles_by_brand(
@@ -448,31 +423,15 @@ def count_contact_emails_by_brand_audience(
             .group_by(ContactProfile.brand, ContactProfile.audience)
             .order_by(ContactProfile.brand.asc(), ContactProfile.audience.asc())
         )
-        if quality == "all":
-            return [
-                {
-                    "brand": brand.value,
-                    "audience": audience.value if audience else None,
-                    "count": count,
-                }
-                for brand, audience, count in session.execute(stmt)
-            ]
-
-    rows = _load_profiles_for_quality_filter()
-    tallies: dict[tuple[str, str | None], int] = {}
-    for row in rows:
-        if not profile_matches_quality_filter(
-            row.email,
-            name=row.name,
-            quality=quality,
-        ):
-            continue
-        key = (row.brand.value, row.audience.value if row.audience else None)
-        tallies[key] = tallies.get(key, 0) + 1
-    return [
-        {"brand": brand, "audience": audience, "count": count}
-        for (brand, audience), count in sorted(tallies.items())
-    ]
+        stmt = _apply_contact_profile_filters(stmt, quality=quality)
+        return [
+            {
+                "brand": brand.value,
+                "audience": audience.value if audience else None,
+                "count": count,
+            }
+            for brand, audience, count in session.execute(stmt)
+        ]
 
 
 def list_contact_profiles(
@@ -484,14 +443,18 @@ def list_contact_profiles(
     offset: int = 0,
     limit: int = 500,
 ) -> list[ContactProfileOut]:
-    rows = _load_profiles_for_quality_filter(
-        brand=brand,
-        audience=audience,
-        email=email,
-    )
-    filtered = _filter_profile_rows(rows, quality=quality)
-    page = filtered[max(offset, 0) : max(offset, 0) + limit]
-    return [ContactProfileOut.model_validate(row) for row in page]
+    with session_scope() as session:
+        stmt = select(ContactProfile).order_by(ContactProfile.updated_at.desc())
+        stmt = _apply_contact_profile_filters(
+            stmt,
+            brand=brand,
+            audience=audience,
+            email=email,
+            quality=quality,
+        )
+        stmt = stmt.offset(max(offset, 0)).limit(max(limit, 0))
+        rows = list(session.scalars(stmt))
+        return [ContactProfileOut.model_validate(row) for row in rows]
 
 
 def process_scraped_page_contacts(
@@ -551,6 +514,7 @@ def process_scraped_page_contacts(
                 source_url=source_url,
                 socials=cleaned_socials,
                 audience=resolved_audience,
+                enqueue_enrich=False,
             )
         except ValueError:
             logger.debug(
@@ -588,7 +552,15 @@ def process_scraped_page_contacts(
                         source_url=source_url,
                         socials=cleaned_lookup_socials,
                         audience=resolved_audience,
+                        enqueue_enrich=False,
                     )
+
+        if (
+            profile.enrichment is None
+            and not is_role_inbox_email(contact_email)
+            and budget.consume_enrichment()
+        ):
+            enqueue_enrich_contact_job(profile.id)
 
         profiles.append(profile)
 
@@ -642,6 +614,14 @@ def backfill_contact_quality(
                     result.profiles_removed += 1
                     continue
 
+                kind = ContactEmailKind(
+                    compute_email_kind(row.email, name=row.name)
+                )
+                kind_changed = row.email_kind != kind
+                if kind_changed and not dry_run:
+                    row.email_kind = kind
+                    changed = True
+
                 if changed and not dry_run:
                     row.socials = cleaned_socials
                     row.source_urls = kept_urls
@@ -679,25 +659,25 @@ def backfill_contact_quality(
 
 def _load_enrichment_queue(limit: int, *, mark_role_skips: bool = True) -> list[ContactProfile]:
     """Load up to ``limit`` person profiles that still need enrichment."""
-    fetch_cap = max(limit * 5, limit)
     with session_scope() as session:
         candidates = list(
             session.scalars(
                 select(ContactProfile)
                 .where(ContactProfile.enrichment.is_(None))
+                .where(ContactProfile.email_kind == ContactEmailKind.PERSON)
                 .order_by(ContactProfile.updated_at.desc())
-                .limit(fetch_cap)
+                .limit(limit)
             )
         )
+        # Legacy rows may lack correct email_kind; still skip role inboxes.
         person_rows: list[ContactProfile] = []
         for row in candidates:
             if is_role_inbox_email(row.email):
                 if mark_role_skips:
                     row.enrichment = {"skipped": "role_inbox"}
+                    row.email_kind = ContactEmailKind.ROLE
                 continue
             person_rows.append(row)
-            if len(person_rows) >= limit:
-                break
         return person_rows
 
 
@@ -714,6 +694,7 @@ def backfill_contact_enrichment(
     errors: list[str] = []
 
     rows = _load_enrichment_queue(limit, mark_role_skips=not dry_run)
+    budget = ContactExtractionBudget.from_settings()
 
     for row in rows:
         profiles_scanned += 1
@@ -722,6 +703,7 @@ def backfill_contact_enrichment(
                 email=row.email,
                 name=row.name,
                 allow_spark=True,
+                budget=budget,
             )
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{row.email}: {exc}")

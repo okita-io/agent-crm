@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -29,7 +27,10 @@ from .hunt_relevance import assess_topical_relevance, is_obvious_off_topic_url
 from .hunt_seeds import audience_from_origin, seed_query_entries
 from .hunt_store import HuntStore
 from .hunt_utils import extract_heuristic_terms, is_junk_title
+from .hunt_utils import extract_heuristic_terms, is_junk_title
+from .job_store import enqueue_topical_relevance_job
 from .llm_client import chat_completions
+from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
 from .searxng_client import SearchResult, search
 from .topic_relevance_store import upsert_url_topic_relevance
 
@@ -103,6 +104,7 @@ def run_hunt_loop(
     store = HuntStore()
     result = HuntLoopResult()
     deadline = _wall_clock_deadline(budget.max_minutes)
+    store.reset_stale_running_queries()
 
     pending_existing = store.count_pending(brand if brand != Brand.UNASSIGNED else None)
 
@@ -131,12 +133,10 @@ def run_hunt_loop(
         deadline is None or time.monotonic() < deadline
     ):
         contact_budget = ContactExtractionBudget.from_settings()
-        pending = store.next_pending_query(run_id=use_run_id, brand=brand_filter)
+        pending = store.claim_next_pending_query(run_id=use_run_id, brand=brand_filter)
         if pending is None:
             result.stop_reason = "queue_empty"
             break
-        if pending.status == HuntQueryStatus.COMPLETED:
-            continue
 
         params = (
             pending.params
@@ -145,7 +145,6 @@ def run_hunt_loop(
         )
         palette_index += 1
 
-        store.mark_query_running(pending.id)
         query_progress = (
             f"query {result.queries_run + 1}/{budget.max_queries}"
             if budget.max_queries > 0
@@ -434,13 +433,17 @@ def _llm_branch_terms(query: str, results: list[dict[str, Any]], *, max_terms: i
     lines = []
     for idx, item in enumerate(results[:12], start=1):
         lines.append(
-            f"{idx}. {item.get('title', '')} | {item.get('url', '')} | "
-            f"{(item.get('content') or '')[:200]}"
+            wrap_untrusted(
+                f"hit_{idx}",
+                f"{item.get('title', '')} | {item.get('url', '')} | "
+                f"{(item.get('content') or '')[:200]}",
+                max_chars=280,
+            )
         )
     prompt = (
         "You help an outbound researcher find online communities, directories, "
         "newsletters, forums, and listicles where potential users gather.\n"
-        f"Original query: {query}\n"
+        f"Original query: {wrap_untrusted('query', query, max_chars=300)}\n"
         "Search results:\n"
         + "\n".join(lines)
         + "\n\n"
@@ -454,7 +457,10 @@ def _llm_branch_terms(query: str, results: list[dict[str, Any]], *, max_terms: i
             {
                 "model": "crm",
                 "messages": [
-                    {"role": "system", "content": "You output JSON only."},
+                    {
+                        "role": "system",
+                        "content": "You output JSON only." + UNTRUSTED_DATA_SYSTEM_SUFFIX,
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 "temperature": 0.2,
@@ -467,12 +473,8 @@ def _llm_branch_terms(query: str, results: list[dict[str, Any]], *, max_terms: i
     except Exception:  # noqa: BLE001
         return []
 
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if not match:
-        return []
-    try:
-        payload = json.loads(match.group(0))
-    except json.JSONDecodeError:
+    payload = extract_json_object(content)
+    if not payload:
         return []
     terms = payload.get("terms") or payload.get("queries") or []
     cleaned: list[str] = []
@@ -510,6 +512,21 @@ def _filter_relevant_hunt_results(
                 source_kind="hunt_serp",
             )
             continue
+        if assessment.verdict == TopicalRelevanceVerdict.UNCERTAIN:
+            upsert_url_topic_relevance(
+                url=hit.url,
+                brand=brand,
+                assessment=assessment,
+                source_kind="hunt_serp",
+            )
+            # Defer scrape until a deeper topical job confirms on-topic.
+            enqueue_topical_relevance_job(
+                url=hit.url,
+                brand=brand,
+                source_kind="hunt_serp_uncertain",
+                query=query,
+            )
+            continue
         if assessment.verdict == TopicalRelevanceVerdict.ON_TOPIC:
             upsert_url_topic_relevance(
                 url=hit.url,
@@ -517,10 +534,11 @@ def _filter_relevant_hunt_results(
                 assessment=assessment,
                 source_kind="hunt_serp",
             )
-        kept.append(hit)
+            kept.append(hit)
     return kept
 
 
 def _is_scrapable_url(url: str) -> bool:
-    parsed = urlparse(url)
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    from .url_safety import is_public_http_url
+
+    return is_public_http_url(url, resolve_dns=False)

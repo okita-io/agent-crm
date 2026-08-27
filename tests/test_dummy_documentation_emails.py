@@ -14,7 +14,7 @@ from agent_crm.contact_quality import (
 )
 from agent_crm.contact_store import backfill_contact_quality, upsert_contact_profile
 from agent_crm.db import init_db, reset_engine, session_scope
-from agent_crm.enums import Brand, ContactVerificationStatus, LeadSource, LeadStatus
+from agent_crm.enums import Brand, ContactEmailKind, ContactVerificationStatus, LeadSource, LeadStatus
 from agent_crm.models import ContactProfile, Lead
 from agent_crm.verifier import check_email
 from sqlalchemy import select
@@ -151,6 +151,7 @@ def test_backfill_removes_dummy_documentation_profiles(db_url) -> None:
                 email="nowhere@mozilla.org",
                 name="Send email to nowhere",
                 brand=Brand.TACTIC_STUDIO,
+                email_kind=ContactEmailKind.JUNK,
                 source_urls=[
                     "https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/your_first_extension"
                 ],

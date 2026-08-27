@@ -244,9 +244,14 @@ def _render_hunt_loop_status(*, compact: bool = False) -> None:
 
 
 def _fetch_api_agents() -> list[dict] | None:
-    url = f"{get_settings().api_base_url.rstrip('/')}/agents"
+    settings = get_settings()
+    url = f"{settings.api_base_url.rstrip('/')}/agents"
+    headers = {}
+    token = settings.api_token.strip()
+    if token:
+        headers["X-CRM-Token"] = token
     try:
-        response = httpx.get(url, timeout=2.0)
+        response = httpx.get(url, timeout=2.0, headers=headers)
         response.raise_for_status()
         return response.json()
     except httpx.HTTPError:

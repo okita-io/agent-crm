@@ -25,6 +25,8 @@ class SparkQueueSettings(BaseSettings):
     occupancy_poll_interval: float = 0.25
     host: str = "0.0.0.0"
     port: int = 8088
+    # Shared ranch token for /v1/*. Empty disables auth (tests).
+    queue_token: str = ""
 
     @property
     def origin_url(self) -> str:

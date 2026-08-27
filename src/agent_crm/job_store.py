@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from .config import get_settings
-from .db import session_scope
+from .db import session_scope, with_row_lock
 from .enums import AgentJobKind, AgentJobStatus, Brand, SPARK_AGENT_JOB_KINDS
 from .models import AgentJob
 from .presence import fetch_spark_queue_health, spark_slot_summary
@@ -274,13 +274,14 @@ def pick_furthest_behind_kind(
 
 def _claim_one_job_of_kind(kind: AgentJobKind, actor: str) -> AgentJob | None:
     with session_scope() as session:
-        job = session.scalar(
+        stmt = (
             select(AgentJob)
             .where(AgentJob.status == AgentJobStatus.PENDING)
             .where(AgentJob.kind == kind)
             .order_by(AgentJob.created_at.asc(), AgentJob.id.asc())
             .limit(1)
         )
+        job = session.scalar(with_row_lock(stmt, session))
         if job is None:
             return None
         job.status = AgentJobStatus.RUNNING
@@ -321,13 +322,14 @@ def claim_non_spark_jobs(
 
 def _claim_one_non_spark_job(actor: str) -> AgentJob | None:
     with session_scope() as session:
-        job = session.scalar(
+        stmt = (
             select(AgentJob)
             .where(AgentJob.status == AgentJobStatus.PENDING)
             .where(AgentJob.kind.not_in(tuple(SPARK_AGENT_JOB_KINDS)))
             .order_by(AgentJob.created_at.asc(), AgentJob.id.asc())
             .limit(1)
         )
+        job = session.scalar(with_row_lock(stmt, session))
         if job is None:
             return None
         job.status = AgentJobStatus.RUNNING

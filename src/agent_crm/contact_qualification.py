@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -15,12 +14,16 @@ import httpx
 from .contact_quality import (
     has_contact_context_path,
     is_community_platform,
+    is_placeholder_email,
     is_relevant_source_url,
+    is_role_inbox_email,
+    prepare_contact_for_ingest,
 )
 from .db import session_scope
 from .enums import Brand, ContactAudience
 from .job_store import enqueue_verify_lead_job
 from .llm_client import chat_completions
+from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, wrap_untrusted
 from .models import CommentPerson, ContactProfile, Lead
 from .pipeline_leads import normalize_audience
 from .searxng_client import search
@@ -229,7 +232,9 @@ def _persist_qualification_on_profile(
                 raw["qualification"] = _qualification_meta(result)
                 lead.raw_payload = raw
                 if result.discovered_email and not lead.email:
-                    lead.email = result.discovered_email.strip().lower()
+                    prepared = prepare_contact_for_ingest(result.discovered_email, None)
+                    if prepared is not None:
+                        lead.email = prepared[0]
 
 
 def _persist_qualification_on_comment_person(
@@ -331,16 +336,9 @@ def _rule_based_qualification(
 
 
 def _parse_spark_qualification(content: str) -> dict[str, Any] | None:
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if not match:
-        return None
-    try:
-        payload = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    return payload
+    from .llm_text import extract_json_object
+
+    return extract_json_object(content)
 
 
 def _spark_qualification(
@@ -361,7 +359,10 @@ def _spark_qualification(
     if not subject_parts:
         return None
 
-    evidence_block = "\n".join(f"- {line}" for line in serp_snippets[:8])
+    evidence_block = "\n".join(
+        wrap_untrusted(f"serp_{idx}", line, max_chars=400)
+        for idx, line in enumerate(serp_snippets[:8], start=1)
+    )
     prompt = (
         "Classify this public contact for a CRM pipeline. "
         "Return JSON only: "
@@ -384,7 +385,10 @@ def _spark_qualification(
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You classify CRM contacts. Output JSON only.",
+                        "content": (
+                            "You classify CRM contacts. Output JSON only."
+                            + UNTRUSTED_DATA_SYSTEM_SUFFIX
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -418,11 +422,13 @@ def _spark_qualification(
         else ["spark classification"]
     )
     public_email = parsed.get("public_email")
-    discovered = (
-        public_email.strip().lower()
-        if isinstance(public_email, str) and "@" in public_email
-        else None
-    )
+    discovered = None
+    if isinstance(public_email, str) and "@" in public_email:
+        prepared = prepare_contact_for_ingest(public_email, None)
+        if prepared is not None and not is_role_inbox_email(prepared[0]) and not is_placeholder_email(
+            prepared[0]
+        ):
+            discovered = prepared[0]
     return QualificationResult(
         audience=normalize_audience(audience) or audience,
         evidence=evidence_list,

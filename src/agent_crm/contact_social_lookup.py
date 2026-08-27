@@ -49,8 +49,12 @@ def _matches_contact(
     snippet: str,
 ) -> bool:
     haystack = f"{url} {title} {snippet}".lower()
+    email_lower = email.lower()
+    if email_lower in haystack:
+        return True
     local = email.split("@", 1)[0].lower()
-    if email.lower() in haystack or local in haystack:
+    # Require a meaningful local-part and word-boundary match (avoid "art" in "arthur").
+    if len(local) >= 4 and re.search(rf"(?<![a-z0-9]){re.escape(local)}(?![a-z0-9])", haystack):
         return True
     if name:
         name_lower = name.lower()

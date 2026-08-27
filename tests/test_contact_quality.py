@@ -82,6 +82,17 @@ def test_irrelevant_source_url_rejects_legal_only_pages() -> None:
     )
 
 
+def test_irrelevant_source_url_rejects_third_party_mentions() -> None:
+    assert not is_relevant_source_url(
+        "https://unrelated.blog/post-about-tools",
+        "jane@novastudio.com",
+    )
+    assert not is_relevant_contact(
+        "jane@novastudio.com",
+        ["https://unrelated.blog/post-about-tools"],
+    )
+
+
 def test_generic_support_email_filtered() -> None:
     assert is_generic_support_email("support@agency.com")
     assert is_generic_support_email("helpdesk@brand.io")
@@ -153,6 +164,9 @@ def test_extract_contacts_strips_share_link_socials() -> None:
 
 
 def test_backfill_cleans_existing_profile_without_inventing_contacts(db_url) -> None:
+    from agent_crm.enums import ContactEmailKind, LeadSource, LeadStatus
+    from agent_crm.models import ContactProfile, Lead
+
     upsert_contact_profile(
         email="jane@studio.com",
         name="Jane Doe",
@@ -163,13 +177,25 @@ def test_backfill_cleans_existing_profile_without_inventing_contacts(db_url) -> 
             "linkedin": "https://linkedin.com/in/janedoe",
         },
     )
-    upsert_contact_profile(
-        email="help@agency.com",
-        name=None,
-        brand=Brand.MIDNIGHTSATIN,
-        source_url="https://pixel.ads.example.net/open.gif",
-        socials={"x": "https://x.com/help"},
-    )
+    with session_scope() as session:
+        lead = Lead(
+            email="help@agency.com",
+            brand=Brand.MIDNIGHTSATIN,
+            source=LeadSource.CONTACT,
+            status=LeadStatus.NEW,
+        )
+        session.add(lead)
+        session.flush()
+        session.add(
+            ContactProfile(
+                email="help@agency.com",
+                brand=Brand.MIDNIGHTSATIN,
+                email_kind=ContactEmailKind.ROLE,
+                source_urls=["https://pixel.ads.example.net/open.gif"],
+                socials={"x": "https://x.com/help"},
+                lead_id=lead.id,
+            )
+        )
 
     with session_scope() as session:
         session.add(
@@ -209,13 +235,28 @@ def test_backfill_cleans_existing_profile_without_inventing_contacts(db_url) -> 
 
 
 def test_backfill_dry_run_reports_without_writing(db_url) -> None:
-    upsert_contact_profile(
-        email="support@studio.com",
-        name=None,
-        brand=Brand.HEYBUDDY,
-        source_url="https://studio.com/contact",
-        socials={"x": "https://x.com/support"},
-    )
+    from agent_crm.enums import ContactEmailKind, LeadSource, LeadStatus
+    from agent_crm.models import ContactProfile, Lead
+
+    with session_scope() as session:
+        lead = Lead(
+            email="support@studio.com",
+            brand=Brand.HEYBUDDY,
+            source=LeadSource.CONTACT,
+            status=LeadStatus.NEW,
+        )
+        session.add(lead)
+        session.flush()
+        session.add(
+            ContactProfile(
+                email="support@studio.com",
+                brand=Brand.HEYBUDDY,
+                email_kind=ContactEmailKind.ROLE,
+                source_urls=["https://studio.com/contact"],
+                socials={"x": "https://x.com/support"},
+                lead_id=lead.id,
+            )
+        )
 
     result = backfill_contact_quality(limit=10, dry_run=True)
     assert result.profiles_removed == 1

@@ -18,7 +18,9 @@ from .contact_store import ContactExtractionBudget, process_scraped_page_contact
 from .enums import ActivityType, AgentStatus, Brand, LeadSource, Stage, TopicalRelevanceVerdict
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
 from .llm_client import chat_completions
+from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, wrap_untrusted
 from .hunt_relevance import assess_topical_relevance, is_obvious_off_topic_url
+from .job_store import enqueue_topical_relevance_job
 from .pipeline import PipelineManager
 from .schemas import EnrichmentInput, HuntRequest, HuntResult, LeadCreate, LeadOut
 from .searxng_client import SearchResult, SearxngError, search
@@ -106,6 +108,14 @@ def run_hunt(
             )
             if assessment.verdict == TopicalRelevanceVerdict.OFF_TOPIC:
                 continue
+            if assessment.verdict == TopicalRelevanceVerdict.UNCERTAIN:
+                enqueue_topical_relevance_job(
+                    url=hit.url,
+                    brand=brand,
+                    source_kind="hunt_run_uncertain",
+                    query=request.query,
+                )
+                continue
 
         crm.record_heartbeat(
             status=AgentStatus.WORKING,
@@ -183,8 +193,9 @@ def run_hunt(
     )
 
 def _is_scrapable_url(url: str) -> bool:
-    parsed = urlparse(url)
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    from .url_safety import is_public_http_url
+
+    return is_public_http_url(url, resolve_dns=False)
 
 
 def _fallback_summary(hit: SearchResult, page: ScrapeResult) -> str:
@@ -208,17 +219,23 @@ def _maybe_summarize(
         "Summarize this prospect in 2-3 sentences for a CRM lead record. "
         "Focus on who they are, what they do, and why they might need creative/tech services. "
         "Be factual; do not invent contact details.\n\n"
-        f"Title: {page.title or hit.title}\n"
-        f"URL: {hit.url}\n"
-        f"Snippet: {hit.snippet}\n"
-        f"Page excerpt:\n{(page.markdown or '')[:3000]}"
+        f"{wrap_untrusted('title', page.title or hit.title, max_chars=300)}\n"
+        f"{wrap_untrusted('url', hit.url, max_chars=500)}\n"
+        f"{wrap_untrusted('snippet', hit.snippet, max_chars=500)}\n"
+        f"{wrap_untrusted('page_excerpt', page.markdown, max_chars=3000)}"
     )
     try:
         response = chat_completions(
             {
                 "model": "crm",
                 "messages": [
-                    {"role": "system", "content": "You write concise CRM prospect summaries."},
+                    {
+                        "role": "system",
+                        "content": (
+                            "You write concise CRM prospect summaries."
+                            + UNTRUSTED_DATA_SYSTEM_SUFFIX
+                        ),
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 "max_tokens": 220,

@@ -104,6 +104,7 @@ class HuntLoopRequest(BaseModel):
     max_pages_per_query: int | None = Field(default=None, ge=1, le=250)
     resume: bool = True
     summarize_branches: bool = True
+    allow_unlimited: bool = False
 
     @field_validator("max_queries", mode="before")
     @classmethod
@@ -474,3 +475,33 @@ class ImprovementNoteOut(ORMModel):
     fingerprint: str
     created_at: datetime
     updated_at: datetime
+
+
+class AgentCatalogOut(BaseModel):
+    collections: list[str]
+    brands: list[str]
+    audiences: list[str]
+    resource_kinds: list[str]
+    finding_kinds: list[str]
+    email_kinds: list[str]
+
+
+class AgentPageOut(BaseModel):
+    items: list
+    total: int
+    offset: int
+    limit: int
+
+
+class AgentSearchHitOut(BaseModel):
+    collection: str
+    id: int
+    title: str | None = None
+    url: str | None = None
+    email: str | None = None
+    brand: Brand | None = None
+
+
+class AgentSearchOut(BaseModel):
+    q: str
+    hits: list[AgentSearchHitOut]

@@ -114,6 +114,10 @@ def test_role_vs_person_classification() -> None:
     assert is_role_inbox_email("info@agency.com")
     assert is_role_inbox_email("hello@brand.io")
     assert is_role_inbox_email("support@studio.com")
+    assert is_role_inbox_email("ceo@studio.com")
+    assert is_role_inbox_email("billing@agency.com")
+    assert is_role_inbox_email("founder@startup.io")
+    assert is_role_inbox_email("noreply@studio.com")
     assert not is_role_inbox_email("jane.doe@studio.com")
 
     assert is_filename_as_email("logo@cdn.png")
@@ -128,25 +132,73 @@ def test_role_vs_person_classification() -> None:
     assert is_person_email("decoded@studio.com", decoded_from_obfuscation=True)
 
 
+def test_prepare_rejects_role_and_placeholder() -> None:
+    from agent_crm.contact_quality import prepare_contact_for_ingest
+
+    assert prepare_contact_for_ingest("ceo@studio.com", None) is None
+    assert prepare_contact_for_ingest("billing@agency.com", None) is None
+    assert prepare_contact_for_ingest("founder@startup.io", None) is None
+    assert prepare_contact_for_ingest("noreply@studio.com", None) is None
+    assert prepare_contact_for_ingest("name@domain.com", None) is None
+    assert prepare_contact_for_ingest("jane.doe@studio.com", "Jane Doe") == (
+        "jane.doe@studio.com",
+        "Jane Doe",
+    )
+
+
 def test_contact_store_quality_filters(db_url) -> None:
+    from agent_crm.db import session_scope
+    from agent_crm.enums import ContactEmailKind, LeadSource, LeadStatus
+    from agent_crm.models import ContactProfile, Lead
+
     upsert_contact_profile(
         email="jane.doe@studio.com",
         name="Jane Doe",
         brand=Brand.TACTIC_STUDIO,
         source_url="https://studio.com/team",
     )
-    upsert_contact_profile(
-        email="info@studio.com",
-        name=None,
-        brand=Brand.TACTIC_STUDIO,
-        source_url="https://studio.com/contact",
-    )
-    upsert_contact_profile(
-        email="name@domain.com",
-        name=None,
-        brand=Brand.TACTIC_STUDIO,
-        source_url="https://studio.com/placeholder",
-    )
+
+    with pytest.raises(ValueError, match="rejected at ingest"):
+        upsert_contact_profile(
+            email="info@studio.com",
+            name=None,
+            brand=Brand.TACTIC_STUDIO,
+            source_url="https://studio.com/contact",
+        )
+    with pytest.raises(ValueError, match="rejected at ingest"):
+        upsert_contact_profile(
+            email="name@domain.com",
+            name=None,
+            brand=Brand.TACTIC_STUDIO,
+            source_url="https://studio.com/placeholder",
+        )
+
+    # Historical role/placeholder rows (pre-ingest-reject) still classify correctly.
+    from agent_crm.enums import ContactEmailKind, LeadSource, LeadStatus
+    from agent_crm.models import ContactProfile, Lead
+
+    with session_scope() as session:
+        for email, kind in (
+            ("info@studio.com", ContactEmailKind.ROLE),
+            ("name@domain.com", ContactEmailKind.JUNK),
+        ):
+            lead = Lead(
+                email=email,
+                brand=Brand.TACTIC_STUDIO,
+                source=LeadSource.CONTACT,
+                status=LeadStatus.NEW,
+            )
+            session.add(lead)
+            session.flush()
+            session.add(
+                ContactProfile(
+                    email=email,
+                    brand=Brand.TACTIC_STUDIO,
+                    email_kind=kind,
+                    source_urls=["https://studio.com/legacy"],
+                    lead_id=lead.id,
+                )
+            )
 
     counts = count_contact_profiles_by_quality(brand=Brand.TACTIC_STUDIO)
     assert counts["person"] == 1
@@ -159,6 +211,10 @@ def test_contact_store_quality_filters(db_url) -> None:
 
 
 def test_contacts_api_person_filter(api_client, db_url) -> None:
+    from agent_crm.db import session_scope
+    from agent_crm.enums import ContactEmailKind, LeadSource, LeadStatus
+    from agent_crm.models import ContactProfile, Lead
+
     upsert_contact_profile(
         email="pete.smith@tactic.studio",
         name="Pete Smith",
@@ -166,12 +222,24 @@ def test_contacts_api_person_filter(api_client, db_url) -> None:
         source_url="https://tactic.studio",
         audience=ContactAudience.MARKETING,
     )
-    upsert_contact_profile(
-        email="hello@tactic.studio",
-        name=None,
-        brand=Brand.TACTIC_STUDIO,
-        source_url="https://tactic.studio/contact",
-    )
+    with session_scope() as session:
+        lead = Lead(
+            email="hello@tactic.studio",
+            brand=Brand.TACTIC_STUDIO,
+            source=LeadSource.CONTACT,
+            status=LeadStatus.NEW,
+        )
+        session.add(lead)
+        session.flush()
+        session.add(
+            ContactProfile(
+                email="hello@tactic.studio",
+                brand=Brand.TACTIC_STUDIO,
+                email_kind=ContactEmailKind.ROLE,
+                source_urls=["https://tactic.studio/contact"],
+                lead_id=lead.id,
+            )
+        )
 
     response = api_client.get("/contacts?brand=tactic-studio&quality=person")
     assert response.status_code == 200

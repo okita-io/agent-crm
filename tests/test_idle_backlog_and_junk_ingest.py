@@ -177,23 +177,18 @@ def test_role_and_placeholder_still_invalid_in_verifier() -> None:
     assert any("placeholder" in reason for reason in placeholder.reasons)
 
 
-def test_role_inbox_marked_invalid_at_ingest() -> None:
-    upsert_contact_profile(
-        email="hello@studio.com",
-        name=None,
-        brand=Brand.TACTIC_STUDIO,
-        source_url="https://studio.com/contact",
-    )
+def test_role_inbox_rejected_at_ingest() -> None:
+    with pytest.raises(ValueError, match="rejected at ingest"):
+        upsert_contact_profile(
+            email="hello@studio.com",
+            name=None,
+            brand=Brand.TACTIC_STUDIO,
+            source_url="https://studio.com/contact",
+        )
 
     with session_scope() as session:
         lead = session.scalar(select(Lead).where(Lead.email == "hello@studio.com"))
-        assert lead is not None
-        assert lead.status == LeadStatus.DISQUALIFIED
-        verification = session.scalar(
-            select(ContactVerification).where(ContactVerification.lead_id == lead.id)
-        )
-        assert verification is not None
-        assert verification.status == ContactVerificationStatus.INVALID
+        assert lead is None
 
     assert count_pending_jobs(kind=AgentJobKind.VERIFY_LEAD) == 0
 

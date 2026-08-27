@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass
@@ -12,6 +11,7 @@ import httpx
 
 from .enums import Brand, TopicalRelevanceVerdict
 from .llm_client import chat_completions
+from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
 from .marketing_skill import brand_context_snippet
 
 logger = logging.getLogger(__name__)
@@ -254,10 +254,10 @@ def _spark_topical_assessment(
         "not just ranking because of popularity or generic tech/docs noise.\n"
         f"Brand topic: {topic}\n"
         f"Search query (if any): {query or 'n/a'}\n"
-        f"URL: {url}\n"
-        f"Title: {title or 'n/a'}\n"
-        f"Snippet: {snippet or 'n/a'}\n"
-        f"Page excerpt: {(page_excerpt or '')[:1500]}\n"
+        f"{wrap_untrusted('url', url, max_chars=500)}\n"
+        f"{wrap_untrusted('title', title, max_chars=300)}\n"
+        f"{wrap_untrusted('snippet', snippet, max_chars=500)}\n"
+        f"{wrap_untrusted('page_excerpt', page_excerpt, max_chars=1500)}\n"
     )
     if context:
         prompt += f"\nBrand context:\n{context}\n"
@@ -274,7 +274,10 @@ def _spark_topical_assessment(
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You classify hunt result relevance. Output JSON only.",
+                        "content": (
+                            "You classify hunt result relevance. Output JSON only."
+                            + UNTRUSTED_DATA_SYSTEM_SUFFIX
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -293,19 +296,11 @@ def _spark_topical_assessment(
             reason="spark classification unavailable",
         )
 
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if not match:
+    payload = extract_json_object(content)
+    if not payload:
         return RelevanceAssessment(
             verdict=TopicalRelevanceVerdict.UNCERTAIN,
             reason="spark returned non-JSON",
-            spark_used=True,
-        )
-    try:
-        payload = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return RelevanceAssessment(
-            verdict=TopicalRelevanceVerdict.UNCERTAIN,
-            reason="spark JSON parse failed",
             spark_used=True,
         )
 
@@ -325,11 +320,23 @@ def fetch_public_page_excerpt(
     max_chars: int = 4000,
 ) -> tuple[str | None, str | None, int | None]:
     """HTTP GET a public page and return title, excerpt, status."""
+    from .url_safety import UnsafeURLError, assert_public_http_url
+
+    try:
+        assert_public_http_url(url, resolve_dns=True)
+    except UnsafeURLError:
+        return None, None, None
+
     owns_client = client is None
     if owns_client:
         client = httpx.Client(follow_redirects=True, timeout=20.0)
     try:
         response = client.get(url)
+        # Re-check final URL after redirects.
+        try:
+            assert_public_http_url(str(response.url), resolve_dns=True)
+        except UnsafeURLError:
+            return None, None, None
         status = response.status_code
         if status >= 400:
             return None, None, status
