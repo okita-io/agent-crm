@@ -26,3 +26,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Postgres enum values cannot be removed safely; leave ad_placement in place.
+    pass

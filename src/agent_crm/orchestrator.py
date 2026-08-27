@@ -60,7 +60,7 @@ def _note_from_failure_text(
             ),
             metrics={"error": error_text[:500]},
             suggested_fix=(
-                "Run alembic upgrade head (revision h3i4j5k6l7m8 adds VERIFIED)."
+                "Run alembic upgrade head (revision i4j5k6l7m8n9 adds VERIFIED)."
             ),
             fingerprint=make_fingerprint("repair", "activitytype", "VERIFIED"),
         )

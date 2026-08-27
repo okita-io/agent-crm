@@ -411,4 +411,4 @@ alembic upgrade head      # apply all revisions
 alembic current           # show head
 ```
 
-Current chain includes `h3i4j5k6l7m8` (`agent_improvement_notes` + `activitytype.VERIFIED`). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.
+Current chain includes `i4j5k6l7m8n9` (`agent_improvement_notes` + `activitytype.VERIFIED`, after `h3i4j5k6l7m8` comment_people). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.
