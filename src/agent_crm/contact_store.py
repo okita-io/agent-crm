@@ -15,10 +15,12 @@ from .contact_quality import (
     EmailQualityFilter,
     clean_contact_data,
     filter_socials,
+    ingest_needs_immediate_invalid_verification,
     is_filename_as_email,
     is_placeholder_email,
     is_relevant_contact,
     is_role_inbox_email,
+    prepare_contact_for_ingest,
     profile_matches_quality_filter,
     scrub_notes_value,
 )
@@ -180,7 +182,10 @@ def upsert_contact_profile(
     audience: ContactAudience | None = None,
 ) -> ContactProfileOut:
     """Insert or merge a contact profile and link an email-keyed lead."""
-    normalized_email = email.strip().lower()
+    prepared = prepare_contact_for_ingest(email, name)
+    if prepared is None:
+        raise ValueError(f"contact rejected at ingest: {email.strip().lower()}")
+    normalized_email, clean_name = prepared
     with session_scope() as session:
         row = session.scalar(
             select(ContactProfile).where(ContactProfile.email == normalized_email)
@@ -188,7 +193,7 @@ def upsert_contact_profile(
         lead = _upsert_lead_for_contact(
             session,
             email=normalized_email,
-            name=name,
+            name=clean_name,
             brand=brand,
             source_url=source_url,
             socials=socials,
@@ -198,7 +203,7 @@ def upsert_contact_profile(
         if row is None:
             row = ContactProfile(
                 email=normalized_email,
-                name=name,
+                name=clean_name,
                 brand=brand,
                 audience=audience,
                 socials=socials,
@@ -207,8 +212,8 @@ def upsert_contact_profile(
             )
             session.add(row)
         else:
-            if name and not row.name:
-                row.name = name
+            if clean_name and not row.name:
+                row.name = clean_name
             if brand != Brand.UNASSIGNED and row.brand == Brand.UNASSIGNED:
                 row.brand = brand
             if audience is not None and row.audience is None:
@@ -223,6 +228,19 @@ def upsert_contact_profile(
         enqueue_verify_after = _should_enqueue_verify_job(normalized_email, lead_id=lead.id)
         profile_id = row.id
         verify_lead_id = lead.id
+        needs_invalid, invalid_reasons = ingest_needs_immediate_invalid_verification(
+            normalized_email
+        )
+
+    if needs_invalid:
+        from .verifier import record_immediate_invalid_email
+
+        record_immediate_invalid_email(
+            lead_id=verify_lead_id,
+            email=normalized_email,
+            reasons=invalid_reasons,
+        )
+        enqueue_verify_after = False
 
     if enqueue_after:
         enqueue_enrich_contact_job(profile_id)
@@ -506,16 +524,33 @@ def process_scraped_page_contacts(
                 source_url,
             )
             continue
-        cleaned_socials = filter_socials(contact.socials or None, email=contact.email)
+        prepared = prepare_contact_for_ingest(contact.email, contact.name)
+        if prepared is None:
+            logger.debug(
+                "Skipping junk contact %s (%r) from %s",
+                contact.email,
+                contact.name,
+                source_url,
+            )
+            continue
+        contact_email, contact_name = prepared
+        cleaned_socials = filter_socials(contact.socials or None, email=contact_email)
         try:
             profile = upsert_contact_profile(
-                email=contact.email,
-                name=contact.name,
+                email=contact_email,
+                name=contact_name,
                 brand=brand,
                 source_url=source_url,
                 socials=cleaned_socials,
                 audience=audience,
             )
+        except ValueError:
+            logger.debug(
+                "Rejected junk contact %s from %s",
+                contact.email,
+                source_url,
+            )
+            continue
         except Exception:  # noqa: BLE001
             logger.exception("Failed to upsert contact profile for %s", contact.email)
             continue
@@ -526,21 +561,21 @@ def process_scraped_page_contacts(
         if needs_lookup and not page_had_socials and budget.consume_profile_lookup():
             try:
                 socials, _queries_used = lookup_social_profiles(
-                    email=contact.email,
-                    name=contact.name,
+                    email=contact_email,
+                    name=contact_name,
                     client=searx_client,
                 )
             except Exception:  # noqa: BLE001
-                logger.exception("Social lookup failed for %s", contact.email)
+                logger.exception("Social lookup failed for %s", contact_email)
                 profiles.append(profile)
                 continue
 
             if socials:
-                cleaned_lookup_socials = filter_socials(socials, email=contact.email)
+                cleaned_lookup_socials = filter_socials(socials, email=contact_email)
                 if cleaned_lookup_socials:
                     profile = upsert_contact_profile(
-                        email=contact.email,
-                        name=contact.name,
+                        email=contact_email,
+                        name=contact_name,
                         brand=brand,
                         source_url=source_url,
                         socials=cleaned_lookup_socials,

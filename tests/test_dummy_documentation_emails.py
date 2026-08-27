@@ -14,8 +14,7 @@ from agent_crm.contact_quality import (
 )
 from agent_crm.contact_store import backfill_contact_quality, upsert_contact_profile
 from agent_crm.db import init_db, reset_engine, session_scope
-from agent_crm.enums import Brand, LeadStatus
-from agent_crm.enums import ContactVerificationStatus
+from agent_crm.enums import Brand, ContactVerificationStatus, LeadSource, LeadStatus
 from agent_crm.models import ContactProfile, Lead
 from agent_crm.verifier import check_email
 from sqlalchemy import select
@@ -130,17 +129,35 @@ def test_verifier_rejects_role_and_placeholder_before_mx(email: str) -> None:
 
 def test_backfill_removes_dummy_documentation_profiles(db_url) -> None:
     upsert_contact_profile(
-        email="nowhere@mozilla.org",
-        name="Send email to nowhere",
-        brand=Brand.TACTIC_STUDIO,
-        source_url="https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/your_first_extension",
-    )
-    upsert_contact_profile(
         email="jane@realstudio.com",
         name="Jane Doe",
         brand=Brand.TACTIC_STUDIO,
         source_url="https://realstudio.com/team",
     )
+
+    with session_scope() as session:
+        legacy_lead = Lead(
+            email="nowhere@mozilla.org",
+            name="Send email to nowhere",
+            source=LeadSource.CONTACT,
+            brand=Brand.TACTIC_STUDIO,
+            status=LeadStatus.NEW,
+            raw_payload={"found_on": ["https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/your_first_extension"]},
+        )
+        session.add(legacy_lead)
+        session.flush()
+        session.add(
+            ContactProfile(
+                email="nowhere@mozilla.org",
+                name="Send email to nowhere",
+                brand=Brand.TACTIC_STUDIO,
+                source_urls=[
+                    "https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/your_first_extension"
+                ],
+                lead_id=legacy_lead.id,
+            )
+        )
+        session.flush()
 
     result = backfill_contact_quality(limit=50, dry_run=False)
     assert result.profiles_removed == 1

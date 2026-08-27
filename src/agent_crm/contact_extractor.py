@@ -13,6 +13,7 @@ from urllib.parse import unquote
 from .contact_quality import (
     filter_socials,
     is_dummy_documentation_email,
+    is_junk_person_name,
     is_low_quality_social_url,
     is_role_inbox_email,
 )
@@ -400,6 +401,8 @@ def _looks_like_name(value: str) -> bool:
     text = value.strip()
     if not text or "@" in text or len(text) > 80:
         return False
+    if is_junk_person_name(text):
+        return False
     if EMAIL_RE.search(text):
         return False
     if text.lower().startswith(("http://", "https://", "www.")):
@@ -424,6 +427,8 @@ def _clean_mailto_name(value: str) -> str | None:
     text = re.sub(r"\s+", " ", value.strip())
     text = text.strip(".,;:-")
     if not text or "@" in text or len(text) > 80:
+        return None
+    if is_junk_person_name(text):
         return None
     if EMAIL_RE.search(text):
         return None
