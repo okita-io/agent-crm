@@ -270,18 +270,41 @@ def classify_resource_detailed(
 def format_resource_notes(
     classification: ResourceClassification,
     snippet: str | None = None,
+    *,
+    engagement: dict | None = None,
+    existing: str | None = None,
 ) -> str | None:
-    """Serialize community metadata (and optional snippet) into notes."""
-    if classification.community_slug or classification.platform:
-        payload: dict[str, str] = {}
-        if classification.platform:
-            payload["community"] = classification.platform
-        if classification.community_slug:
-            payload["slug"] = classification.community_slug
-        if classification.community_label:
-            payload["label"] = classification.community_label
-        if snippet:
-            payload["snippet"] = snippet[:400]
+    """Serialize community metadata, engagement signals, and optional snippet."""
+    payload: dict = {}
+    if existing:
+        text = existing.strip()
+        if text.startswith("{"):
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                payload = parsed
+            else:
+                payload["snippet"] = text[:400]
+        else:
+            payload["snippet"] = text[:400]
+
+    if classification.platform:
+        payload["community"] = classification.platform
+    if classification.community_slug:
+        payload["slug"] = classification.community_slug
+    if classification.community_label:
+        payload["label"] = classification.community_label
+    if snippet:
+        payload["snippet"] = snippet[:400]
+    if engagement:
+        existing_engagement = payload.get("engagement")
+        merged = dict(existing_engagement) if isinstance(existing_engagement, dict) else {}
+        merged.update(engagement)
+        payload["engagement"] = merged
+
+    if payload:
         return json.dumps(payload, separators=(",", ":"))
     return snippet
 

@@ -17,6 +17,7 @@ KNOWN_AGENT_ROSTER: dict[str, str] = {
     "lead_scoring": "Lead Scoring",
     "research": "Research",
     "outbound_hunter": "Outbound Hunter",
+    "engagement": "Agent Engagement",
     "outreach_writer": "Outreach Writer",
     "nurture": "Nurture",
     "crm_manager": "CRM Manager",

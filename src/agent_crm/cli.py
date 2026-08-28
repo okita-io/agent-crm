@@ -43,7 +43,7 @@ def _cmd_serve(_args: argparse.Namespace) -> int:
 
 def _cmd_seed(_args: argparse.Namespace) -> int:
     from .db import init_db
-    from .enums import Brand, ContactAudience, LeadSource, Priority, Stage
+    from .enums import Brand, LeadSource, Priority, Stage
     from .pipeline import PipelineManager
     from .schemas import EnrichmentInput, LeadCreate, ScoreInput
     from .tooling import CRMToolkit
@@ -102,7 +102,7 @@ def _cmd_report(_args: argparse.Namespace) -> int:
 
 def _cmd_hunt(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .enums import Brand, ContactAudience
+    from .enums import Brand
     from .outbound_hunter import run_hunt
     from .schemas import HuntRequest
 
@@ -123,7 +123,7 @@ def _cmd_hunt(args: argparse.Namespace) -> int:
 
 def _cmd_hunt_loop(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .enums import Brand, ContactAudience
+    from .enums import Brand
     from .hunt_loop import HuntBudget, run_hunt_loop
 
     init_db()
@@ -149,6 +149,7 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
                 "branch_terms_enqueued": result.branch_terms_enqueued,
                 "community_terms_enqueued": result.community_terms_enqueued,
                 "person_terms_enqueued": result.person_terms_enqueued,
+                "engagement_terms_enqueued": result.engagement_terms_enqueued,
                 "stop_reason": result.stop_reason,
             },
             indent=2,
@@ -159,7 +160,7 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
 
 def _cmd_research(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .enums import Brand, ContactAudience, ResearchFindingKind
+    from .enums import Brand, ResearchFindingKind
     from .research import run_research
     from .schemas import ResearchRequest
 
@@ -211,6 +212,39 @@ def _cmd_research_loop(args: argparse.Namespace) -> int:
         )
     )
     return 0 if result.findings_written or not result.errors else 1
+
+
+def _cmd_engagement_loop(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .engagement_loop import EngagementBudget, run_engagement_loop
+    from .enums import Brand
+
+    init_db()
+    brand = Brand(args.brand) if args.brand else None
+    budget = EngagementBudget(
+        max_venues=args.max_venues,
+        max_pages_per_venue=args.max_pages_per_venue,
+        max_minutes=args.max_minutes,
+    )
+    result = run_engagement_loop(
+        brand=brand,
+        budget=budget,
+        summarize=not args.no_summarize,
+    )
+    print(
+        json.dumps(
+            {
+                "venues_scanned": result.venues_scanned,
+                "threads_cataloged": result.threads_cataloged,
+                "drafts_written": result.drafts_written,
+                "pages_scraped": result.pages_scraped,
+                "stop_reason": result.stop_reason,
+                "errors": result.errors,
+            },
+            indent=2,
+        )
+    )
+    return 0 if result.venues_scanned or result.threads_cataloged or not result.errors else 1
 
 
 def _cmd_contacts(args: argparse.Namespace) -> int:
@@ -445,6 +479,40 @@ def main(argv: list[str] | None = None) -> int:
         help="Do not write Account notes for strong hits",
     )
     research_loop.set_defaults(func=_cmd_research_loop)
+
+    engagement_loop = sub.add_parser(
+        "engagement-loop",
+        help="Rescan catalogued forums and draft comment replies (never posts)",
+    )
+    engagement_loop.add_argument(
+        "--brand",
+        choices=["midnightsatin", "celestial-nexus", "heybuddy", "tactic-studio"],
+        help="Brand slug; omit to scan all brands",
+    )
+    engagement_loop.add_argument(
+        "--max-venues",
+        type=int,
+        default=10,
+        help="Max forums/communities to rescan",
+    )
+    engagement_loop.add_argument(
+        "--max-pages-per-venue",
+        type=int,
+        default=15,
+        help="Max pages scraped per venue",
+    )
+    engagement_loop.add_argument(
+        "--max-minutes",
+        type=int,
+        default=45,
+        help="Wall-clock budget in minutes (0 = unlimited)",
+    )
+    engagement_loop.add_argument(
+        "--no-summarize",
+        action="store_true",
+        help="Skip Spark LLM comment drafts",
+    )
+    engagement_loop.set_defaults(func=_cmd_engagement_loop)
 
     contacts = sub.add_parser("contacts", help="List contact profiles extracted from scrapes")
     contacts_sub = contacts.add_subparsers(dest="contacts_command", required=True)

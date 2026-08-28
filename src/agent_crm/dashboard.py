@@ -10,11 +10,11 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-from agent_crm.config import get_settings
 from agent_crm.comment_people_store import (
     count_comment_people,
     list_comment_people,
 )
+from agent_crm.config import get_settings
 from agent_crm.contact_store import (
     count_contact_profiles,
     count_contact_profiles_by_brand,
@@ -22,6 +22,7 @@ from agent_crm.contact_store import (
     list_contact_profiles,
 )
 from agent_crm.db import database_kind, init_db
+from agent_crm.engagement_store import count_drafts, count_threads, list_drafts, list_threads
 from agent_crm.enums import (
     AgentStatus,
     Brand,
@@ -31,9 +32,9 @@ from agent_crm.enums import (
     ResearchFindingKind,
     Stage,
 )
+from agent_crm.heartbeat import list_heartbeats
 from agent_crm.hunt_feedback import parse_community_notes
 from agent_crm.hunt_status import STALE_RUNNING_MINUTES, build_hunt_status
-from agent_crm.heartbeat import list_heartbeats
 from agent_crm.hunt_store import HuntStore
 from agent_crm.improvement_store import count_open_improvement_notes, list_improvement_notes
 from agent_crm.pipeline import PipelineManager
@@ -489,6 +490,7 @@ def _render_hunter_tab(refresh_seconds: int) -> None:
                         "slug": (parse_community_notes(row.notes) or {}).get("slug"),
                         "brand": row.brand.value,
                         "hits": row.hit_count,
+                        "engagement": row.engagement_score,
                         "url": row.url,
                         "last_seen": row.last_seen,
                     }
@@ -585,6 +587,77 @@ def _render_research_tab() -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+
+def _render_engagement_tab() -> None:
+    st.subheader("Agent engagement")
+    st.caption(
+        "High-traffic forums and popular threads catalogued for later comment drafts. "
+        "This stack never posts — drafts stay here for human review."
+    )
+
+    brand_filter = st.selectbox(
+        "Brand filter",
+        options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
+        key="engagement_brand",
+    )
+    brand = None if brand_filter == "all" else Brand(brand_filter)
+
+    cols = st.columns(2)
+    cols[0].metric("Catalogued threads", count_threads(brand=brand))
+    cols[1].metric("Comment drafts", count_drafts(brand=brand))
+
+    st.subheader("Popular threads")
+    threads = list_threads(brand=brand, limit=200)
+    if not threads:
+        st.info(
+            "No threads yet. The hunter catalogs forums, then `agent-crm engagement-loop` "
+            "scans them for popular posts."
+        )
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "score": row.popularity_score,
+                        "comments": row.comment_count,
+                        "status": row.status.value,
+                        "title": row.title,
+                        "platform": row.platform,
+                        "brand": row.brand.value,
+                        "url": row.url,
+                        "trends": ", ".join(row.trend_keywords or []),
+                        "last_scanned": row.last_scanned_at,
+                    }
+                    for row in threads
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.subheader("Draft replies (not posted)")
+    drafts = list_drafts(brand=brand, limit=200)
+    if not drafts:
+        st.info("No drafts yet. Engagement loop writes drafts when a thread is popular enough.")
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "status": row.status.value,
+                        "brand": row.brand.value,
+                        "angle": row.product_angle,
+                        "draft": row.draft_text[:400],
+                        "thread_id": row.thread_id,
+                        "updated": row.updated_at,
+                    }
+                    for row in drafts
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 def _render_contacts_tab() -> None:
@@ -961,8 +1034,17 @@ def main() -> None:
     st.title("Agent CRM")
     st.caption(f"Store: {database_kind()}")
 
-    observer_tab, pipeline_tab, hunter_tab, research_tab, contacts_tab, verifier_tab, improvement_tab = st.tabs(
-        ["Live agents", "Pipeline & leads", "Hunter", "Research", "Contacts", "Verifier", "Improvement"]
+    observer_tab, pipeline_tab, hunter_tab, research_tab, engagement_tab, contacts_tab, verifier_tab, improvement_tab = st.tabs(
+        [
+            "Live agents",
+            "Pipeline & leads",
+            "Hunter",
+            "Research",
+            "Engagement",
+            "Contacts",
+            "Verifier",
+            "Improvement",
+        ]
     )
 
     with observer_tab:
@@ -976,6 +1058,9 @@ def main() -> None:
 
     with research_tab:
         _render_research_tab()
+
+    with engagement_tab:
+        _render_engagement_tab()
 
     with contacts_tab:
         _render_contacts_tab()

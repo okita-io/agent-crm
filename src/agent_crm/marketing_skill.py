@@ -148,6 +148,7 @@ def ad_placement_summarizer_guidance() -> str:
     parts = [
         "Discovery only — never buy ads, log into ad accounts, or invent pricing/contacts.",
         "Assess brand fit and brand safety honestly. Write brief-ready notes when evidence supports it.",
+        "Flag high-traffic forums and communities as engagement surfaces for later comment drafts.",
         "Never invent proof; use [NEED: x] for missing data.",
     ]
     if paid_ads:

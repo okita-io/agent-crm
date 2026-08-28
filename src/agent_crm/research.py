@@ -10,13 +10,21 @@ from typing import Any
 import httpx
 from sqlalchemy import select
 
-from .config import get_settings
 from .comment_people_store import process_scraped_page_comment_people
+from .config import get_settings
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
+from .engagement import ENGAGEMENT_VENUE_KINDS
 from .enums import ActivityType, AgentStatus, Brand, ResearchFindingKind
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
+from .hunt_store import HuntStore
+from .hunt_utils import classify_resource_detailed
 from .llm_client import chat_completions
 from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, wrap_untrusted
+from .marketing_skill import (
+    ad_placement_summarizer_guidance,
+    brand_context_snippet,
+    competitor_summarizer_guidance,
+)
 from .research_seeds import BRAND_DISPLAY, default_kind_for_brand, seed_queries
 from .research_store import upsert_finding
 from .research_utils import (
@@ -26,11 +34,6 @@ from .research_utils import (
     extract_ein_from_text,
     is_junk_finding,
     is_scrapable_url,
-)
-from .marketing_skill import (
-    ad_placement_summarizer_guidance,
-    brand_context_snippet,
-    competitor_summarizer_guidance,
 )
 from .schemas import ResearchRequest, ResearchResult
 from .searxng_client import SearchResult, SearxngError, search
@@ -160,6 +163,16 @@ def run_research(
 
             if extra is None:
                 extra = _heuristic_extra(page, hit, kind)
+
+            if kind == ResearchFindingKind.AD_PLACEMENT:
+                extra = _catalog_engagement_venue(
+                    url=normalized,
+                    title=title,
+                    brand=request.brand,
+                    query=query,
+                    snippet=page.markdown or hit.snippet,
+                    extra=extra,
+                )
 
             finding = upsert_finding(
                 url=normalized,
@@ -412,6 +425,11 @@ def _heuristic_ad_placement_extra(
     else:
         extra["brand_safety"] = "ok — review placement context before buying"
 
+    classification = classify_resource_detailed(hit.url, page.title or hit.title, text)
+    if classification.kind in ENGAGEMENT_VENUE_KINDS:
+        extra["engagement_surface"] = True
+        extra["ad_product"] = extra.get("ad_product") or "other"
+
     if hit.snippet:
         extra["audience"] = hit.snippet.strip()[:240]
     extra["why_it_matters"] = "Potential paid placement surface discovered via research seed."
@@ -581,3 +599,29 @@ def _maybe_write_account_note(
         type=ActivityType.NOTE,
         payload={"url": url, "account_name": account_name, "extra": extra},
     )
+
+
+def _catalog_engagement_venue(
+    *,
+    url: str,
+    title: str,
+    brand: Brand,
+    query: str,
+    snippet: str | None,
+    extra: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Persist forum/community ad-placement hits into the hunter venue catalog."""
+    classification = classify_resource_detailed(url, title, snippet)
+    if classification.kind not in ENGAGEMENT_VENUE_KINDS:
+        return extra
+    HuntStore().upsert_resource(
+        url=url,
+        brand=brand,
+        title=title,
+        found_via_query=query,
+        snippet=(snippet or "")[:500] or None,
+        kind=classification.kind,
+    )
+    merged = dict(extra or {})
+    merged["engagement_surface"] = True
+    return merged

@@ -7,26 +7,36 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 
-from .config import Settings, get_settings
 from .comment_people_store import process_scraped_page_comment_people
+from .config import Settings, get_settings
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
-from .enums import AgentStatus, Brand, ContactAudience, HuntQueryStatus, TopicalRelevanceVerdict
+from .engagement import (
+    extract_engagement_signals,
+    is_thread_url,
+    venue_url_from_thread,
+)
+from .engagement_store import upsert_thread
+from .enums import AgentStatus, Brand, ContactAudience, TopicalRelevanceVerdict
 from .firecrawl_client import FirecrawlError, scrape
 from .heartbeat import record_heartbeat
 from .hunt_feedback import (
     HuntFeedbackBudget,
     enqueue_community_terms,
+    enqueue_engagement_terms,
     enqueue_handle_terms,
     enqueue_person_terms,
 )
 from .hunt_relevance import assess_topical_relevance, is_obvious_off_topic_url
 from .hunt_seeds import audience_from_origin, seed_query_entries
 from .hunt_store import HuntStore
-from .hunt_utils import extract_heuristic_terms, is_junk_title
+from .hunt_utils import (
+    ResourceClassification,
+    extract_heuristic_terms,
+    is_junk_title,
+)
 from .job_store import enqueue_topical_relevance_job
 from .llm_client import chat_completions
 from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
@@ -66,6 +76,7 @@ class HuntLoopResult:
     community_terms_enqueued: int = 0
     person_terms_enqueued: int = 0
     handle_terms_enqueued: int = 0
+    engagement_terms_enqueued: int = 0
     stop_reason: str = "queue_empty"
 
 
@@ -193,6 +204,7 @@ def run_hunt_loop(
         result.community_terms_enqueued += stats["community_terms_enqueued"]
         result.person_terms_enqueued += stats["person_terms_enqueued"]
         result.handle_terms_enqueued += stats["handle_terms_enqueued"]
+        result.engagement_terms_enqueued += stats["engagement_terms_enqueued"]
         store.mark_query_completed(pending.id)
 
         if deadline is not None and time.monotonic() >= deadline:
@@ -252,7 +264,7 @@ def _run_queued_query(
 
     feedback_budget = feedback_budget or HuntFeedbackBudget.from_settings()
     contact_budget = contact_budget or ContactExtractionBudget.from_settings()
-    resources, community_terms, person_terms = _collect_from_results(
+    resources, community_terms, person_terms, engagement_terms = _collect_from_results(
         store,
         query,
         brand,
@@ -300,6 +312,25 @@ def _run_queued_query(
                         run_id=run_id,
                         budget=feedback_budget,
                         audience=audience,
+                    )
+                    engagement_terms += enqueue_engagement_terms(
+                        store,
+                        classification=upsert.classification,
+                        url=hit.url,
+                        brand=brand,
+                        run_id=run_id,
+                        budget=feedback_budget,
+                        audience=audience,
+                    )
+                if upsert.classification is not None:
+                    _catalog_thread(
+                        url=hit.url,
+                        brand=brand,
+                        title=title,
+                        snippet=page.markdown or hit.snippet,
+                        classification=upsert.classification,
+                        hunt_resource_id=upsert.resource.id,
+                        found_via_query=query,
                     )
                 try:
                     profiles = process_scraped_page_contacts(
@@ -365,6 +396,7 @@ def _run_queued_query(
         "community_terms_enqueued": community_terms,
         "person_terms_enqueued": person_terms,
         "handle_terms_enqueued": handle_terms,
+        "engagement_terms_enqueued": engagement_terms,
     }
 
 
@@ -377,11 +409,12 @@ def _collect_from_results(
     run_id: str | None = None,
     feedback_budget: HuntFeedbackBudget | None = None,
     audience: ContactAudience | None = None,
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     feedback_budget = feedback_budget or HuntFeedbackBudget.from_settings()
     count = 0
     community_terms = 0
     person_terms = 0
+    engagement_terms = 0
     for hit in results:
         upsert = store.upsert_resource(
             url=hit.url,
@@ -402,7 +435,54 @@ def _collect_from_results(
                     budget=feedback_budget,
                     audience=audience,
                 )
-    return count, community_terms, person_terms
+                engagement_terms += enqueue_engagement_terms(
+                    store,
+                    classification=upsert.classification,
+                    url=hit.url,
+                    brand=brand,
+                    run_id=run_id,
+                    budget=feedback_budget,
+                    audience=audience,
+                )
+            if upsert.classification is not None:
+                _catalog_thread(
+                    url=hit.url,
+                    brand=brand,
+                    title=hit.title,
+                    snippet=hit.snippet,
+                    classification=upsert.classification,
+                    hunt_resource_id=upsert.resource.id,
+                    found_via_query=query,
+                )
+    return count, community_terms, person_terms, engagement_terms
+
+
+def _catalog_thread(
+    *,
+    url: str,
+    brand: Brand,
+    title: str | None,
+    snippet: str | None,
+    classification: ResourceClassification,
+    hunt_resource_id: int | None,
+    found_via_query: str,
+) -> None:
+    if not is_thread_url(url):
+        return
+    signals = extract_engagement_signals(
+        title, snippet, kind=classification.kind
+    )
+    upsert_thread(
+        url=url,
+        brand=brand,
+        title=title,
+        signals=signals,
+        hunt_resource_id=hunt_resource_id,
+        platform=classification.platform,
+        venue_url=venue_url_from_thread(url, classification),
+        excerpt=(snippet or "")[:800] or None,
+        found_via_query=found_via_query,
+    )
 
 
 def _extract_branch_terms(

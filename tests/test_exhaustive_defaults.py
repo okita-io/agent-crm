@@ -28,6 +28,15 @@ def test_hunter_defaults_are_exhaustive() -> None:
     assert HuntLoopRequest(max_minutes=None).max_minutes == 0
 
 
+def test_engagement_defaults() -> None:
+    settings = Settings()
+    assert settings.hunter_engagement_terms_per_run == 20
+    assert settings.engagement_max_venues_per_run == 10
+    assert settings.engagement_max_pages_per_venue == 15
+    assert settings.engagement_max_minutes_default == 45
+    assert settings.engagement_draft_threshold == 55
+
+
 def test_research_defaults_are_exhaustive() -> None:
     settings = Settings()
     assert settings.research_search_result_limit == 50

@@ -9,10 +9,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from agent_crm.db import session_scope, with_row_lock
+from agent_crm.engagement import engagement_payload, extract_engagement_signals
 from agent_crm.enums import AgentStatus, Brand, HuntQueryStatus, HuntResourceKind
+from agent_crm.heartbeat import record_heartbeat
 from agent_crm.hunt_priority import hunt_query_priority
 from agent_crm.hunt_seeds import audience_from_origin
-from agent_crm.heartbeat import record_heartbeat
 from agent_crm.hunt_utils import (
     ResourceClassification,
     canonical_url,
@@ -216,12 +217,19 @@ class HuntStore:
             community_label=classification.community_label or title,
             platform=classification.platform,
         )
-        notes = format_resource_notes(classification, snippet)
+        signals = extract_engagement_signals(title, snippet, kind=resource_kind)
+        engagement = engagement_payload(signals)
         now = datetime.now(UTC)
 
         with session_scope() as session:
             row = session.scalar(select(HuntResource).where(HuntResource.url == clean_url))
             is_new = row is None
+            notes = format_resource_notes(
+                classification,
+                snippet,
+                engagement=engagement,
+                existing=None if row is None else row.notes,
+            )
             if row is None:
                 row = HuntResource(
                     url=clean_url,
@@ -234,6 +242,7 @@ class HuntStore:
                     last_seen=now,
                     hit_count=1,
                     notes=notes,
+                    engagement_score=signals.score,
                 )
                 session.add(row)
             else:
@@ -246,6 +255,7 @@ class HuntStore:
                 if resource_kind != HuntResourceKind.OTHER:
                     row.kind = resource_kind
                 row.found_via_query = found_via_query
+                row.engagement_score = max(row.engagement_score or 0, signals.score)
             session.flush()
             session.refresh(row)
             return UpsertResourceResult(
@@ -301,9 +311,11 @@ class HuntStore:
                     HuntQuery.origin.startswith("community:")
                     | HuntQuery.origin.startswith("person:")
                     | HuntQuery.origin.startswith("handle:")
+                    | HuntQuery.origin.startswith("engagement:")
                     | HuntQuery.origin.contains(":community:")
                     | HuntQuery.origin.contains(":person:")
                     | HuntQuery.origin.contains(":handle:")
+                    | HuntQuery.origin.contains(":engagement:")
                 )
                 .order_by(HuntQuery.id.desc())
                 .limit(limit)

@@ -23,6 +23,9 @@ SEED_PACKS: dict[str, list[str]] = {
         "influencers who promote ai generated books",
         "sudowrite novel community",
         "ai generated kindle romance readers",
+        "most popular romance book forums high traffic",
+        "high engagement booktok reddit communities",
+        "busiest romance reader discord servers",
     ],
     Brand.CELESTIAL_NEXUS.value: [
         "astrology natal chart community forums",
@@ -34,6 +37,9 @@ SEED_PACKS: dict[str, list[str]] = {
         "ai tarot reading influencers",
         "chatgpt astrology content community",
         "ai natal chart content creators",
+        "most active astrology forums high traffic",
+        "high engagement tarot reddit communities",
+        "busiest witchcraft discord servers",
     ],
     Brand.HEYBUDDY.value: [
         "ai companion app communities",
@@ -45,6 +51,9 @@ SEED_PACKS: dict[str, list[str]] = {
         "people who watch ai generated character content",
         "ai roleplay discord communities",
         "influencers promoting ai girlfriend apps",
+        "most active loneliness support forums high traffic",
+        "high engagement mental wellness reddit communities",
+        "busiest veteran peer support forums",
     ],
 }
 
@@ -88,6 +97,8 @@ SEED_PACKS_BY_AUDIENCE: dict[str, dict[str, list[str]]] = {
             "WebXR community forum discussion",
             "AR VR training reddit manufacturing",
             "mixed reality enthusiasts discord community",
+            "most active WebXR forums high traffic",
+            "high engagement industrial AR reddit communities",
         ],
     },
 }

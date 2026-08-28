@@ -161,6 +161,37 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  engagement-loop:
+    build: .
+    command:
+      - agent-crm
+      - engagement-loop
+      - --max-venues
+      - "10"
+      - --max-pages-per-venue
+      - "15"
+      - --max-minutes
+      - "45"
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
+      CRM_SEARXNG_URL: http://host.docker.internal:8080
+      CRM_FIRECRAWL_URL: http://host.docker.internal:3002
+      CRM_ENGAGEMENT_MAX_VENUES_PER_RUN: "10"
+      CRM_ENGAGEMENT_MAX_PAGES_PER_VENUE: "15"
+      CRM_ENGAGEMENT_MAX_MINUTES_DEFAULT: "45"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+      spark-queue:
+        condition: service_started
+    restart: unless-stopped
+
   orchestrator:
     build: .
     command: ["agent-crm", "orchestrate"]

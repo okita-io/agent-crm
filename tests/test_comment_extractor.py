@@ -191,6 +191,7 @@ def test_enqueue_handle_terms(db_url) -> None:
         community_terms_remaining=0,
         person_terms_remaining=0,
         handle_terms_remaining=5,
+        engagement_terms_remaining=0,
     )
     enqueued = enqueue_handle_terms(
         store,

@@ -207,6 +207,7 @@ class ImprovementSourceAgent(str, enum.Enum):
     JOB_DISPATCHER = "job-dispatcher"
     HUNT_LOOP = "hunt-loop"
     RESEARCH_LOOP = "research-loop"
+    ENGAGEMENT_LOOP = "engagement-loop"
     LEAD_VERIFIER = "lead_verifier"
     SPARK_QUEUE = "spark-queue"
     ORCHESTRATOR = "orchestrator"
@@ -222,6 +223,23 @@ class HuntResourceKind(str, enum.Enum):
     LIST = "list"
     SOCIAL = "social"
     OTHER = "other"
+
+
+class EngagementThreadStatus(str, enum.Enum):
+    """Lifecycle of a catalogued community thread for later scans."""
+
+    CATALOGED = "cataloged"
+    QUEUED = "queued"
+    SCANNED = "scanned"
+    DRAFT_READY = "draft_ready"
+
+
+class EngagementDraftStatus(str, enum.Enum):
+    """Human-review state for a comment draft. This stack never posts."""
+
+    DRAFT = "draft"
+    REVIEW = "review"
+    REJECTED = "rejected"
 
 
 class ResearchFindingKind(str, enum.Enum):

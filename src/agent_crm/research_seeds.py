@@ -70,6 +70,8 @@ AD_PLACEMENT_QUERIES: dict[Brand, list[str]] = {
         "smut readers forum advertising board self promote",
         "interactive fiction community forum banner ads",
         "romance audiobook podcast sponsorship advertising",
+        "high traffic romance forums popular weekly threads",
+        "most active booktok reddit threads this week",
     ],
     Brand.CELESTIAL_NEXUS: [
         "astrology forum banner advertising media kit",
@@ -88,6 +90,8 @@ AD_PLACEMENT_QUERIES: dict[Brand, list[str]] = {
         "crystal healing newsletter ad placement media kit",
         "reddit r/astrology weekly self promotion thread",
         "spiritual wellness zine advertising sponsorship",
+        "high traffic astrology forums popular weekly threads",
+        "most active witchcraft reddit threads this week",
     ],
     Brand.HEYBUDDY: [
         "loneliness forum community resources sticky advertising",
@@ -105,6 +109,8 @@ AD_PLACEMENT_QUERIES: dict[Brand, list[str]] = {
         "AI companion newsletter sponsorship advertising caution",
         "depression support forum community resources board ads",
         "nonprofit mental health newsletter media kit sponsorship",
+        "high traffic loneliness forums popular weekly threads",
+        "most active veteran support forum threads this week",
     ],
     Brand.TACTIC_STUDIO: [
         "WebAR newsletter sponsorship advertising rates",
@@ -122,6 +128,8 @@ AD_PLACEMENT_QUERIES: dict[Brand, list[str]] = {
         "industrial metaverse forum advertising sponsorship",
         "WebXR agency blog sponsorship advertising placement",
         "training simulation trade show sponsorship rates",
+        "high traffic XR forums popular weekly threads",
+        "most active industrial AR reddit threads this week",
     ],
 }
 

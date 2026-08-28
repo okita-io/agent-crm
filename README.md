@@ -26,6 +26,7 @@ docker compose up -d --build
 | `contact-worker` | — | Job dispatcher — enrich + verify (`agent-crm jobs`) |
 | `hunt-loop` | — | Standing outbound hunter (`agent-crm hunt-loop`, global priority queue) |
 | `research-loop` | — | Standing ad-placement research (20 queries / 60 min / 200 pages per cycle) |
+| `engagement-loop` | — | Standing forum rescan + comment drafts (never posts) |
 | `orchestrator` | — | Self-learning stack inspector (`agent-crm orchestrate`) — writes improvement notes |
 
 API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -99,7 +100,7 @@ Research competitor summaries load bounded slices of `references/competitive.md`
 
 ## Collection systems
 
-The ranch stack builds prospect intelligence through six layered systems. Each writes to Postgres (or SQLite in dev).
+The ranch stack builds prospect intelligence through seven layered systems. Each writes to Postgres (or SQLite in dev).
 
 ### 1. SearXNG search
 
@@ -142,7 +143,7 @@ then rely on the standing `hunt-loop` service for ongoing collection. Spark LLM 
 
 Hunt-loop prompt explicitly forbids inventing emails or person names. Sites land in `hunt_resources`; people are handled by contact extraction (below).
 
-**Community & name feedback.** When the loop first sees a community/forum URL (e.g. `reddit.com/r/<sub>`, Discord invite, Facebook group), it enqueues bounded `community:` search terms (`site:reddit.com/r/<sub>`, `"<sub>" community`, etc.). After contact extraction on a scraped page, real person names (not emails, not single tokens like “Admin”) enqueue `person:` terms (`"Jane Doe" reddit`, `"Jane Doe" discord`, …). Comment authors with handles enqueue `handle:` terms (`site:reddit.com/u/<user>`, `u/<user> reddit`, …). Caps per run: `CRM_HUNTER_COMMUNITY_TERMS_PER_RUN` (default **30**), `CRM_HUNTER_PERSON_TERMS_PER_RUN` (default **20**), and `CRM_HUNTER_HANDLE_TERMS_PER_RUN` (default **20**). Dedupe uses `hunt_queries.dedupe_key` as usual. The dashboard **Hunter** tab lists catalogued communities and derived queued terms; `GET /hunt/queue` reports aggregate pending counts (inspect `hunt_queries.origin` for `community:` / `person:` / `handle:` prefixes).
+**Community & name feedback.** When the loop first sees a community/forum URL (e.g. `reddit.com/r/<sub>`, Discord invite, Facebook group), it enqueues bounded `community:` search terms (`site:reddit.com/r/<sub>`, `"<sub>" community`, etc.). Newly catalogued forums also enqueue `engagement:` terms aimed at popular posts (`site:reddit.com/r/<sub> hot`, `top this week`). After contact extraction on a scraped page, real person names (not emails, not single tokens like “Admin”) enqueue `person:` terms (`"Jane Doe" reddit`, `"Jane Doe" discord`, …). Comment authors with handles enqueue `handle:` terms (`site:reddit.com/u/<user>`, `u/<user> reddit`, …). Caps per run: `CRM_HUNTER_COMMUNITY_TERMS_PER_RUN` (default **30**), `CRM_HUNTER_PERSON_TERMS_PER_RUN` (default **20**), `CRM_HUNTER_HANDLE_TERMS_PER_RUN` (default **20**), and `CRM_HUNTER_ENGAGEMENT_TERMS_PER_RUN` (default **20**). Dedupe uses `hunt_queries.dedupe_key` as usual. The dashboard **Hunter** tab lists catalogued communities and derived queued terms; `GET /hunt/queue` reports aggregate pending counts (inspect `hunt_queries.origin` for `community:` / `person:` / `handle:` / `engagement:` prefixes). Forums, communities, and social networks also get an `engagement_score` from member/comment/hot-traffic hints so the engagement agent can prioritize high-traffic venues.
 
 ### 4. Research agent
 
@@ -154,7 +155,7 @@ Competitor, nonprofit, and **ad-placement** prospecting with the same SearXNG + 
 | `heybuddy` | `nonprofit` | 501(c)(3) partnership / grant prospects (HeyBuddy itself is **not** a nonprofit) |
 | any (explicit `--kind ad_placement`) | `ad_placement` | Sites that sell ads, sponsorships, or promo/sticky/banner/board placement — discovery only |
 
-Pass `--kind ad_placement` (or `"kind": "ad_placement"` on `POST /research`) to hunt newsletters, forums (including offbeat/imageboard surfaces like 4chan boards), Discords, podcasts, subreddits, zines, and trade pubs where each brand’s audience actually hangs out. Summaries capture `ad_product`, `how_to_buy`, `brand_fit`, and `brand_safety` — no ad buying or account creation.
+Pass `--kind ad_placement` (or `"kind": "ad_placement"` on `POST /research`) to hunt newsletters, forums (including offbeat/imageboard surfaces like 4chan boards), Discords, podcasts, subreddits, zines, and trade pubs where each brand’s audience actually hangs out. Summaries capture `ad_product`, `how_to_buy`, `brand_fit`, and `brand_safety` — no ad buying or account creation. Forum and community hits are also catalogued as hunter venues (`engagement_surface`) so the engagement agent can come back and scan popular threads.
 
 Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`. Seed packs include AI-generated-content audiences and promoters alongside competitor/nonprofit/ad-placement discovery terms.
 
@@ -164,7 +165,21 @@ Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 S
 | Loop | `agent-crm research-loop [--max-queries 0] [--max-pages 0] [--max-minutes 0]` — cycles all four brands on ad-placement seeds (`0` = unlimited) |
 | List | `GET /research/findings` |
 
-### 5. Contact extraction and social lookup
+### 5. Agent engagement (comment drafts)
+
+The comment-reply arm of ad-placement. The hunter (and ad-placement research) catalogs high-traffic forums, communities, and social networks. The engagement agent later rescans those venues for popular threads, stores them in `engagement_threads`, and drafts product-related replies in `engagement_drafts`.
+
+**This stack never posts.** Drafts are for human review only.
+
+| Entry | Command / API |
+|-------|---------------|
+| Loop | `agent-crm engagement-loop [--brand …] [--max-venues 10] [--max-pages-per-venue 15] [--max-minutes 45]` · `POST /engagement/loop` |
+| Threads | `GET /engagement/threads` · dashboard **Engagement** tab |
+| Drafts | `GET /engagement/drafts` |
+
+Compose runs `engagement-loop` as a standing worker. It picks catalogued venues due for rescan (ordered by `engagement_score`), searches for hot/top threads, scrapes them, and asks Spark for a draft when popularity is high enough (`CRM_ENGAGEMENT_DRAFT_THRESHOLD`, default **55**).
+
+### 6. Contact extraction and social lookup
 
 After every successful Firecrawl scrape (hunter, hunt-loop, research), the stack extracts contacts from page markdown/HTML:
 
@@ -198,7 +213,7 @@ Skipped when the scrape already attached socials to that contact.
 | List comment authors | `GET /comment-people?platform=reddit&brand=…` · dashboard **Contacts** tab → View: `commenters` |
 | Backfill filters | `agent-crm contacts backfill [--limit 500] [--dry-run]` · `POST /contacts/backfill` |
 
-### 6. Lead verifier
+### 7. Lead verifier
 
 Defensive contact checks — **DNS, MX, HTTP only**. No SMTP, no RCPT/VRFY, no sending.
 
@@ -230,7 +245,9 @@ To scrub historical rows that were marked valid before this gate: re-run verific
 | `activities` | Append-only agent history |
 | `journeys` | Nurture state machines (schema present; sending not implemented) |
 | `hunt_queries` | Hunt-loop search queue |
-| `hunt_resources` | Discovered **sites** (directories, communities, newsletters) |
+| `hunt_resources` | Discovered **sites** (directories, communities, newsletters) plus engagement scores |
+| `engagement_threads` | Popular posts/threads on catalogued forums for later scans |
+| `engagement_drafts` | Comment drafts for human review (never posted) |
 | `research_findings` | Research agent output |
 | `contact_profiles` | **People** keyed by email — name, socials, source pages |
 | `contact_verifications` | Verifier results per lead contact |
@@ -257,6 +274,7 @@ Base URL on the Mini (loopback): `http://127.0.0.1:8000`. There is **no** send/o
 | `GET /agent/findings` | Research findings |
 | `GET /agent/comment-people` | Comment authors (no inventing emails) |
 | `GET /agent/pipeline-leads` | VALID, non-disqualified leads Pete can work |
+| `GET /agent/engagement-threads` | Catalogued popular forum threads |
 
 Every list returns `{ "items", "total", "offset", "limit" }` (default `limit=50`, max `200`).
 
@@ -289,6 +307,7 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 | **Pipeline & leads** | Weekly metrics, stage chart, lead table, activity history, verifications |
 | **Hunter** | Live hunt-loop drain status + query queue + `hunt_resources` table |
 | **Research** | `research_findings` with brand/kind filters |
+| **Engagement** | Catalogued threads + comment drafts (not posted) |
 | **Contacts** | `contact_profiles` — name, email, socials, source pages |
 | **Verifier** | Hunter leads and verification status |
 | **Improvement** | Open orchestrator gap/performance notes |
@@ -302,6 +321,7 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 | Brand Router | `brand_router` | Assign brand |
 | Research | `research` | Competitor / nonprofit / ad-placement runs → `research_findings` |
 | Outbound Hunter | `outbound_hunter` | Hunt + hunt-loop → sites and page leads |
+| Agent Engagement | `engagement` | Rescan forums → threads + comment drafts (never posts) |
 | Lead Verifier | `lead_verifier` | DNS/MX/HTTP checks (auto via `contact-worker`) |
 | Job dispatcher | `job-dispatcher` | Drains `agent_jobs` — verify before Spark enrich |
 | Orchestrator | `orchestrator` | Stack health inspection → improvement notes |
@@ -342,6 +362,11 @@ agent-crm research-loop \
   [--max-queries 0] [--max-pages 0] [--max-minutes 0] \
   [--search-limit 50] [--no-summarize] [--no-accounts]
 
+# Engagement (never posts)
+agent-crm engagement-loop \
+  [--brand midnightsatin] [--max-venues 10] \
+  [--max-pages-per-venue 15] [--max-minutes 45] [--no-summarize]
+
 # Contacts
 agent-crm contacts list \
   [--brand midnightsatin|celestial-nexus|heybuddy|unassigned] \
@@ -380,6 +405,9 @@ streamlit run src/agent_crm/dashboard.py
 | GET | `/hunt/queue` | Hunt queue status |
 | POST | `/research` | Research run |
 | GET | `/research/findings` | List findings |
+| POST | `/engagement/loop` | Rescan forums and draft replies (never posts) |
+| GET | `/engagement/threads` | List catalogued threads |
+| GET | `/engagement/drafts` | List comment drafts |
 | GET | `/contacts` | List `contact_profiles` (`?brand=`, `?email=`) |
 | POST | `/contacts/backfill` | Re-apply contact-quality filters (`{"limit":500,"dry_run":false}`) |
 | POST | `/leads/{id}/verify` | Verify lead contacts |
@@ -415,6 +443,10 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_HUNTER_MAX_MINUTES_DEFAULT` | Hunt-loop wall clock in minutes (`0` = unlimited) |
 | `CRM_HUNTER_COMMUNITY_TERMS_PER_RUN` | Max community feedback queries per loop run (30) |
 | `CRM_HUNTER_PERSON_TERMS_PER_RUN` | Max person-name feedback queries per loop run (20) |
+| `CRM_HUNTER_ENGAGEMENT_TERMS_PER_RUN` | Max popular-thread feedback queries per loop run (20) |
+| `CRM_ENGAGEMENT_MAX_VENUES_PER_RUN` | Forums/communities rescanned per engagement cycle (10) |
+| `CRM_ENGAGEMENT_MAX_PAGES_PER_VENUE` | Pages scraped per venue (15) |
+| `CRM_ENGAGEMENT_MAX_MINUTES_DEFAULT` | Engagement-loop wall clock (45) |
 | `CRM_RESEARCH_MAX_QUERIES_DEFAULT` | Research query budget (20) |
 | `CRM_RESEARCH_MAX_PAGES_PER_RUN` | Research scrape budget (200) |
 | `CRM_RESEARCH_MAX_MINUTES_DEFAULT` | Research wall clock (60) |

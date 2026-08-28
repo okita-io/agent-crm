@@ -73,6 +73,7 @@ def test_agent_catalog(api_client) -> None:
     payload = response.json()
     assert "contacts" in payload["collections"]
     assert "websites" in payload["collections"]
+    assert "engagement-threads" in payload["collections"]
     assert "midnightsatin" in payload["brands"]
 
 

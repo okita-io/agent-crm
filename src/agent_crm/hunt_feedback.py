@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from urllib.parse import unquote
 
 from .config import get_settings
 from .contact_extractor import _looks_like_name
+from .engagement import is_engagement_venue, venue_scan_queries
 from .enums import Brand, ContactAudience, HuntResourceKind
 from .hunt_seeds import origin_with_audience
 from .hunt_store import HuntStore
@@ -44,6 +44,7 @@ class HuntFeedbackBudget:
     community_terms_remaining: int
     person_terms_remaining: int
     handle_terms_remaining: int
+    engagement_terms_remaining: int
 
     @classmethod
     def from_settings(cls) -> HuntFeedbackBudget:
@@ -52,6 +53,7 @@ class HuntFeedbackBudget:
             community_terms_remaining=settings.hunter_community_terms_per_run,
             person_terms_remaining=settings.hunter_person_terms_per_run,
             handle_terms_remaining=settings.hunter_handle_terms_per_run,
+            engagement_terms_remaining=settings.hunter_engagement_terms_per_run,
         )
 
 
@@ -177,6 +179,16 @@ def person_search_terms(name: str, *, max_terms: int = 4) -> list[str]:
     return templates[:max_terms]
 
 
+def engagement_search_terms(
+    classification: ResourceClassification,
+    *,
+    url: str,
+    max_terms: int = 4,
+) -> list[str]:
+    """Build bounded popular-post queries for a newly catalogued venue."""
+    return venue_scan_queries(classification, url=url, max_terms=max_terms)
+
+
 def is_valid_hunt_handle(platform: str, handle: str) -> bool:
     """True when a public handle is worth discovery queries."""
     from .comment_extractor import is_valid_comment_handle
@@ -270,6 +282,41 @@ def enqueue_community_terms(
             run_id=run_id,
         ):
             budget.community_terms_remaining -= 1
+            enqueued += 1
+    return enqueued
+
+
+def enqueue_engagement_terms(
+    store: HuntStore,
+    *,
+    classification: ResourceClassification,
+    url: str,
+    brand: Brand,
+    run_id: str | None,
+    budget: HuntFeedbackBudget,
+    audience: ContactAudience | None = None,
+) -> int:
+    """Enqueue popular-thread queries when a high-engagement venue is first seen."""
+    if not is_engagement_venue(classification, url):
+        return 0
+
+    slug = classification.community_slug or classification.platform or "venue"
+    origin = origin_with_audience(
+        f"engagement:{classification.platform or 'web'}/{_origin_slug(slug)}",
+        audience,
+    )
+    enqueued = 0
+    for term in engagement_search_terms(classification, url=url):
+        if budget.engagement_terms_remaining <= 0:
+            break
+        if store.enqueue_query(
+            query=term,
+            brand=brand,
+            origin=origin,
+            params=None,
+            run_id=run_id,
+        ):
+            budget.engagement_terms_remaining -= 1
             enqueued += 1
     return enqueued
 

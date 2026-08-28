@@ -12,6 +12,7 @@ def test_compose_declares_standing_workers() -> None:
     assert 'command: ["agent-crm", "jobs"]' in content
     assert 'command: ["agent-crm", "hunt-loop"]' in content
     assert "research-loop" in content
+    assert "engagement-loop" in content
     assert 'command: ["agent-crm", "orchestrate"]' in content
 
 
@@ -38,12 +39,23 @@ def test_compose_hunt_loop_stays_unbounded() -> None:
     assert 'CRM_HUNTER_MAX_MINUTES_DEFAULT: "0"' in block
 
     content = COMPOSE_PATH.read_text(encoding="utf-8")
-    for service in ("contact-worker", "hunt-loop", "research-loop", "orchestrator"):
+    for service in ("contact-worker", "hunt-loop", "research-loop", "engagement-loop", "orchestrator"):
         marker = f"  {service}:"
         start = content.index(marker)
         end = content.index("\n\n", start)
         block = content[start:end]
         assert "restart: unless-stopped" in block, f"{service} missing restart policy"
+
+
+def test_compose_engagement_loop_is_bounded() -> None:
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    start = content.index("  engagement-loop:")
+    end = content.index("\n\n", start)
+    block = content[start:end]
+    assert 'CRM_ENGAGEMENT_MAX_VENUES_PER_RUN: "10"' in block
+    assert 'CRM_ENGAGEMENT_MAX_PAGES_PER_VENUE: "15"' in block
+    assert 'CRM_ENGAGEMENT_MAX_MINUTES_DEFAULT: "45"' in block
+    assert 'CRM_ENGAGEMENT_MAX_VENUES_PER_RUN: "0"' not in block
 
 
 def test_contact_worker_and_orchestrator_do_not_require_spark_queue() -> None:
@@ -73,7 +85,7 @@ def test_compose_binds_sensitive_ports_to_localhost() -> None:
 def test_workers_wait_for_api_migrations() -> None:
     """Standing workers must start after api so Alembic finishes before init_db."""
     content = COMPOSE_PATH.read_text(encoding="utf-8")
-    for service in ("contact-worker", "hunt-loop", "research-loop", "orchestrator"):
+    for service in ("contact-worker", "hunt-loop", "research-loop", "engagement-loop", "orchestrator"):
         start = content.index(f"  {service}:")
         end = content.index("\n\n", start)
         block = content[start:end]

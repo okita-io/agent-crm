@@ -52,7 +52,16 @@ class Settings(BaseSettings):
     hunter_community_terms_per_run: int = 30
     hunter_person_terms_per_run: int = 20
     hunter_handle_terms_per_run: int = 20
+    hunter_engagement_terms_per_run: int = 20
     hunter_request_timeout: float = 60.0
+
+    # Agent engagement (comment-draft arm of ad-placement; never posts)
+    engagement_max_venues_per_run: int = 10
+    engagement_max_pages_per_venue: int = 15
+    engagement_max_minutes_default: int = 45
+    engagement_scan_interval_hours: int = 24
+    engagement_popularity_threshold: int = 40
+    engagement_draft_threshold: int = 55
 
     # Research agent defaults
     research_max_queries_default: int = 20

@@ -71,7 +71,7 @@ def test_merge_agent_status_prefers_working_over_idle() -> None:
 
 def test_build_observer_rows_idle_without_signals() -> None:
     rows = build_observer_rows([], None)
-    assert len(rows) == 11
+    assert len(rows) == 12
     assert all(row.status == AgentStatus.IDLE for row in rows)
     assert all(row.task is None for row in rows)
 

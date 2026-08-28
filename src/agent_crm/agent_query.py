@@ -17,7 +17,14 @@ from .enums import (
     HuntResourceKind,
     ResearchFindingKind,
 )
-from .models import CommentPerson, ContactProfile, ContactVerification, HuntResource, ResearchFinding
+from .models import (
+    CommentPerson,
+    ContactProfile,
+    ContactVerification,
+    EngagementThread,
+    HuntResource,
+    ResearchFinding,
+)
 from .pipeline_leads import list_pipeline_leads
 from .schemas import (
     AgentCatalogOut,
@@ -26,6 +33,7 @@ from .schemas import (
     AgentSearchOut,
     CommentPersonOut,
     ContactProfileOut,
+    EngagementThreadOut,
     HuntResourceOut,
     ResearchFindingOut,
 )
@@ -46,6 +54,7 @@ def agent_catalog() -> AgentCatalogOut:
             "findings",
             "comment-people",
             "pipeline-leads",
+            "engagement-threads",
         ],
         brands=[member.value for member in Brand],
         audiences=[member.value for member in ContactAudience],
@@ -301,6 +310,37 @@ def query_pipeline_leads(
     return _page(page, total=total, offset=offset, limit=limit)
 
 
+def query_engagement_threads(
+    *,
+    q: str | None = None,
+    brand: Brand | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> AgentPageOut:
+    with session_scope() as session:
+        stmt = select(EngagementThread).order_by(
+            EngagementThread.popularity_score.desc(),
+            EngagementThread.updated_at.desc(),
+        )
+        count_stmt = select(func.count()).select_from(EngagementThread)
+        if brand is not None:
+            stmt = stmt.where(EngagementThread.brand == brand)
+            count_stmt = count_stmt.where(EngagementThread.brand == brand)
+        if q:
+            needle = q.strip()
+            clause = or_(
+                _contains(EngagementThread.url, needle),
+                _contains(EngagementThread.title, needle),
+                _contains(EngagementThread.excerpt, needle),
+            )
+            stmt = stmt.where(clause)
+            count_stmt = count_stmt.where(clause)
+        total = int(session.scalar(count_stmt) or 0)
+        rows = list(session.scalars(stmt.offset(offset).limit(limit)))
+        items = [EngagementThreadOut.model_validate(row) for row in rows]
+        return _page(items, total=total, offset=offset, limit=limit)
+
+
 def agent_search(q: str, *, per_collection: int = 10) -> AgentSearchOut:
     needle = q.strip()
     if not needle:
@@ -355,6 +395,19 @@ def agent_search(q: str, *, per_collection: int = 10) -> AgentSearchOut:
                 id=item.id,
                 title=item.display_name or item.handle,
                 url=item.profile_url,
+                brand=item.brand,
+            )
+        )
+
+    threads = query_engagement_threads(q=needle, limit=per_collection)
+    for item in threads.items:
+        assert isinstance(item, EngagementThreadOut)
+        hits.append(
+            AgentSearchHitOut(
+                collection="engagement-threads",
+                id=item.id,
+                title=item.title or item.url,
+                url=item.url,
                 brand=item.brand,
             )
         )

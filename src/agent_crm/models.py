@@ -42,6 +42,8 @@ from .enums import (
     ContactEmailKind,
     ContactKind,
     ContactVerificationStatus,
+    EngagementDraftStatus,
+    EngagementThreadStatus,
     HuntQueryStatus,
     HuntResourceKind,
     ImprovementNoteKind,
@@ -295,6 +297,85 @@ class HuntResource(Base, TimestampMixin):
     )
     hit_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    engagement_score: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, index=True
+    )
+    last_engagement_scan: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    next_engagement_scan: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+
+class EngagementThread(Base, TimestampMixin):
+    """A popular post/thread on a catalogued forum, community, or social venue."""
+
+    __tablename__ = "engagement_threads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True, index=True)
+    hunt_resource_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hunt_resources.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    brand: Mapped[Brand] = mapped_column(
+        existing_brand_enum(), nullable=False, index=True
+    )
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    platform: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    venue_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    popularity_score: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, index=True
+    )
+    comment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trend_keywords: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    found_via_query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[EngagementThreadStatus] = mapped_column(
+        str_enum(EngagementThreadStatus),
+        default=EngagementThreadStatus.CATALOGED,
+        nullable=False,
+        index=True,
+    )
+    last_scanned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    next_scan_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+    drafts: Mapped[list[EngagementDraft]] = relationship(
+        back_populates="thread", cascade="all, delete-orphan"
+    )
+
+
+class EngagementDraft(Base, TimestampMixin):
+    """A product-related comment draft. Discovery only — never posted by this stack."""
+
+    __tablename__ = "engagement_drafts"
+    __table_args__ = (
+        UniqueConstraint("thread_id", "brand", name="uq_engagement_drafts_thread_brand"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    thread_id: Mapped[int] = mapped_column(
+        ForeignKey("engagement_threads.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    brand: Mapped[Brand] = mapped_column(
+        existing_brand_enum(), nullable=False, index=True
+    )
+    draft_text: Mapped[str] = mapped_column(Text, nullable=False)
+    product_angle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[EngagementDraftStatus] = mapped_column(
+        str_enum(EngagementDraftStatus),
+        default=EngagementDraftStatus.DRAFT,
+        nullable=False,
+        index=True,
+    )
+
+    thread: Mapped[EngagementThread] = relationship(back_populates="drafts")
 
 
 class ResearchFinding(Base):

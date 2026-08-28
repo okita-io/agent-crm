@@ -11,6 +11,7 @@ def test_midnightsatin_seed_pack_includes_ai_generated_and_influencer_terms() ->
     combined = " ".join(seeds).lower()
     assert "ai generated" in combined
     assert "influencer" in combined
+    assert "high traffic" in combined or "high engagement" in combined
 
 
 def test_tactic_studio_seed_pack_non_empty() -> None:

@@ -359,13 +359,17 @@ def test_community_and_person_feedback_enqueue(loop_db, monkeypatch):
 
     feedback = store.list_feedback_queries(brand=Brand.MIDNIGHTSATIN, limit=100)
     community_queries = [row for row in feedback if row.origin.startswith("community:")]
+    engagement_queries = [row for row in feedback if row.origin.startswith("engagement:")]
     person_queries = [row for row in feedback if row.origin.startswith("person:")]
 
     assert result.community_terms_enqueued >= 2
+    assert result.engagement_terms_enqueued >= 2
     assert result.person_terms_enqueued >= 3
     assert len(community_queries) >= 2
+    assert len(engagement_queries) >= 2
     assert len(person_queries) >= 3
     assert any("site:reddit.com/r/RomanceBooks" in row.query for row in community_queries)
+    assert any("hot" in row.query for row in engagement_queries)
     assert any("Ada Vega" in row.query for row in person_queries)
     assert all("@" not in row.query for row in feedback)
     assert all("invented" not in row.query.lower() for row in feedback)

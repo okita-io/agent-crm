@@ -18,6 +18,8 @@ from .enums import (
     ContactAudience,
     ContactKind,
     ContactVerificationStatus,
+    EngagementDraftStatus,
+    EngagementThreadStatus,
     HuntResourceKind,
     ImprovementNoteKind,
     ImprovementNoteSeverity,
@@ -129,6 +131,7 @@ class HuntLoopResultOut(BaseModel):
     community_terms_enqueued: int = 0
     person_terms_enqueued: int = 0
     handle_terms_enqueued: int = 0
+    engagement_terms_enqueued: int = 0
     stop_reason: str
 
 
@@ -144,6 +147,7 @@ class HuntResourceOut(ORMModel):
     last_seen: datetime
     hit_count: int
     notes: str | None
+    engagement_score: int = 0
 
 
 class HuntQueueStatusOut(BaseModel):
@@ -204,6 +208,56 @@ class HuntStatusOut(BaseModel):
     agent_jobs: dict | None = None
     recently_completed: list[HuntCompletedQueryOut]
     spark: HuntSparkSummaryOut
+
+
+class EngagementLoopRequest(BaseModel):
+    """Rescan catalogued forums and draft comment replies (never posts)."""
+
+    brand: Brand | None = None
+    max_venues: int = Field(default=10, ge=1, le=50)
+    max_pages_per_venue: int = Field(default=15, ge=1, le=50)
+    max_minutes: int = Field(default=45, ge=0, le=240)
+    summarize: bool = True
+
+
+class EngagementLoopResultOut(BaseModel):
+    venues_scanned: int
+    threads_cataloged: int
+    drafts_written: int
+    pages_scraped: int
+    errors: list[str]
+    stop_reason: str
+
+
+class EngagementThreadOut(ORMModel):
+    id: int
+    url: str
+    hunt_resource_id: int | None = None
+    brand: Brand
+    title: str | None
+    platform: str | None
+    venue_url: str | None
+    popularity_score: int
+    comment_count: int | None
+    trend_keywords: list | None
+    excerpt: str | None
+    found_via_query: str | None
+    status: EngagementThreadStatus
+    last_scanned_at: datetime | None
+    next_scan_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class EngagementDraftOut(ORMModel):
+    id: int
+    thread_id: int
+    brand: Brand
+    draft_text: str
+    product_angle: str | None
+    status: EngagementDraftStatus
+    created_at: datetime
+    updated_at: datetime
 
 
 class ResearchRequest(BaseModel):

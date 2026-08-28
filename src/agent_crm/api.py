@@ -27,13 +27,14 @@ from .agent_query import (
     get_website,
     query_comment_people,
     query_contacts,
+    query_engagement_threads,
     query_findings,
     query_pipeline_leads,
     query_websites,
 )
 from .auth import require_api_token, require_known_agent
-from .config import get_settings
 from .comment_people_store import count_comment_people, list_comment_people
+from .config import get_settings
 from .contact_store import (
     backfill_contact_enrichment,
     backfill_contact_quality,
@@ -42,13 +43,22 @@ from .contact_store import (
     list_contact_profiles,
 )
 from .db import database_kind, init_db
-from .enums import Brand, ContactAudience, ImprovementNoteStatus, HuntResourceKind, ResearchFindingKind, Stage
+from .engagement_loop import EngagementBudget, run_engagement_loop
+from .engagement_store import list_drafts, list_threads
+from .enums import (
+    Brand,
+    ContactAudience,
+    HuntResourceKind,
+    ImprovementNoteStatus,
+    ResearchFindingKind,
+    Stage,
+)
 from .errors import InvalidStageTransition, NotFoundError
 from .heartbeat import list_heartbeats, record_heartbeat
-from .improvement_store import list_improvement_notes
 from .hunt_loop import HuntBudget, run_hunt_loop
 from .hunt_status import build_hunt_status
 from .hunt_store import HuntStore
+from .improvement_store import list_improvement_notes
 from .outbound_hunter import run_hunt
 from .pipeline import PipelineManager
 from .presence import build_observer_rows, fetch_spark_queue_health, spark_slot_summary
@@ -62,23 +72,27 @@ from .schemas import (
     AgentSearchOut,
     BatchVerifyRequest,
     BatchVerifyResult,
+    CommentPersonOut,
     ContactBackfillRequest,
     ContactBackfillResultOut,
     ContactEnrichRequest,
     ContactEnrichResultOut,
-    ContactVerificationOut,
     ContactProfileOut,
     ContactProfilesSummaryOut,
-    CommentPersonOut,
+    ContactVerificationOut,
+    EngagementDraftOut,
+    EngagementLoopRequest,
+    EngagementLoopResultOut,
+    EngagementThreadOut,
     HeartbeatIn,
     HeartbeatOut,
     HuntLoopRequest,
     HuntLoopResultOut,
     HuntQueueStatusOut,
-    HuntStatusOut,
     HuntRequest,
     HuntResourceOut,
     HuntResult,
+    HuntStatusOut,
     ImprovementNoteOut,
     LeadCreate,
     LeadOut,
@@ -187,6 +201,7 @@ def hunt_loop(payload: HuntLoopRequest) -> HuntLoopResultOut:
         community_terms_enqueued=result.community_terms_enqueued,
         person_terms_enqueued=result.person_terms_enqueued,
         handle_terms_enqueued=result.handle_terms_enqueued,
+        engagement_terms_enqueued=result.engagement_terms_enqueued,
         stop_reason=result.stop_reason,
     )
 
@@ -227,6 +242,50 @@ def research_findings(
     limit: int = 200,
 ) -> list[ResearchFindingOut]:
     return list_findings(brand=brand, kind=kind, limit=limit)
+
+
+# ---- agent engagement (comment drafts; never posts) -----------------------
+
+
+@app.post("/engagement/loop", response_model=EngagementLoopResultOut, tags=["engagement"])
+def engagement_loop(payload: EngagementLoopRequest) -> EngagementLoopResultOut:
+    """Rescan catalogued forums and draft replies. This stack never posts."""
+    budget = EngagementBudget(
+        max_venues=payload.max_venues,
+        max_pages_per_venue=payload.max_pages_per_venue,
+        max_minutes=payload.max_minutes,
+    )
+    result = run_engagement_loop(
+        brand=payload.brand,
+        budget=budget,
+        summarize=payload.summarize,
+    )
+    return EngagementLoopResultOut(
+        venues_scanned=result.venues_scanned,
+        threads_cataloged=result.threads_cataloged,
+        drafts_written=result.drafts_written,
+        pages_scraped=result.pages_scraped,
+        errors=result.errors,
+        stop_reason=result.stop_reason,
+    )
+
+
+@app.get("/engagement/threads", response_model=list[EngagementThreadOut], tags=["engagement"])
+def engagement_threads(
+    brand: Brand | None = None,
+    limit: int = 200,
+) -> list[EngagementThreadOut]:
+    rows = list_threads(brand=brand, limit=limit)
+    return [EngagementThreadOut.model_validate(row) for row in rows]
+
+
+@app.get("/engagement/drafts", response_model=list[EngagementDraftOut], tags=["engagement"])
+def engagement_drafts(
+    brand: Brand | None = None,
+    limit: int = 200,
+) -> list[EngagementDraftOut]:
+    rows = list_drafts(brand=brand, limit=limit)
+    return [EngagementDraftOut.model_validate(row) for row in rows]
 
 
 # ---- contacts --------------------------------------------------------------
@@ -616,3 +675,13 @@ def hermes_pipeline_leads(
         offset=offset,
         limit=limit,
     )
+
+
+@app.get("/agent/engagement-threads", response_model=AgentPageOut, tags=["hermes"])
+def hermes_engagement_threads(
+    q: str | None = None,
+    brand: Brand | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentPageOut:
+    return query_engagement_threads(q=q, brand=brand, offset=offset, limit=limit)
