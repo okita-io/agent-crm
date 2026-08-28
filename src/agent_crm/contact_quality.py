@@ -140,8 +140,9 @@ ROLE_INBOX_LOCAL_PARTS: frozenset[str] = frozenset(
     }
 )
 
+# Image/document suffixes only — never real public TLDs (e.g. .zip is a gTLD).
 _FILENAME_EMAIL_DOMAIN_RE = re.compile(
-    r"\.(?:png|jpe?g|gif|svg|webp|ico|bmp|tiff?|pdf|docx?|xlsx?|zip|mp[34]|mov|avi)$",
+    r"\.(?:png|jpe?g|gif|svg|webp|ico|bmp|tiff?|pdf|docx?|xlsx?)$",
     re.IGNORECASE,
 )
 
