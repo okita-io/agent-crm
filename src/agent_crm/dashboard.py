@@ -874,6 +874,25 @@ def _render_engagement_tab() -> None:
         )
 
 
+def _seo_document_label(row) -> str:
+    brand = row.brand.value if getattr(row, "brand", None) is not None else ""
+    domain = getattr(row, "domain", None) or ""
+    title = (row.title or "").strip() or f"#{row.id}"
+    return f"{brand} · {domain} · {title}"
+
+
+def _pick_seo_document(rows: list, *, label: str, key: str):
+    """Pick a review/plan by id. Keep this outside expanders — dropdowns clip inside them."""
+    labels = {row.id: _seo_document_label(row) for row in rows}
+    chosen_id = st.selectbox(
+        label,
+        options=list(labels),
+        format_func=lambda pid: labels[pid],
+        key=key,
+    )
+    return next(row for row in rows if row.id == chosen_id)
+
+
 def _render_seo_tab() -> None:
     st.subheader("SEO documents")
     st.caption(
@@ -933,6 +952,7 @@ def _render_seo_tab() -> None:
             pd.DataFrame(
                 [
                     {
+                        "id": row.id,
                         "score": row.score,
                         "status": row.status.value,
                         "kind": row.kind.value,
@@ -948,10 +968,13 @@ def _render_seo_tab() -> None:
             use_container_width=True,
             hide_index=True,
         )
-        with st.expander("Open a review document"):
-            options = {f"#{row.id} {row.title}": row for row in reviews}
-            chosen = st.selectbox("Review", options=list(options), key="seo_review_pick")
-            row = options[chosen]
+        row = _pick_seo_document(
+            reviews,
+            label="Which review to open",
+            key=f"seo_review_pick_{brand_filter}",
+        )
+        with st.expander(f"Review — {row.domain}", expanded=True):
+            st.caption(row.url)
             st.markdown(row.body)
 
     st.subheader("Plans (human implementation)")
@@ -966,6 +989,7 @@ def _render_seo_tab() -> None:
             pd.DataFrame(
                 [
                     {
+                        "id": row.id,
                         "status": row.status.value,
                         "kind": row.kind.value,
                         "brand": row.brand.value,
@@ -982,10 +1006,13 @@ def _render_seo_tab() -> None:
             use_container_width=True,
             hide_index=True,
         )
-        with st.expander("Open a plan document"):
-            options = {f"#{row.id} {row.title}": row for row in plans}
-            chosen = st.selectbox("Plan", options=list(options), key="seo_plan_pick")
-            row = options[chosen]
+        row = _pick_seo_document(
+            plans,
+            label="Which plan to open",
+            key=f"seo_plan_pick_{brand_filter}",
+        )
+        with st.expander(f"Plan — {row.domain}", expanded=True):
+            st.caption(row.url)
             st.markdown(row.body)
 
 

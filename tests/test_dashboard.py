@@ -17,3 +17,20 @@ def test_dashboard_disables_streamlit_stale_fade() -> None:
     assert fade_at > config_at
     assert '"SEO"' in source
     assert "_render_seo_tab" in source
+    assert "_pick_seo_document" in source
+
+
+def test_seo_document_pickers_are_outside_expanders() -> None:
+    """Selectboxes inside expanders clip their dropdowns; pickers must stay visible."""
+    source = DASHBOARD_PATH.read_text(encoding="utf-8")
+    seo = source.split("def _render_seo_tab")[1].split("def _render_contacts_tab")[0]
+    assert 'expander("Open a plan document")' not in seo
+    assert 'expander("Open a review document")' not in seo
+    assert 'label="Which plan to open"' in seo
+    assert 'label="Which review to open"' in seo
+    plan_pick = seo.index('label="Which plan to open"')
+    plan_expand = seo.index("Plan —", plan_pick)
+    review_pick = seo.index('label="Which review to open"')
+    review_expand = seo.index("Review —", review_pick)
+    assert plan_pick < plan_expand
+    assert review_pick < review_expand
