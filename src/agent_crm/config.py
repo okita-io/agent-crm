@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     engagement_draft_threshold: int = 55
     engagement_max_branch_terms: int = 8
 
+    # SEO documents (reviews + plans for humans; never applied to live sites)
+    seo_max_targets_per_run: int = 8
+    seo_max_pages_per_target: int = 4
+    seo_max_minutes_default: int = 45
+    seo_review_interval_hours: int = 168
+    seo_search_result_limit: int = 15
+
     # Research agent defaults
     research_max_queries_default: int = 20
     research_max_pages_per_run: int = 200

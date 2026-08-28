@@ -30,6 +30,11 @@ from .enums import (
     LeadStatus,
     Priority,
     ResearchFindingKind,
+    SeoPlanKind,
+    SeoPlanStatus,
+    SeoReviewKind,
+    SeoReviewStatus,
+    SeoTargetRole,
     Stage,
 )
 
@@ -257,6 +262,75 @@ class EngagementDraftOut(ORMModel):
     draft_text: str
     product_angle: str | None
     status: EngagementDraftStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class SeoLoopRequest(BaseModel):
+    """Write SEO review and plan documents (never implements on live sites)."""
+
+    brand: Brand | None = None
+    max_targets: int = Field(default=8, ge=1, le=40)
+    max_pages_per_target: int = Field(default=4, ge=1, le=20)
+    max_minutes: int = Field(default=45, ge=0, le=240)
+    summarize: bool = True
+
+
+class SeoLoopResultOut(BaseModel):
+    targets_processed: int
+    reviews_written: int
+    plans_written: int
+    pages_scraped: int
+    errors: list[str]
+    stop_reason: str
+
+
+class SeoTargetOut(ORMModel):
+    id: int
+    url: str
+    domain: str
+    brand: Brand
+    role: SeoTargetRole
+    title: str | None
+    notes: str | None
+    last_reviewed_at: datetime | None
+    next_review_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SeoReviewOut(ORMModel):
+    id: int
+    target_id: int | None = None
+    url: str
+    domain: str
+    brand: Brand
+    kind: SeoReviewKind
+    title: str
+    score: int | None
+    one_thing: str | None
+    body: str
+    issues: list | None
+    evidence: dict | None
+    source_query: str | None
+    status: SeoReviewStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class SeoPlanOut(ORMModel):
+    id: int
+    target_id: int | None = None
+    review_id: int | None = None
+    url: str
+    domain: str
+    brand: Brand
+    kind: SeoPlanKind
+    title: str
+    one_thing: str | None
+    body: str
+    tasks: list | None
+    status: SeoPlanStatus
     created_at: datetime
     updated_at: datetime
 
@@ -544,6 +618,8 @@ class AgentCatalogOut(BaseModel):
     resource_kinds: list[str]
     finding_kinds: list[str]
     email_kinds: list[str]
+    seo_review_kinds: list[str] = []
+    seo_plan_kinds: list[str] = []
 
 
 class AgentPageOut(BaseModel):

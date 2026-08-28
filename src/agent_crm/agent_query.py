@@ -16,6 +16,8 @@ from .enums import (
     ContactVerificationStatus,
     HuntResourceKind,
     ResearchFindingKind,
+    SeoPlanKind,
+    SeoReviewKind,
 )
 from .models import (
     CommentPerson,
@@ -24,6 +26,8 @@ from .models import (
     EngagementThread,
     HuntResource,
     ResearchFinding,
+    SeoPlan,
+    SeoReview,
 )
 from .pipeline_leads import list_pipeline_leads
 from .schemas import (
@@ -36,6 +40,8 @@ from .schemas import (
     EngagementThreadOut,
     HuntResourceOut,
     ResearchFindingOut,
+    SeoPlanOut,
+    SeoReviewOut,
 )
 
 
@@ -55,12 +61,16 @@ def agent_catalog() -> AgentCatalogOut:
             "comment-people",
             "pipeline-leads",
             "engagement-threads",
+            "seo-reviews",
+            "seo-plans",
         ],
         brands=[member.value for member in Brand],
         audiences=[member.value for member in ContactAudience],
         resource_kinds=[member.value for member in HuntResourceKind],
         finding_kinds=[member.value for member in ResearchFindingKind],
         email_kinds=[member.value for member in ContactEmailKind],
+        seo_review_kinds=[member.value for member in SeoReviewKind],
+        seo_plan_kinds=[member.value for member in SeoPlanKind],
     )
 
 
@@ -341,6 +351,74 @@ def query_engagement_threads(
         return _page(items, total=total, offset=offset, limit=limit)
 
 
+def query_seo_reviews(
+    *,
+    q: str | None = None,
+    brand: Brand | None = None,
+    kind: SeoReviewKind | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> AgentPageOut:
+    with session_scope() as session:
+        stmt = select(SeoReview).order_by(SeoReview.updated_at.desc())
+        count_stmt = select(func.count()).select_from(SeoReview)
+        if brand is not None:
+            stmt = stmt.where(SeoReview.brand == brand)
+            count_stmt = count_stmt.where(SeoReview.brand == brand)
+        if kind is not None:
+            stmt = stmt.where(SeoReview.kind == kind)
+            count_stmt = count_stmt.where(SeoReview.kind == kind)
+        if q:
+            needle = q.strip()
+            clause = or_(
+                _contains(SeoReview.title, needle),
+                _contains(SeoReview.body, needle),
+                _contains(SeoReview.one_thing, needle),
+                _contains(SeoReview.domain, needle),
+                _contains(SeoReview.url, needle),
+            )
+            stmt = stmt.where(clause)
+            count_stmt = count_stmt.where(clause)
+        total = int(session.scalar(count_stmt) or 0)
+        rows = list(session.scalars(stmt.offset(offset).limit(limit)))
+        items = [SeoReviewOut.model_validate(row) for row in rows]
+        return _page(items, total=total, offset=offset, limit=limit)
+
+
+def query_seo_plans(
+    *,
+    q: str | None = None,
+    brand: Brand | None = None,
+    kind: SeoPlanKind | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> AgentPageOut:
+    with session_scope() as session:
+        stmt = select(SeoPlan).order_by(SeoPlan.updated_at.desc())
+        count_stmt = select(func.count()).select_from(SeoPlan)
+        if brand is not None:
+            stmt = stmt.where(SeoPlan.brand == brand)
+            count_stmt = count_stmt.where(SeoPlan.brand == brand)
+        if kind is not None:
+            stmt = stmt.where(SeoPlan.kind == kind)
+            count_stmt = count_stmt.where(SeoPlan.kind == kind)
+        if q:
+            needle = q.strip()
+            clause = or_(
+                _contains(SeoPlan.title, needle),
+                _contains(SeoPlan.body, needle),
+                _contains(SeoPlan.one_thing, needle),
+                _contains(SeoPlan.domain, needle),
+                _contains(SeoPlan.url, needle),
+            )
+            stmt = stmt.where(clause)
+            count_stmt = count_stmt.where(clause)
+        total = int(session.scalar(count_stmt) or 0)
+        rows = list(session.scalars(stmt.offset(offset).limit(limit)))
+        items = [SeoPlanOut.model_validate(row) for row in rows]
+        return _page(items, total=total, offset=offset, limit=limit)
+
+
 def agent_search(q: str, *, per_collection: int = 10) -> AgentSearchOut:
     needle = q.strip()
     if not needle:
@@ -407,6 +485,32 @@ def agent_search(q: str, *, per_collection: int = 10) -> AgentSearchOut:
                 collection="engagement-threads",
                 id=item.id,
                 title=item.title or item.url,
+                url=item.url,
+                brand=item.brand,
+            )
+        )
+
+    reviews = query_seo_reviews(q=needle, limit=per_collection)
+    for item in reviews.items:
+        assert isinstance(item, SeoReviewOut)
+        hits.append(
+            AgentSearchHitOut(
+                collection="seo-reviews",
+                id=item.id,
+                title=item.title,
+                url=item.url,
+                brand=item.brand,
+            )
+        )
+
+    plans = query_seo_plans(q=needle, limit=per_collection)
+    for item in plans.items:
+        assert isinstance(item, SeoPlanOut)
+        hits.append(
+            AgentSearchHitOut(
+                collection="seo-plans",
+                id=item.id,
+                title=item.title,
                 url=item.url,
                 brand=item.brand,
             )

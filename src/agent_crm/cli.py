@@ -249,6 +249,39 @@ def _cmd_engagement_loop(args: argparse.Namespace) -> int:
     return 0 if result.venues_scanned or result.threads_cataloged or not result.errors else 1
 
 
+def _cmd_seo_loop(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .enums import Brand
+    from .seo_loop import SeoBudget, run_seo_loop
+
+    init_db()
+    brand = Brand(args.brand) if args.brand else None
+    budget = SeoBudget(
+        max_targets=args.max_targets,
+        max_pages_per_target=args.max_pages_per_target,
+        max_minutes=args.max_minutes,
+    )
+    result = run_seo_loop(
+        brand=brand,
+        budget=budget,
+        summarize=not args.no_summarize,
+    )
+    print(
+        json.dumps(
+            {
+                "targets_processed": result.targets_processed,
+                "reviews_written": result.reviews_written,
+                "plans_written": result.plans_written,
+                "pages_scraped": result.pages_scraped,
+                "stop_reason": result.stop_reason,
+                "errors": result.errors,
+            },
+            indent=2,
+        )
+    )
+    return 0 if result.reviews_written or result.plans_written or not result.errors else 1
+
+
 def _cmd_contacts(args: argparse.Namespace) -> int:
     from .contact_store import (
         backfill_contact_enrichment,
@@ -326,7 +359,7 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="agent-crm", description="Agent CRM tools")
+    parser = argparse.ArgumentParser(prog="agent-crm", description="Agent CRM+SEO tools")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init-db", help="Create tables directly").set_defaults(
@@ -515,6 +548,40 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip Spark LLM comment drafts",
     )
     engagement_loop.set_defaults(func=_cmd_engagement_loop)
+
+    seo_loop = sub.add_parser(
+        "seo-loop",
+        help="Write SEO review and plan documents for brand sites (never implements)",
+    )
+    seo_loop.add_argument(
+        "--brand",
+        choices=["midnightsatin", "celestial-nexus", "heybuddy", "tactic-studio"],
+        help="Brand slug; omit to process all brands",
+    )
+    seo_loop.add_argument(
+        "--max-targets",
+        type=int,
+        default=8,
+        help="Max sites to write documents for this cycle",
+    )
+    seo_loop.add_argument(
+        "--max-pages-per-target",
+        type=int,
+        default=4,
+        help="Max pages scraped per site",
+    )
+    seo_loop.add_argument(
+        "--max-minutes",
+        type=int,
+        default=45,
+        help="Wall-clock budget in minutes (0 = unlimited)",
+    )
+    seo_loop.add_argument(
+        "--no-summarize",
+        action="store_true",
+        help="Skip Spark LLM document writing (heuristic markdown only)",
+    )
+    seo_loop.set_defaults(func=_cmd_seo_loop)
 
     contacts = sub.add_parser("contacts", help="List contact profiles extracted from scrapes")
     contacts_sub = contacts.add_subparsers(dest="contacts_command", required=True)

@@ -1,4 +1,4 @@
-# Local stack for Agent CRM milestone 1.
+# Local stack for Agent CRM+SEO.
 #
 # Default profile uses Postgres (matches the eventual NAS target) so the whole
 # machine runs the way it will in production. To run against the SQLite file
@@ -188,6 +188,38 @@ services:
       CRM_ENGAGEMENT_MAX_PAGES_PER_VENUE: "15"
       CRM_ENGAGEMENT_MAX_MINUTES_DEFAULT: "45"
       CRM_ENGAGEMENT_MAX_BRANCH_TERMS: "8"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+      spark-queue:
+        condition: service_started
+    restart: unless-stopped
+
+  seo-loop:
+    build: .
+    command:
+      - agent-crm
+      - seo-loop
+      - --max-targets
+      - "8"
+      - --max-pages-per-target
+      - "4"
+      - --max-minutes
+      - "45"
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
+      CRM_SEARXNG_URL: http://host.docker.internal:8080
+      CRM_FIRECRAWL_URL: http://host.docker.internal:3002
+      CRM_SEO_MAX_TARGETS_PER_RUN: "8"
+      CRM_SEO_MAX_PAGES_PER_TARGET: "4"
+      CRM_SEO_MAX_MINUTES_DEFAULT: "45"
+      CRM_SEO_REVIEW_INTERVAL_HOURS: "168"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

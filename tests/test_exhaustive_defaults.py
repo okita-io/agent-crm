@@ -37,6 +37,22 @@ def test_engagement_defaults() -> None:
     assert settings.engagement_draft_threshold == 55
 
 
+def test_seo_defaults() -> None:
+    settings = Settings()
+    assert settings.seo_max_targets_per_run == 8
+    assert settings.seo_max_pages_per_target == 4
+    assert settings.seo_max_minutes_default == 45
+    assert settings.seo_review_interval_hours == 168
+
+    from agent_crm.schemas import SeoLoopRequest
+
+    loop = SeoLoopRequest()
+    assert loop.max_targets == 8
+    assert loop.max_pages_per_target == 4
+    assert loop.max_minutes == 45
+    assert loop.summarize is True
+
+
 def test_research_defaults_are_exhaustive() -> None:
     settings = Settings()
     assert settings.research_search_result_limit == 50

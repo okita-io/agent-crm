@@ -226,6 +226,7 @@ class ImprovementSourceAgent(str, enum.Enum):
     HUNT_LOOP = "hunt-loop"
     RESEARCH_LOOP = "research-loop"
     ENGAGEMENT_LOOP = "engagement-loop"
+    SEO_LOOP = "seo-loop"
     LEAD_VERIFIER = "lead_verifier"
     SPARK_QUEUE = "spark-queue"
     ORCHESTRATOR = "orchestrator"
@@ -299,3 +300,66 @@ class TopicalRelevanceVerdict(str, enum.Enum):
     ON_TOPIC = "on_topic"
     OFF_TOPIC = "off_topic"
     UNCERTAIN = "uncertain"
+
+
+class SeoTargetRole(str, enum.Enum):
+    """How a site relates to the brand for SEO document work."""
+
+    OWNED = "owned"
+    COMPETITOR = "competitor"
+    PROSPECT = "prospect"
+
+
+class SeoQueryKind(str, enum.Enum):
+    """Queued SEO document job. The agent writes documents; it never patches sites."""
+
+    SITE_AUDIT = "site_audit"
+    COMPETITOR = "competitor"
+
+
+class SeoQueryStatus(str, enum.Enum):
+    """Lifecycle of a queued SEO job. Rows are never deleted."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class SeoReviewKind(str, enum.Enum):
+    """Kind of SEO review document."""
+
+    SITE_AUDIT = "site_audit"
+    COMPETITOR = "competitor"
+    KEYWORD = "keyword"
+    GEO = "geo"
+    PLAN_REVIEW = "plan_review"
+
+
+class SeoReviewStatus(str, enum.Enum):
+    """Human-review state for an SEO review document."""
+
+    DRAFT = "draft"
+    REVIEW = "review"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
+class SeoPlanKind(str, enum.Enum):
+    """Kind of SEO implementation plan (for humans to apply on the target site)."""
+
+    TECHNICAL = "technical"
+    CONTENT = "content"
+    KEYWORD = "keyword"
+    GEO = "geo"
+    ON_PAGE = "on_page"
+    MIXED = "mixed"
+
+
+class SeoPlanStatus(str, enum.Enum):
+    """Human-review state for an SEO plan. The agent never marks plans implemented."""
+
+    DRAFT = "draft"
+    REVIEW = "review"
+    APPROVED = "approved"
+    REJECTED = "rejected"

@@ -15,3 +15,5 @@ def test_dashboard_disables_streamlit_stale_fade() -> None:
     config_at = source.index("st.set_page_config", main_at)
     fade_at = source.index("_disable_stale_fade()", main_at)
     assert fade_at > config_at
+    assert '"SEO"' in source
+    assert "_render_seo_tab" in source

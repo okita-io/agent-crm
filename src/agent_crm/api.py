@@ -30,6 +30,8 @@ from .agent_query import (
     query_engagement_threads,
     query_findings,
     query_pipeline_leads,
+    query_seo_plans,
+    query_seo_reviews,
     query_websites,
 )
 from .auth import require_api_token, require_known_agent
@@ -51,6 +53,11 @@ from .enums import (
     HuntResourceKind,
     ImprovementNoteStatus,
     ResearchFindingKind,
+    SeoPlanKind,
+    SeoPlanStatus,
+    SeoReviewKind,
+    SeoReviewStatus,
+    SeoTargetRole,
     Stage,
 )
 from .errors import InvalidStageTransition, NotFoundError
@@ -100,16 +107,23 @@ from .schemas import (
     ResearchFindingOut,
     ResearchRequest,
     ResearchResult,
+    SeoLoopRequest,
+    SeoLoopResultOut,
+    SeoPlanOut,
+    SeoReviewOut,
+    SeoTargetOut,
     VerifyRawRequest,
     VerifyRawResult,
 )
+from .seo_loop import SeoBudget, run_seo_loop
+from .seo_store import list_plans, list_reviews, list_targets
 from .tooling import CRMToolkit
 from .verifier import list_verifications, verify_batch_unverified, verify_lead, verify_raw
 
 app = FastAPI(
-    title="Agent CRM",
+    title="Agent CRM+SEO",
     version=__version__,
-    description="Local, agent-driven CRM. Milestone 1: store + intake + pipeline.",
+    description="Local, agent-driven CRM+SEO. Collection CRM plus SEO review and plan documents (never applied to live sites).",
     dependencies=[Depends(require_api_token)],
 )
 
@@ -287,6 +301,64 @@ def engagement_drafts(
 ) -> list[EngagementDraftOut]:
     rows = list_drafts(brand=brand, limit=limit)
     return [EngagementDraftOut.model_validate(row) for row in rows]
+
+
+# ---- SEO documents (reviews + plans; never implemented on live sites) ------
+
+
+@app.post("/seo/loop", response_model=SeoLoopResultOut, tags=["seo"])
+def seo_loop(payload: SeoLoopRequest) -> SeoLoopResultOut:
+    """Scrape target sites and write SEO review/plan documents. Never implements."""
+    budget = SeoBudget(
+        max_targets=payload.max_targets,
+        max_pages_per_target=payload.max_pages_per_target,
+        max_minutes=payload.max_minutes,
+    )
+    result = run_seo_loop(
+        brand=payload.brand,
+        budget=budget,
+        summarize=payload.summarize,
+    )
+    return SeoLoopResultOut(
+        targets_processed=result.targets_processed,
+        reviews_written=result.reviews_written,
+        plans_written=result.plans_written,
+        pages_scraped=result.pages_scraped,
+        errors=result.errors,
+        stop_reason=result.stop_reason,
+    )
+
+
+@app.get("/seo/targets", response_model=list[SeoTargetOut], tags=["seo"])
+def seo_targets(
+    brand: Brand | None = None,
+    role: SeoTargetRole | None = None,
+    limit: int = 200,
+) -> list[SeoTargetOut]:
+    rows = list_targets(brand=brand, role=role, limit=limit)
+    return [SeoTargetOut.model_validate(row) for row in rows]
+
+
+@app.get("/seo/reviews", response_model=list[SeoReviewOut], tags=["seo"])
+def seo_reviews(
+    brand: Brand | None = None,
+    kind: SeoReviewKind | None = None,
+    status: SeoReviewStatus | None = None,
+    limit: int = 200,
+) -> list[SeoReviewOut]:
+    rows = list_reviews(brand=brand, kind=kind, status=status, limit=limit)
+    return [SeoReviewOut.model_validate(row) for row in rows]
+
+
+@app.get("/seo/plans", response_model=list[SeoPlanOut], tags=["seo"])
+def seo_plans(
+    brand: Brand | None = None,
+    kind: SeoPlanKind | None = None,
+    status: SeoPlanStatus | None = None,
+    limit: int = 200,
+) -> list[SeoPlanOut]:
+    rows = list_plans(brand=brand, kind=kind, status=status, limit=limit)
+    return [SeoPlanOut.model_validate(row) for row in rows]
 
 
 # ---- contacts --------------------------------------------------------------
@@ -690,3 +762,25 @@ def hermes_engagement_threads(
     limit: int = Query(50, ge=1, le=200),
 ) -> AgentPageOut:
     return query_engagement_threads(q=q, brand=brand, offset=offset, limit=limit)
+
+
+@app.get("/agent/seo-reviews", response_model=AgentPageOut, tags=["hermes"])
+def hermes_seo_reviews(
+    q: str | None = None,
+    brand: Brand | None = None,
+    kind: SeoReviewKind | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentPageOut:
+    return query_seo_reviews(q=q, brand=brand, kind=kind, offset=offset, limit=limit)
+
+
+@app.get("/agent/seo-plans", response_model=AgentPageOut, tags=["hermes"])
+def hermes_seo_plans(
+    q: str | None = None,
+    brand: Brand | None = None,
+    kind: SeoPlanKind | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentPageOut:
+    return query_seo_plans(q=q, brand=brand, kind=kind, offset=offset, limit=limit)

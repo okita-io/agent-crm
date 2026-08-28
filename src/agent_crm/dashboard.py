@@ -46,6 +46,15 @@ from agent_crm.presence import (
 )
 from agent_crm.research_query_store import ResearchQueryStore
 from agent_crm.research_store import list_findings
+from agent_crm.seo_query_store import SeoQueryStore
+from agent_crm.seo_store import (
+    count_plans,
+    count_reviews,
+    count_targets,
+    list_plans,
+    list_reviews,
+    list_targets,
+)
 from agent_crm.token_usage_store import load_token_usage_snapshot
 from agent_crm.tooling import CRMToolkit
 from agent_crm.verifier import list_verifications
@@ -865,6 +874,120 @@ def _render_engagement_tab() -> None:
         )
 
 
+def _render_seo_tab() -> None:
+    st.subheader("SEO documents")
+    st.caption(
+        "Reviews and implementation plans for ranch brand sites and named competitors. "
+        "The agent scrapes with Firecrawl and writes markdown documents. "
+        "It never patches live pages — humans apply the plan on the target site."
+    )
+
+    queue = SeoQueryStore().queue_status()
+    brand_filter = st.selectbox(
+        "Brand filter",
+        options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
+        key="seo_brand",
+    )
+    brand = None if brand_filter == "all" else Brand(brand_filter)
+
+    qcols = st.columns(4)
+    qcols[0].metric("Queued jobs (total)", queue.get("total", 0))
+    qcols[1].metric("Pending", queue.get("pending", 0))
+    qcols[2].metric("Reviews", count_reviews(brand=brand))
+    qcols[3].metric("Plans", count_plans(brand=brand))
+    st.caption(f"Targets catalogued: {count_targets(brand=brand)}")
+
+    st.subheader("Targets")
+    targets = list_targets(brand=brand, limit=200)
+    if not targets:
+        st.info(
+            "No SEO targets yet. `agent-crm seo-loop` seeds owned sites and named competitors."
+        )
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "role": row.role.value,
+                        "brand": row.brand.value,
+                        "domain": row.domain,
+                        "title": row.title,
+                        "url": row.url,
+                        "last_reviewed": row.last_reviewed_at,
+                        "next_review": row.next_review_at,
+                    }
+                    for row in targets
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.subheader("Reviews")
+    reviews = list_reviews(brand=brand, limit=200)
+    if not reviews:
+        st.info("No reviews yet. Run `agent-crm seo-loop` or POST /seo/loop.")
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "score": row.score,
+                        "status": row.status.value,
+                        "kind": row.kind.value,
+                        "brand": row.brand.value,
+                        "title": row.title,
+                        "one_thing": (row.one_thing or "")[:240],
+                        "url": row.url,
+                        "updated": row.updated_at,
+                    }
+                    for row in reviews
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        with st.expander("Open a review document"):
+            options = {f"#{row.id} {row.title}": row for row in reviews}
+            chosen = st.selectbox("Review", options=list(options), key="seo_review_pick")
+            row = options[chosen]
+            st.markdown(row.body)
+
+    st.subheader("Plans (human implementation)")
+    plans = list_plans(brand=brand, limit=200)
+    if not plans:
+        st.info(
+            "No plans yet. Owned-site audits write a plan after the review. "
+            "Competitor reviews do not get plans."
+        )
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "status": row.status.value,
+                        "kind": row.kind.value,
+                        "brand": row.brand.value,
+                        "title": row.title,
+                        "one_thing": (row.one_thing or "")[:240],
+                        "tasks": len(row.tasks or []),
+                        "url": row.url,
+                        "review_id": row.review_id,
+                        "updated": row.updated_at,
+                    }
+                    for row in plans
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        with st.expander("Open a plan document"):
+            options = {f"#{row.id} {row.title}": row for row in plans}
+            chosen = st.selectbox("Plan", options=list(options), key="seo_plan_pick")
+            row = options[chosen]
+            st.markdown(row.body)
+
+
 def _render_contacts_tab() -> None:
     st.subheader("Contact profiles")
     st.caption(
@@ -1216,7 +1339,7 @@ def _require_dashboard_access() -> bool:
         return True
     if st.session_state.get("dashboard_unlocked") is True:
         return True
-    st.title("Agent CRM")
+    st.title("Agent CRM+SEO")
     st.caption("This dashboard is password-protected.")
     entered = st.text_input("Password", type="password", key="dashboard_password_input")
     if st.button("Unlock", type="primary"):
@@ -1228,7 +1351,7 @@ def _require_dashboard_access() -> bool:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Agent CRM", layout="wide")
+    st.set_page_config(page_title="Agent CRM+SEO", layout="wide")
     _disable_stale_fade()
     init_db()
     if not _require_dashboard_access():
@@ -1237,16 +1360,17 @@ def main() -> None:
     live_seconds = _observer_live_refresh_seconds()
     refresh_seconds = _observer_refresh_seconds()
 
-    st.title("Agent CRM")
+    st.title("Agent CRM+SEO")
     st.caption(f"Store: {database_kind()}")
 
-    observer_tab, pipeline_tab, hunter_tab, research_tab, engagement_tab, contacts_tab, verifier_tab, improvement_tab = st.tabs(
+    observer_tab, pipeline_tab, hunter_tab, research_tab, engagement_tab, seo_tab, contacts_tab, verifier_tab, improvement_tab = st.tabs(
         [
             "Live agents",
             "Pipeline & leads",
             "Hunter",
             "Research",
             "Engagement",
+            "SEO",
             "Contacts",
             "Verifier",
             "Improvement",
@@ -1267,6 +1391,9 @@ def main() -> None:
 
     with engagement_tab:
         _render_engagement_tab()
+
+    with seo_tab:
+        _render_seo_tab()
 
     with contacts_tab:
         _render_contacts_tab()

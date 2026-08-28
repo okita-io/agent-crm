@@ -18,6 +18,7 @@ Read the per-brand file for product, audience, positioning, and voice. This file
 - **Never invent proof.** No fabricated stats, testimonials, customer logos, or EIN/tax status. Write `[NEED: x]` for missing proof.
 - **No live ad accounts.** Discovery and briefs only — never log into, spend on, or modify ad platforms.
 - **No outbound send.** tactic.studio email/DM is gated: Pete (`pete@tactic.studio`) + naming-rights required. Never send.
+- **No live SEO deploys.** The SEO agent writes review and plan documents only. Humans implement on the target sites.
 - **Verifier scope.** DNS, MX, and HTTP only — no social login scraping (Facebook, LinkedIn, etc.).
 - **Spark routing.** All LLM calls go through spark-queue (cap 4 concurrent). Never point agents at SGLang directly.
 - **Epistemic honesty.** Label inference as inference. State gaps explicitly.

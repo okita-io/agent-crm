@@ -57,6 +57,13 @@ from .enums import (
     Priority,
     ResearchFindingKind,
     ResearchQueryStatus,
+    SeoPlanKind,
+    SeoPlanStatus,
+    SeoQueryKind,
+    SeoQueryStatus,
+    SeoReviewKind,
+    SeoReviewStatus,
+    SeoTargetRole,
     Stage,
     TopicalRelevanceVerdict,
 )
@@ -646,6 +653,132 @@ class AgentImprovementNote(Base, TimestampMixin):
         index=True,
     )
     fingerprint: Mapped[str] = mapped_column(String(512), nullable=False)
+
+
+class SeoTarget(Base, TimestampMixin):
+    """A site the SEO agent writes documents about. Never patched by this stack."""
+
+    __tablename__ = "seo_targets"
+    __table_args__ = (UniqueConstraint("url", "brand", name="uq_seo_targets_url_brand"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    brand: Mapped[Brand] = mapped_column(existing_brand_enum(), nullable=False, index=True)
+    role: Mapped[SeoTargetRole] = mapped_column(
+        str_enum(SeoTargetRole), nullable=False, index=True
+    )
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    next_review_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+    queries: Mapped[list[SeoQuery]] = relationship(back_populates="target")
+    reviews: Mapped[list[SeoReview]] = relationship(back_populates="target")
+    plans: Mapped[list[SeoPlan]] = relationship(back_populates="target")
+
+
+class SeoQuery(Base, TimestampMixin):
+    """Append-only queue of SEO document jobs. Rows are never deleted."""
+
+    __tablename__ = "seo_queries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    origin: Mapped[str] = mapped_column(String(128), nullable=False, default="seed")
+    brand: Mapped[Brand] = mapped_column(existing_brand_enum(), nullable=False, index=True)
+    kind: Mapped[SeoQueryKind] = mapped_column(
+        str_enum(SeoQueryKind), nullable=False, index=True
+    )
+    target_id: Mapped[int | None] = mapped_column(
+        ForeignKey("seo_targets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status: Mapped[SeoQueryStatus] = mapped_column(
+        str_enum(SeoQueryStatus),
+        default=SeoQueryStatus.PENDING,
+        nullable=False,
+        index=True,
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    target: Mapped[SeoTarget | None] = relationship(back_populates="queries")
+
+
+class SeoReview(Base, TimestampMixin):
+    """SEO review document for humans. Evidence plus how-to-fix; never applied live."""
+
+    __tablename__ = "seo_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    target_id: Mapped[int | None] = mapped_column(
+        ForeignKey("seo_targets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    brand: Mapped[Brand] = mapped_column(existing_brand_enum(), nullable=False, index=True)
+    kind: Mapped[SeoReviewKind] = mapped_column(
+        str_enum(SeoReviewKind), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    one_thing: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    issues: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    evidence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_query: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status: Mapped[SeoReviewStatus] = mapped_column(
+        str_enum(SeoReviewStatus),
+        default=SeoReviewStatus.DRAFT,
+        nullable=False,
+        index=True,
+    )
+
+    target: Mapped[SeoTarget | None] = relationship(back_populates="reviews")
+    plans: Mapped[list[SeoPlan]] = relationship(back_populates="review")
+
+
+class SeoPlan(Base, TimestampMixin):
+    """SEO implementation plan for humans to apply on the target site.
+
+    This stack never deploys, edits, or patches live pages from these documents.
+    """
+
+    __tablename__ = "seo_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    target_id: Mapped[int | None] = mapped_column(
+        ForeignKey("seo_targets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    review_id: Mapped[int | None] = mapped_column(
+        ForeignKey("seo_reviews.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    brand: Mapped[Brand] = mapped_column(existing_brand_enum(), nullable=False, index=True)
+    kind: Mapped[SeoPlanKind] = mapped_column(
+        str_enum(SeoPlanKind), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    one_thing: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    tasks: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[SeoPlanStatus] = mapped_column(
+        str_enum(SeoPlanStatus),
+        default=SeoPlanStatus.DRAFT,
+        nullable=False,
+        index=True,
+    )
+
+    target: Mapped[SeoTarget | None] = relationship(back_populates="plans")
+    review: Mapped[SeoReview | None] = relationship(back_populates="plans")
 
 
 class Journey(Base, TimestampMixin):

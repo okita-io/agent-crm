@@ -1,8 +1,10 @@
-# Agent CRM
+# Agent CRM+SEO
 
-A local, agent-driven CRM for the ranch creative/tech brands **Tactic-Studio**, **MidnightSatin**, **Celestial-Nexus**, and **HeyBuddy**. It captures leads, runs outbound research and hunting, extracts contact profiles from scraped pages, and tracks pipeline state — all on your own hardware.
+A local, agent-driven **CRM+SEO** for the ranch creative/tech brands **Tactic-Studio**, **MidnightSatin**, **Celestial-Nexus**, and **HeyBuddy**. It captures leads, runs outbound research and hunting, extracts contact profiles from scraped pages, tracks pipeline state, and **writes SEO review and implementation-plan documents** for humans to apply on target sites — all on your own hardware.
 
 **There is no outreach or sending in this stack.** The lead verifier checks DNS, MX, and HTTP only. tactic.studio outbound (direct mail, DMs) remains gated by Pete (`pete@tactic.studio`) and naming-rights — this repo collects and categorizes only.
+
+**SEO is document-only.** The SEO agent never patches live pages, deploys markup, or logs into a CMS. It scrapes with Firecrawl, searches with SearXNG, and stores markdown reviews and plans. Concepts are adapted from [OpenSEO](https://github.com/every-app/open-seo) (site audits, competitor reviews, keyword focus, how-to-fix issues) without DataForSEO, Search Console, or rank tracking.
 
 ---
 
@@ -27,6 +29,7 @@ docker compose up -d --build
 | `hunt-loop` | — | Standing outbound hunter (`agent-crm hunt-loop`, global priority queue) |
 | `research-loop` | — | Standing research queue drain (20 queries / 60 min / 200 pages per cycle; queue only grows) |
 | `engagement-loop` | — | Standing forum rescan + comment drafts (never posts) |
+| `seo-loop` | — | Standing SEO reviews + implementation plans (never patches sites) |
 | `orchestrator` | — | Self-learning stack inspector (`agent-crm orchestrate`) — writes improvement notes |
 
 API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -84,6 +87,8 @@ tactic.studio contacts are tagged with an **audience** bucket on `contact_profil
 
 Vendored MIT **marketing-agi** skill at [`skills/marketing-agi/`](skills/marketing-agi/) (router: `SKILL.md`; modules in `references/`). Upstream: [holy-templar/marketing-agi](https://github.com/holy-templar/marketing-agi) — see `skills/marketing-agi/SOURCE`.
 
+Vendored **OpenSEO concepts** (not the hosted app) at [`skills/open-seo/`](skills/open-seo/). Upstream: [every-app/open-seo](https://github.com/every-app/open-seo) — see `skills/open-seo/SOURCE`. The CRM agent writes review/plan documents; it does not run OpenSEO MCP or spend DataForSEO credits.
+
 **Brand context** for Research, Hunter, and dashboard agents:
 
 | File | Brand |
@@ -94,13 +99,13 @@ Vendored MIT **marketing-agi** skill at [`skills/marketing-agi/`](skills/marketi
 | `brand-context.heybuddy.md` | HeyBuddy (not a nonprofit — hunts partner orgs) |
 | `brand-context.tactic-studio.md` | tactic.studio |
 
-Research competitor summaries load bounded slices of `references/competitive.md` (+ positioning) into the Spark summarizer. Ad-placement runs pull short `paid-ads` / `hooks` excerpts for discovery briefs. Shared rules: never invent proof (`[NEED: x]`), no live ad accounts, no outbound send. **tactic.studio outbound remains gated** by Pete (`pete@tactic.studio`) + naming-rights — this stack never sends.
+Research competitor summaries load bounded slices of `references/competitive.md` (+ positioning) into the Spark summarizer. Ad-placement runs pull short `paid-ads` / `hooks` excerpts for discovery briefs. SEO reviews/plans pull `skills/open-seo/references/site-audit.md` and `seo-plan.md`. Shared rules: never invent proof (`[NEED: x]`), no live ad accounts, no outbound send, **no live SEO deploys**. **tactic.studio outbound remains gated** by Pete (`pete@tactic.studio`) + naming-rights — this stack never sends.
 
 ---
 
 ## Collection systems
 
-The ranch stack builds prospect intelligence through seven layered systems. Each writes to Postgres (or SQLite in dev).
+The ranch stack builds prospect intelligence through eight layered systems. Each writes to Postgres (or SQLite in dev).
 
 ### 1. SearXNG search
 
@@ -235,6 +240,28 @@ For `source=CONTACT` leads, the verifier also applies the source-relevance / sup
 
 To scrub historical rows that were marked valid before this gate: re-run verification on affected leads (`agent-crm verify --lead-id N` or `POST /leads/{id}/verify`). Rows update in place; no migration required. The orchestrator stops raising the gap note once no recent `valid` rows match role/placeholder filters.
 
+### 8. SEO documents (reviews and plans)
+
+OpenSEO-style **site audits** and **implementation plans**, stored as documents. The agent scrapes owned brand sites and named competitors, extracts on-page signals (title, meta description, H1, alt text, canonical, noindex, JSON-LD), and writes:
+
+| Document | When | What a human does with it |
+|----------|------|---------------------------|
+| **Review** (`seo_reviews`) | Every due target | Read the one-week action, scorecard, and how-to-fix issues |
+| **Plan** (`seo_plans`) | Owned sites only | Apply titles, meta, copy, and JSON-LD on the live site |
+
+Competitor URLs get a review only — never a plan to change someone else's CMS. The queue (`seo_queries`) is append-only. Completed jobs reopen when `next_review_at` is due (default **168 hours**).
+
+No DataForSEO, no Search Console, no rank tracking, no backlink graph. Missing vendor data is `[NEED: …]`, not invented numbers.
+
+| Entry | Command / API |
+|-------|---------------|
+| Loop | `agent-crm seo-loop [--brand …] [--max-targets 8] [--max-pages-per-target 4] [--max-minutes 45]` · `POST /seo/loop` |
+| Targets | `GET /seo/targets` |
+| Reviews | `GET /seo/reviews` |
+| Plans | `GET /seo/plans` |
+
+Compose runs `seo-loop` as a standing worker. Seed pack: MidnightSatin (`midnightsatin.app`), Celestial-Nexus, HeyBuddy, tactic.studio, plus named search competitors from brand context.
+
 ---
 
 ## Data model (implemented tables)
@@ -256,6 +283,10 @@ To scrub historical rows that were marked valid before this gate: re-run verific
 | `agent_jobs` | Background job queue (enrich, verify, decode) |
 | `agent_improvement_notes` | Self-learning gap/performance notes for orchestrator + Cursor |
 | `agent_heartbeats` | Live agent observer state |
+| `seo_targets` | Owned / competitor / prospect sites to write SEO documents about |
+| `seo_queries` | Append-only SEO document job queue |
+| `seo_reviews` | Site-audit and competitor review documents (never applied live) |
+| `seo_plans` | Implementation plans for humans (owned sites only) |
 
 `Account.socials` is for companies. Person socials live on `contact_profiles` (and in lead `raw_payload`), not on accounts.
 
@@ -270,13 +301,15 @@ Base URL on the Mini (loopback): `http://127.0.0.1:8000`. There is **no** send/o
 | Route | Purpose |
 |-------|---------|
 | `GET /agent/catalog` | Brands, audiences, resource/finding kinds |
-| `GET /agent/search?q=` | Federated hits across contacts, websites, findings, comment people (~10/collection) |
+| `GET /agent/search?q=` | Federated hits across contacts, websites, findings, comment people, SEO docs (~10/collection) |
 | `GET /agent/contacts` | People with `q` / brand / audience / quality / verified + page envelope |
 | `GET /agent/websites` | `hunt_resources` site catalog |
 | `GET /agent/findings` | Research findings |
 | `GET /agent/comment-people` | Comment authors (no inventing emails) |
 | `GET /agent/pipeline-leads` | VALID, non-disqualified leads Pete can work |
 | `GET /agent/engagement-threads` | Catalogued popular forum threads |
+| `GET /agent/seo-reviews` | SEO review documents |
+| `GET /agent/seo-plans` | SEO implementation plans |
 
 Every list returns `{ "items", "total", "offset", "limit" }` (default `limit=50`, max `200`).
 
@@ -310,6 +343,7 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The Live Agents tab r
 | **Hunter** | Live hunt-loop drain status + query queue + `hunt_resources` table |
 | **Research** | `research_findings` with brand/kind filters |
 | **Engagement** | Catalogued threads + comment drafts (not posted) |
+| **SEO** | Reviews + implementation plans (not applied to live sites) |
 | **Contacts** | `contact_profiles` — name, email, socials, source pages |
 | **Verifier** | Hunter leads and verification status |
 | **Improvement** | Open orchestrator gap/performance notes |
@@ -324,6 +358,7 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The Live Agents tab r
 | Research | `research` | Competitor / nonprofit / ad-placement runs → `research_findings` |
 | Outbound Hunter | `outbound_hunter` | Hunt + hunt-loop → sites and page leads |
 | Agent Engagement | `engagement` | Rescan forums → threads + comment drafts (never posts) |
+| SEO Documents | `seo` | Site audits + implementation plans (never patches sites) |
 | Lead Verifier | `lead_verifier` | DNS/MX/HTTP checks (auto via `contact-worker`) |
 | Job dispatcher | `job-dispatcher` | Drains `agent_jobs` — verify before Spark enrich |
 | Orchestrator | `orchestrator` | Stack health inspection → improvement notes |
@@ -369,6 +404,11 @@ agent-crm engagement-loop \
   [--brand midnightsatin] [--max-venues 10] \
   [--max-pages-per-venue 15] [--max-minutes 45] [--no-summarize]
 
+# SEO documents (never implements on live sites)
+agent-crm seo-loop \
+  [--brand midnightsatin] [--max-targets 8] \
+  [--max-pages-per-target 4] [--max-minutes 45] [--no-summarize]
+
 # Contacts
 agent-crm contacts list \
   [--brand midnightsatin|celestial-nexus|heybuddy|unassigned] \
@@ -410,6 +450,10 @@ streamlit run src/agent_crm/dashboard.py
 | POST | `/engagement/loop` | Rescan forums and draft replies (never posts) |
 | GET | `/engagement/threads` | List catalogued threads |
 | GET | `/engagement/drafts` | List comment drafts |
+| POST | `/seo/loop` | Write SEO reviews and plans (never implements) |
+| GET | `/seo/targets` | List SEO target sites |
+| GET | `/seo/reviews` | List SEO review documents |
+| GET | `/seo/plans` | List SEO implementation plans |
 | GET | `/contacts` | List `contact_profiles` (`?brand=`, `?email=`) |
 | POST | `/contacts/backfill` | Re-apply contact-quality filters (`{"limit":500,"dry_run":false}`) |
 | POST | `/leads/{id}/verify` | Verify lead contacts |
@@ -452,6 +496,10 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_ENGAGEMENT_MAX_PAGES_PER_VENUE` | Pages scraped per venue (15) |
 | `CRM_ENGAGEMENT_MAX_MINUTES_DEFAULT` | Engagement-loop wall clock (45) |
 | `CRM_ENGAGEMENT_MAX_BRANCH_TERMS` | Follow-up community/thread terms enqueued per query (8) |
+| `CRM_SEO_MAX_TARGETS_PER_RUN` | Sites processed per SEO cycle (8) |
+| `CRM_SEO_MAX_PAGES_PER_TARGET` | Pages scraped per target (4) |
+| `CRM_SEO_MAX_MINUTES_DEFAULT` | SEO-loop wall clock (45) |
+| `CRM_SEO_REVIEW_INTERVAL_HOURS` | Re-audit interval after a completed review (168) |
 | `CRM_RESEARCH_MAX_QUERIES_DEFAULT` | Research query budget (20) |
 | `CRM_RESEARCH_MAX_PAGES_PER_RUN` | Research scrape budget (200) |
 | `CRM_RESEARCH_MAX_MINUTES_DEFAULT` | Research wall clock (60) |
@@ -491,4 +539,4 @@ alembic upgrade head      # apply all revisions
 alembic current           # show head
 ```
 
-Current chain includes `i4j5k6l7m8n9` (`agent_improvement_notes` + `activitytype.VERIFIED`, after `h3i4j5k6l7m8` comment_people). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.
+Current chain includes `q2r3s4t5u6v7` (`seo_targets` / `seo_queries` / `seo_reviews` / `seo_plans`, after `p1q2r3s4t5u6` engagement_queries). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.
