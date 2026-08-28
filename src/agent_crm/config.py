@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # LLM (Spark queue proxy — never point agents at Spark directly)
     llm_base_url: str = "http://spark-queue:8088/v1"
     llm_queue_token: str = ""
+    # Cloud-equivalent rates used to estimate spend avoided by the local GPU.
+    llm_input_usd_per_million: float = 2.0
+    llm_output_usd_per_million: float = 10.0
 
     # Local ranch search + scrape (SearXNG + Firecrawl on the host)
     searxng_url: str = "http://host.docker.internal:8080"

@@ -10,17 +10,25 @@ Verified signal sources (SGLang native API):
 - ``GET /get_server_info`` — deprecated alias of ``/server_info``
 - ``GET /metrics`` — Prometheus ``sglang:num_running_reqs`` gauges
 
+Probe failures (timeouts, connection errors) are NOT raised: a slow or busy
+Spark must never take down a queued request. ``get_running_count`` returns
+``None`` when no source answered, and the gate treats that as "unknown —
+keep waiting" instead of assuming the GPU is idle.
+
 The cloud build VM cannot reach ``10.0.1.9``; use ``FakeOccupancyBackend`` in
 tests or set ``SPARK_LLM_BASE_URL`` to a reachable mock upstream.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from abc import ABC, abstractmethod
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _RUNNING_REQ_FIELDS = (
     "num_running_reqs",
@@ -81,8 +89,16 @@ class OccupancyBackend(ABC):
     """Pluggable source for Spark's global in-flight request count."""
 
     @abstractmethod
-    async def get_running_count(self) -> int:
-        """Return how many requests Spark currently reports as running."""
+    async def get_running_count(self) -> int | None:
+        """Return Spark's running-request count, or ``None`` if unknown.
+
+        ``None`` means "no signal" (probe timed out, all endpoints down, or no
+        matching field in the payload). Callers must treat that as unknown,
+        not as zero load.
+        """
+
+    async def aclose(self) -> None:
+        """Release owned resources (default: nothing to close)."""
 
 
 class SparkOccupancyBackend(OccupancyBackend):
@@ -91,62 +107,81 @@ class SparkOccupancyBackend(OccupancyBackend):
     def __init__(self, origin_url: str, client: httpx.AsyncClient | None = None) -> None:
         self._origin = origin_url.rstrip("/")
         self._client = client
+        self._owns_client = client is None
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is not None:
-            return self._client
-        return httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0))
+    def _get_client(self) -> httpx.AsyncClient:
+        # One persistent pooled client for the process lifetime. Recreating a
+        # client (and its TCP connection) on every 250 ms poll caused churn
+        # and ReadTimeouts against a busy SGLang server.
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0, connect=3.0)
+            )
+        return self._client
 
-    async def get_running_count(self) -> int:
-        client = await self._get_client()
-        owns_client = self._client is None
-        try:
-            count = await self._read_v1_loads(client)
-            if count is not None:
-                return count
-            count = await self._read_server_info(client, "/server_info")
-            if count is not None:
-                return count
-            count = await self._read_server_info(client, "/get_server_info")
-            if count is not None:
-                return count
-            count = await self._read_metrics(client)
-            if count is not None:
-                return count
-            return 0
-        finally:
-            if owns_client:
-                await client.aclose()
+    async def aclose(self) -> None:
+        if self._owns_client and self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    async def get_running_count(self) -> int | None:
+        client = self._get_client()
+        count = await self._read_v1_loads(client)
+        if count is not None:
+            return count
+        count = await self._read_server_info(client, "/server_info")
+        if count is not None:
+            return count
+        count = await self._read_server_info(client, "/get_server_info")
+        if count is not None:
+            return count
+        count = await self._read_metrics(client)
+        if count is not None:
+            return count
+        # No usable signal: report unknown instead of crashing the caller.
+        return None
 
     async def _read_v1_loads(self, client: httpx.AsyncClient) -> int | None:
-        response = await client.get(f"{self._origin}/v1/loads", params={"include": "core"})
+        try:
+            response = await client.get(f"{self._origin}/v1/loads", params={"include": "core"})
+        except httpx.HTTPError as exc:
+            logger.debug("occupancy /v1/loads probe failed: %s", exc)
+            return None
         if response.status_code != 200:
             return None
         return _sum_running_fields(response.json())
 
     async def _read_server_info(self, client: httpx.AsyncClient, path: str) -> int | None:
-        response = await client.get(f"{self._origin}{path}")
+        try:
+            response = await client.get(f"{self._origin}{path}")
+        except httpx.HTTPError as exc:
+            logger.debug("occupancy %s probe failed: %s", path, exc)
+            return None
         if response.status_code != 200:
             return None
         return _sum_running_fields(response.json())
 
     async def _read_metrics(self, client: httpx.AsyncClient) -> int | None:
-        response = await client.get(f"{self._origin}/metrics")
+        try:
+            response = await client.get(f"{self._origin}/metrics")
+        except httpx.HTTPError as exc:
+            logger.debug("occupancy /metrics probe failed: %s", exc)
+            return None
         if response.status_code != 200:
             return None
         return _parse_metrics_running(response.text)
 
 
 class FakeOccupancyBackend(OccupancyBackend):
-    """Test double that returns a scripted running count."""
+    """Test double with a scripted running count (``None`` = unknown)."""
 
-    def __init__(self, running_count: int = 0) -> None:
+    def __init__(self, running_count: int | None = 0) -> None:
         self._running_count = running_count
 
-    def set_running_count(self, running_count: int) -> None:
+    def set_running_count(self, running_count: int | None) -> None:
         self._running_count = running_count
 
-    async def get_running_count(self) -> int:
+    async def get_running_count(self) -> int | None:
         return self._running_count
 
 
@@ -155,17 +190,22 @@ class SparkOccupancyClient:
 
     def __init__(self, backend: OccupancyBackend) -> None:
         self._backend = backend
-        self._last_observed: int = 0
+        self._last_observed: int | None = None
 
     @property
-    def last_observed(self) -> int:
+    def last_observed(self) -> int | None:
+        """Last successfully observed upstream count (None = never observed)."""
         return self._last_observed
 
-    async def observe_running_count(self) -> int:
+    async def observe_running_count(self) -> int | None:
         count = await self._backend.get_running_count()
-        self._last_observed = count
+        if count is not None:
+            self._last_observed = count
         return count
 
     def set_backend(self, backend: OccupancyBackend) -> None:
         """Replace the occupancy backend (used in tests)."""
         self._backend = backend
+
+    async def aclose(self) -> None:
+        await self._backend.aclose()

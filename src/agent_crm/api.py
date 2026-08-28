@@ -538,6 +538,10 @@ def list_agents() -> list[AgentObserverOut]:
             task=row.task,
             resource=row.resource,
             last_heartbeat=row.last_heartbeat,
+            prompt_tokens=row.prompt_tokens,
+            completion_tokens=row.completion_tokens,
+            saved_usd=row.saved_usd,
+            tokens_per_hour=row.tokens_per_hour,
         )
         for row in rows
     ]

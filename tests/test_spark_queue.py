@@ -234,3 +234,111 @@ async def test_gate_tracks_actor_names_for_waiters_and_in_flight() -> None:
     release_upstream.set()
     await task
     assert gate.local_in_flight == 0
+
+
+class _FailingBackend(FakeOccupancyBackend):
+    """Backend that always fails the probe (returns None), like a ReadTimeout."""
+
+    def __init__(self) -> None:
+        super().__init__(running_count=None)
+
+    async def get_running_count(self) -> int | None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_gate_survives_probe_failure_and_keeps_last_observed() -> None:
+    """A timed-out occupancy probe must not raise; gate fails-stale."""
+    backend = FakeOccupancyBackend(running_count=4)
+    occupancy = SparkOccupancyClient(backend)
+    gate = GlobalConcurrencyGate(
+        occupancy_client=occupancy,
+        max_concurrency=4,
+        queue_timeout=0.5,
+        poll_interval=0.05,
+    )
+
+    # Prime a valid observation, then make the probe fail.
+    assert await occupancy.observe_running_count() == 4
+    occupancy.set_backend(_FailingBackend())
+
+    start = time.monotonic()
+    with pytest.raises(QueueTimeoutError):
+        await gate.acquire()
+    elapsed = time.monotonic() - start
+
+    # Failed probes kept the last valid observation (4 = full) rather than
+    # assuming an idle GPU, and no httpx exception escaped the gate.
+    assert elapsed >= 0.4
+    assert gate.observed_upstream_in_flight == 4
+    assert gate.local_in_flight == 0
+
+
+def test_usage_prefers_reported_openai_usage() -> None:
+    from agent_crm.spark_queue.usage import extract_exchange_tokens
+
+    request = b'{"messages":[{"role":"user","content":"hello there friend"}]}'
+    response = (
+        b'{"choices":[{"message":{"content":"hi"}}],'
+        b'"usage":{"prompt_tokens":12,"completion_tokens":3}}'
+    )
+    prompt, completion, estimated = extract_exchange_tokens(
+        request, response, streamed=False
+    )
+    assert (prompt, completion, estimated) == (12, 3, False)
+
+
+def test_usage_estimates_when_upstream_omits_usage() -> None:
+    from agent_crm.spark_queue.usage import chars_to_tokens, extract_exchange_tokens
+
+    request = b'{"messages":[{"role":"user","content":"abcdefghijklmnop"}]}'
+    response = b'{"choices":[{"message":{"content":"xyzxyzxyzxyz"}}]}'
+    prompt, completion, estimated = extract_exchange_tokens(
+        request, response, streamed=False
+    )
+    assert estimated is True
+    assert prompt == chars_to_tokens("abcdefghijklmnop")
+    assert completion == chars_to_tokens("xyzxyzxyzxyz")
+
+
+def test_usage_reads_last_sse_usage_chunk() -> None:
+    from agent_crm.spark_queue.usage import extract_exchange_tokens
+
+    request = b'{"messages":[{"role":"user","content":"hi"}],"stream":true}'
+    stream = (
+        b'data: {"choices":[{"delta":{"content":"Hel"}}]}\n'
+        b'data: {"choices":[{"delta":{"content":"lo"}}]}\n'
+        b'data: {"usage":{"prompt_tokens":9,"completion_tokens":2}}\n'
+        b"data: [DONE]\n"
+    )
+    prompt, completion, estimated = extract_exchange_tokens(
+        request, stream, streamed=True
+    )
+    assert (prompt, completion, estimated) == (9, 2, False)
+
+
+def test_token_ledger_aggregates_per_actor() -> None:
+    from agent_crm.spark_queue.usage import TokenUsageLedger
+
+    ledger = TokenUsageLedger()
+    ledger.record("research", 1000, 200)
+    ledger.record("research", 500, 50)
+    ledger.record("outbound_hunter", 100, 10, estimated=True)
+    snapshot = ledger.snapshot()
+    assert snapshot["by_actor"]["research"]["prompt_tokens"] == 1500
+    assert snapshot["by_actor"]["research"]["completion_tokens"] == 250
+    assert snapshot["by_actor"]["research"]["requests"] == 2
+    assert snapshot["by_actor"]["research"]["estimated_requests"] == 0
+    assert snapshot["by_actor"]["research"]["first_seen_at"]
+    assert snapshot["by_actor"]["outbound_hunter"]["estimated_requests"] == 1
+    assert snapshot["totals"]["prompt_tokens"] == 1600
+    assert snapshot["totals"]["completion_tokens"] == 260
+    assert snapshot["totals"]["requests"] == 3
+
+
+def test_token_ledger_skips_empty_exchanges() -> None:
+    from agent_crm.spark_queue.usage import TokenUsageLedger
+
+    ledger = TokenUsageLedger()
+    ledger.record("research", 0, 0)
+    assert ledger.snapshot()["totals"]["requests"] == 0

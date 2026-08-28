@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from agent_crm.config import get_settings
 from agent_crm.enums import AgentStatus
 from agent_crm.presence import (
     HeartbeatSnapshot,
@@ -70,7 +71,7 @@ def test_merge_agent_status_prefers_working_over_idle() -> None:
 
 
 def test_build_observer_rows_idle_without_signals() -> None:
-    rows = build_observer_rows([], None)
+    rows = build_observer_rows([], None, persisted_usage={})
     assert len(rows) == 12
     assert all(row.status == AgentStatus.IDLE for row in rows)
     assert all(row.task is None for row in rows)
@@ -85,7 +86,10 @@ def test_build_observer_rows_merges_queue_and_heartbeat() -> None:
         "waiters": [{"actor": "lead_scoring"}],
         "in_flight": [{"actor": "research"}],
     }
-    rows = {row.name: row for row in build_observer_rows(heartbeats, queue_health)}
+    rows = {
+        row.name: row
+        for row in build_observer_rows(heartbeats, queue_health, persisted_usage={})
+    }
 
     assert rows["lead_scoring"].status == AgentStatus.BLOCKED
     assert rows["lead_scoring"].task == "lead 7"
@@ -110,8 +114,101 @@ def test_spark_slot_summary_extracts_actor_names() -> None:
             "model": "qwen3.8-27b-sglang",
             "waiters": [{"actor": "nurture"}],
             "in_flight": [{"actor": "research"}],
-        }
+        },
+        persisted_usage={},
     )
     assert summary["waiters"] == ["nurture"]
     assert summary["in_flight"] == ["research"]
     assert summary["external_upstream_slots"] == 1
+    assert summary["token_usage"]["totals"]["prompt_tokens"] == 0
+    assert summary["token_usage"]["input_usd_per_million"] == get_settings().llm_input_usd_per_million
+    assert summary["token_usage"]["output_usd_per_million"] == get_settings().llm_output_usd_per_million
+
+
+def test_avoided_cloud_usd_uses_two_and_ten_per_million() -> None:
+    from agent_crm.presence import avoided_cloud_usd
+
+    assert avoided_cloud_usd(
+        1_000_000,
+        1_000_000,
+        input_usd_per_million=2.0,
+        output_usd_per_million=10.0,
+    ) == 12.0
+    assert avoided_cloud_usd(
+        50_000,
+        8_000,
+        input_usd_per_million=2.0,
+        output_usd_per_million=10.0,
+    ) == 0.18
+
+
+def test_build_observer_rows_includes_token_savings() -> None:
+    from agent_crm.presence import avoided_cloud_usd
+    from agent_crm.token_usage_store import tokens_per_hour
+
+    first_seen = datetime.now(UTC) - timedelta(hours=2)
+    heartbeats = [
+        _heartbeat("research", AgentStatus.WORKING, task="page 3"),
+    ]
+    queue_health = {
+        "model": "qwen3.8-27b-sglang",
+        "waiters": [],
+        "in_flight": [{"actor": "research"}],
+    }
+    persisted = {
+        "by_actor": {
+            "research": {
+                "prompt_tokens": 50_000,
+                "completion_tokens": 8_000,
+                "requests": 12,
+                "first_seen_at": first_seen.isoformat(),
+            },
+            "hermes": {
+                "prompt_tokens": 1_000_000,
+                "completion_tokens": 0,
+                "requests": 4,
+                "first_seen_at": first_seen.isoformat(),
+            },
+        }
+    }
+    rows = {
+        row.name: row
+        for row in build_observer_rows(heartbeats, queue_health, persisted_usage=persisted)
+    }
+    assert rows["research"].prompt_tokens == 50_000
+    assert rows["research"].completion_tokens == 8_000
+    assert rows["research"].saved_usd == avoided_cloud_usd(50_000, 8_000)
+    assert rows["research"].tokens_per_hour == tokens_per_hour(
+        50_000, 8_000, first_seen
+    )
+    assert "hermes" in rows
+    assert rows["hermes"].prompt_tokens == 1_000_000
+    assert rows["hermes"].saved_usd == avoided_cloud_usd(1_000_000, 0)
+
+
+def test_spark_slot_summary_computes_total_savings() -> None:
+    from agent_crm.presence import avoided_cloud_usd
+
+    first_seen = datetime.now(UTC) - timedelta(hours=2)
+    summary = spark_slot_summary(
+        {
+            "max_concurrency": 4,
+            "observed_upstream_in_flight": 0,
+            "local_in_flight": 0,
+            "waiting": 0,
+        },
+        persisted_usage={
+            "by_actor": {
+                "research": {
+                    "prompt_tokens": 1_000_000,
+                    "completion_tokens": 200_000,
+                    "requests": 40,
+                    "first_seen_at": first_seen.isoformat(),
+                }
+            }
+        },
+    )
+    assert summary["token_usage"]["totals"]["saved_usd"] == avoided_cloud_usd(
+        1_000_000, 200_000
+    )
+    assert summary["token_usage"]["totals"]["tokens_per_hour"] > 0

@@ -110,6 +110,62 @@ def _resource_rows(brand: Brand | None) -> pd.DataFrame:
     )
 
 
+def _format_token_count(count: int) -> str:
+    return f"{int(count):,}"
+
+
+def _format_in_out_tokens(prompt: int, completion: int) -> str:
+    if not prompt and not completion:
+        return "—"
+    return f"{_format_token_count(prompt)} / {_format_token_count(completion)}"
+
+
+def _format_usd(amount: float) -> str:
+    if amount <= 0:
+        return "—"
+    if amount < 0.01:
+        return f"${amount:.4f}"
+    return f"${amount:,.2f}"
+
+
+def _format_token_rate(rate: float) -> str:
+    if rate <= 0:
+        return "—"
+    if rate >= 1_000_000:
+        return f"{rate / 1_000_000:.1f}M / hr"
+    if rate >= 10_000:
+        return f"{rate / 1_000:.1f}k / hr"
+    return f"{rate:,.0f} / hr"
+
+
+def _token_totals_from_summary(summary: dict, rows: list[dict]) -> dict:
+    usage = summary.get("token_usage") or {}
+    totals = usage.get("totals") or {}
+    prompt = int(totals.get("prompt_tokens") or 0)
+    completion = int(totals.get("completion_tokens") or 0)
+    hourly = float(totals.get("tokens_per_hour") or 0.0)
+    if prompt or completion:
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "saved_usd": float(totals.get("saved_usd") or 0.0),
+            "tokens_per_hour": hourly,
+            "input_usd_per_million": float(usage.get("input_usd_per_million") or 2.0),
+            "output_usd_per_million": float(usage.get("output_usd_per_million") or 10.0),
+        }
+    prompt = sum(int(row.get("prompt_tokens") or 0) for row in rows)
+    completion = sum(int(row.get("completion_tokens") or 0) for row in rows)
+    saved = sum(float(row.get("saved_usd") or 0.0) for row in rows)
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "saved_usd": saved,
+        "tokens_per_hour": 0.0,
+        "input_usd_per_million": float(usage.get("input_usd_per_million") or 2.0),
+        "output_usd_per_million": float(usage.get("output_usd_per_million") or 10.0),
+    }
+
+
 def _format_duration(seconds: int) -> str:
     minutes, remainder = divmod(max(0, seconds), 60)
     if minutes:
@@ -317,6 +373,10 @@ def _render_agent_observer(refresh_seconds: int) -> None:
                 "task": row.task,
                 "resource": row.resource,
                 "last_heartbeat": row.last_heartbeat,
+                "prompt_tokens": row.prompt_tokens,
+                "completion_tokens": row.completion_tokens,
+                "saved_usd": row.saved_usd,
+                "tokens_per_hour": row.tokens_per_hour,
             }
             for row in observer_rows
         ]
@@ -332,12 +392,43 @@ def _render_agent_observer(refresh_seconds: int) -> None:
                 "status": f"{_STATUS_EMOJI.get(AgentStatus(row['status']), '⚪')} {row['status']}",
                 "current task": row.get("task") or "—",
                 "resource": row.get("resource") or "—",
+                "in / out tokens": _format_in_out_tokens(
+                    int(row.get("prompt_tokens") or 0),
+                    int(row.get("completion_tokens") or 0),
+                ),
+                "tok / hr": _format_token_rate(float(row.get("tokens_per_hour") or 0.0)),
+                "est. savings": _format_usd(float(row.get("saved_usd") or 0.0)),
                 "last heartbeat": row.get("last_heartbeat") or "—",
             }
             for row in rows
         ]
     )
     st.dataframe(table, use_container_width=True, hide_index=True)
+
+    totals = _token_totals_from_summary(summary, rows)
+    prompt = int(totals["prompt_tokens"])
+    completion = int(totals["completion_tokens"])
+    saved = float(totals["saved_usd"])
+    hourly = float(totals.get("tokens_per_hour") or 0.0)
+    in_rate = float(totals["input_usd_per_million"])
+    out_rate = float(totals["output_usd_per_million"])
+    total_tokens = prompt + completion
+
+    st.subheader("Local GPU vs cloud APIs")
+    metric_cols = st.columns(5)
+    metric_cols[0].metric("Tokens in", _format_token_count(prompt))
+    metric_cols[1].metric("Tokens out", _format_token_count(completion))
+    metric_cols[2].metric("Total tokens", _format_token_count(total_tokens))
+    metric_cols[3].metric("Avg tok / hr", _format_token_rate(hourly) if hourly else "0 / hr")
+    metric_cols[4].metric("Est. cloud cost avoided", _format_usd(saved) if saved else "$0.00")
+    st.caption(
+        "Lifetime totals persist in the CRM database. Hourly rate is total tokens "
+        "divided by hours since that agent's first recorded completion. "
+        "Counted from Spark ``usage`` when present, otherwise ~4 chars/token. "
+        f"Avoided spend at **${in_rate:.2f}** / million input "
+        f"and **${out_rate:.2f}** / million output — typical cloud API rates. "
+        "The desk GPU is unmetered."
+    )
 
 
 def _render_pipeline_tab() -> None:

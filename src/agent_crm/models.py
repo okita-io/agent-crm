@@ -246,6 +246,38 @@ class AgentHeartbeat(Base):
     )
 
 
+class LlmTokenUsage(Base):
+    """Lifetime LLM token totals per spark-queue actor (survives restarts)."""
+
+    __tablename__ = "llm_token_usage"
+
+    agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    requests: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    estimated_requests: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
+class LlmTokenUsageHour(Base):
+    """Per-actor token totals bucketed by UTC hour for hourly rate."""
+
+    __tablename__ = "llm_token_usage_hours"
+
+    agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    hour_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    requests: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
 class HuntQuery(Base, TimestampMixin):
     """Priority queue of search terms for the outbound hunter loop."""
 

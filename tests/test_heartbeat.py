@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.dialects.postgresql import dialect as pg_dialect
 
 from agent_crm.api import app
+from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import (
     ActivityType,
@@ -89,10 +90,13 @@ def test_legacy_enums_postgres_bind_uses_member_names(
 def client(tmp_path, monkeypatch):
     db_path = tmp_path / "heartbeat.db"
     monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("CRM_API_TOKEN", "")
+    get_settings.cache_clear()
     reset_engine()
     init_db()
     yield TestClient(app)
     reset_engine()
+    get_settings.cache_clear()
 
 
 def test_record_and_list_heartbeat(tmp_path, monkeypatch) -> None:
@@ -141,3 +145,5 @@ def test_list_agents_includes_idle_roster(client: TestClient) -> None:
     assert "lead_intake" in names
     assert "orchestrator" in names
     assert all(row["status"] in {"idle", "thinking", "working", "blocked"} for row in agents)
+    assert all("prompt_tokens" in row and "completion_tokens" in row for row in agents)
+    assert all("tokens_per_hour" in row for row in agents)

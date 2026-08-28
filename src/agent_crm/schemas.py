@@ -457,6 +457,10 @@ class AgentObserverOut(BaseModel):
     task: str | None
     resource: str | None
     last_heartbeat: datetime | None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    saved_usd: float = 0.0
+    tokens_per_hour: float = 0.0
 
 
 class ContactProfileOut(ORMModel):

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-import uuid
 from dataclasses import dataclass, field
 
 from .occupancy import SparkOccupancyClient
@@ -17,7 +16,6 @@ class QueueTimeoutError(TimeoutError):
 @dataclass
 class QueueActorEntry:
     actor: str
-    ticket: str = field(default_factory=lambda: uuid.uuid4().hex)
     since: float = field(default_factory=time.monotonic)
 
 
@@ -60,7 +58,7 @@ class GlobalConcurrencyGate:
         return self._waiting
 
     @property
-    def observed_upstream_in_flight(self) -> int:
+    def observed_upstream_in_flight(self) -> int | None:
         return self._occupancy.last_observed
 
     @property
@@ -72,10 +70,7 @@ class GlobalConcurrencyGate:
         return list(self._in_flight_actors)
 
     async def acquire(self, actor: str | None = None) -> str:
-        """Wait in FIFO order until a global Spark session slot is available.
-
-        Returns a per-request ticket used with :meth:`release`.
-        """
+        """Wait in FIFO order until a global Spark session slot is available."""
         actor_label = actor or "unknown"
         async with self._wake:
             self._waiting += 1
@@ -85,11 +80,17 @@ class GlobalConcurrencyGate:
                 deadline = time.monotonic() + self._queue_timeout
                 while True:
                     upstream = await self._occupancy.observe_running_count()
+                    if upstream is None:
+                        # Probe failed (timeout / unreachable). Fail-stale:
+                        # hold the last valid observation so a busy GPU is
+                        # not mistaken for an idle one; fall back to 0 when
+                        # no valid observation exists yet.
+                        stale = self._occupancy.last_observed
+                        upstream = stale if stale is not None else 0
                     if upstream + self._local_in_flight < self._max:
                         self._local_in_flight += 1
-                        slot = QueueActorEntry(actor=actor_label)
-                        self._in_flight_actors.append(slot)
-                        return slot.ticket
+                        self._in_flight_actors.append(QueueActorEntry(actor=actor_label))
+                        return actor_label
 
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
@@ -110,19 +111,17 @@ class GlobalConcurrencyGate:
                 except ValueError:
                     pass
 
-    async def release(self, ticket: str | None = None) -> None:
-        """Release a local in-flight slot by ticket and wake FIFO waiters."""
+    async def release(self, actor: str | None = None) -> None:
+        """Release a local in-flight slot and wake FIFO waiters."""
+        actor_label = actor or "unknown"
         async with self._wake:
             if self._local_in_flight > 0:
                 self._local_in_flight -= 1
-            if ticket:
-                for index, entry in enumerate(self._in_flight_actors):
-                    if entry.ticket == ticket:
-                        del self._in_flight_actors[index]
-                        break
-                else:
-                    if self._in_flight_actors:
-                        self._in_flight_actors.pop()
-            elif self._in_flight_actors:
-                self._in_flight_actors.pop()
+            for index, entry in enumerate(self._in_flight_actors):
+                if entry.actor == actor_label:
+                    del self._in_flight_actors[index]
+                    break
+            else:
+                if self._in_flight_actors:
+                    self._in_flight_actors.pop()
             self._wake.notify_all()

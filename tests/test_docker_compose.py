@@ -71,6 +71,15 @@ def test_contact_worker_and_orchestrator_do_not_require_spark_queue() -> None:
         )
 
 
+def test_compose_spark_queue_persists_token_usage() -> None:
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    start = content.index("  spark-queue:")
+    end = content.index("\n\n", start)
+    block = content[start:end]
+    assert "CRM_DATABASE_URL: postgresql+psycopg://crm:" in block
+    assert "db:" in block[block.index("depends_on:") :]
+
+
 def test_compose_binds_sensitive_ports_to_localhost() -> None:
     content = COMPOSE_PATH.read_text(encoding="utf-8")
     assert '"127.0.0.1:5432:5432"' in content

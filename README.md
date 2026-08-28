@@ -56,7 +56,7 @@ CRM_LLM_BASE_URL=http://spark-queue:8088/v1
 - Global cap: **4 concurrent Spark sessions** (shared with Hermes; leaves GPU headroom for ComfyUI)
 - **Never point agents at Spark SGLang directly**
 
-The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats and a compact hunt-loop phase strip. The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
+The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats, a compact hunt-loop phase strip, and per-agent in/out token counts with an hourly average rate and estimated cloud-cost avoided (default **$2.00 / million input** and **$10.00 / million output**). Token totals persist in the CRM database. The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
 
 ### Database and migrations
 
@@ -303,7 +303,7 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 
 | Tab | Shows |
 |-----|-------|
-| **Live agents** | Heartbeats + spark-queue slot occupancy + compact hunt-loop phase (auto-refresh) |
+| **Live agents** | Heartbeats + spark-queue slot occupancy + persisted in/out tokens + tok/hr + estimated cloud cost avoided (auto-refresh) |
 | **Pipeline & leads** | Weekly metrics, stage chart, lead table, activity history, verifications |
 | **Hunter** | Live hunt-loop drain status + query queue + `hunt_resources` table |
 | **Research** | `research_findings` with brand/kind filters |
@@ -437,6 +437,8 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_SEARXNG_URL` | Ranch SearXNG base URL |
 | `CRM_FIRECRAWL_URL` | Ranch Firecrawl base URL |
 | `CRM_LLM_BASE_URL` | Spark queue OpenAI-compatible endpoint (`http://spark-queue:8088/v1`) |
+| `CRM_LLM_INPUT_USD_PER_MILLION` | Cloud-equivalent input rate for Live Agents savings ($2.00) |
+| `CRM_LLM_OUTPUT_USD_PER_MILLION` | Cloud-equivalent output rate for Live Agents savings ($10.00) |
 | `CRM_HUNTER_MAX_PAGES_PER_RUN` | Max Firecrawl pages per hunt query (50) |
 | `CRM_HUNTER_SEARCH_RESULT_LIMIT` | Max SearXNG hits per query (50) |
 | `CRM_HUNTER_MAX_QUERIES_DEFAULT` | Hunt-loop query budget (`0` = unlimited) |

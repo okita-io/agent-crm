@@ -34,10 +34,14 @@ services:
       SPARK_LLM_MODEL: qwen3.8-27b-sglang
       SPARK_LLM_MAX_CONCURRENCY: "4"
       SPARK_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
     extra_hosts:
       - "spark:10.0.1.9"
     ports:
       - "127.0.0.1:8088:8088"
+    depends_on:
+      db:
+        condition: service_healthy
 
   api:
     build: .
