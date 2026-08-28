@@ -71,7 +71,8 @@ class Settings(BaseSettings):
     seo_max_targets_per_run: int = 8
     seo_max_pages_per_target: int = 4
     seo_max_minutes_default: int = 45
-    seo_review_interval_hours: int = 168
+    seo_review_hour: int = 12
+    seo_review_timezone: str = "America/Los_Angeles"
     seo_search_result_limit: int = 15
 
     # Research agent defaults

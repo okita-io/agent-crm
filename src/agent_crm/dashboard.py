@@ -878,7 +878,8 @@ def _render_seo_tab() -> None:
     st.subheader("SEO documents")
     st.caption(
         "Reviews and implementation plans for ranch brand sites and named competitors. "
-        "The agent scrapes with Firecrawl and writes markdown documents. "
+        "The agent scrapes with Firecrawl and writes markdown documents at least once a day "
+        "(next pass at local noon). "
         "It never patches live pages — humans apply the plan on the target site."
     )
 

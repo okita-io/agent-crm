@@ -48,9 +48,13 @@ from .seo_seeds import (
 )
 from .seo_skill import plan_writer_guidance, review_writer_guidance
 from .seo_store import (
+    align_review_schedule,
+    earliest_next_review_at,
     get_target,
     list_targets_due,
     mark_target_reviewed,
+    next_noon_at,
+    review_zone,
     upsert_plan,
     upsert_review,
     upsert_target,
@@ -59,6 +63,7 @@ from .tooling import CRMToolkit
 from .url_safety import is_public_http_url
 
 ACTOR = "seo"
+WATCH_POLL_SECONDS = 60.0
 
 SEO_LOOP_BRANDS: tuple[Brand, ...] = (
     Brand.CELESTIAL_NEXUS,
@@ -76,10 +81,14 @@ class SeoBudget:
 
     def __post_init__(self) -> None:
         settings = get_settings()
-        self.max_targets = min(self.max_targets, settings.seo_max_targets_per_run)
-        self.max_pages_per_target = min(
-            self.max_pages_per_target, settings.seo_max_pages_per_target
-        )
+        if self.max_targets < 0:
+            self.max_targets = 0
+        if self.max_targets > 0 and settings.seo_max_targets_per_run > 0:
+            self.max_targets = min(self.max_targets, settings.seo_max_targets_per_run)
+        if self.max_pages_per_target > 0 and settings.seo_max_pages_per_target > 0:
+            self.max_pages_per_target = min(
+                self.max_pages_per_target, settings.seo_max_pages_per_target
+            )
 
 
 @dataclass
@@ -93,6 +102,7 @@ class SeoLoopResult:
 
 
 def _seed_seo_queue(store: SeoQueryStore, *, brand: Brand | None) -> None:
+    align_review_schedule()
     brands = (brand,) if brand is not None else SEO_LOOP_BRANDS
     for cycle_brand in brands:
         for seed in seeds_for_brand(cycle_brand):
@@ -163,7 +173,7 @@ def run_seo_loop(
         if deadline is not None and time.monotonic() >= deadline:
             result.stop_reason = "max_minutes"
             break
-        if queries_run >= budget.max_targets:
+        if budget.max_targets > 0 and queries_run >= budget.max_targets:
             result.stop_reason = "max_targets"
             break
 
@@ -211,10 +221,7 @@ def run_seo_loop(
         result.pages_scraped += stats["pages"]
         store.mark_query_completed(claimed.id)
         if claimed.target_id is not None:
-            mark_target_reviewed(
-                claimed.target_id,
-                interval_hours=settings.seo_review_interval_hours,
-            )
+            mark_target_reviewed(claimed.target_id)
 
     result.targets_processed = queries_run
     record_heartbeat(
@@ -237,6 +244,56 @@ def run_seo_loop(
         },
     )
     return result
+
+
+def run_seo_loop_watch(
+    *,
+    brand: Brand | None = None,
+    budget: SeoBudget | None = None,
+    summarize: bool = True,
+    searx_client: httpx.Client | None = None,
+    firecrawl_client: httpx.Client | None = None,
+) -> None:
+    """Drain due reviews, then idle until the next local noon."""
+    while True:
+        run_seo_loop(
+            brand=brand,
+            budget=budget,
+            summarize=summarize,
+            searx_client=searx_client,
+            firecrawl_client=firecrawl_client,
+        )
+        due = list_targets_due(brand=brand, limit=1)
+        if due:
+            record_heartbeat(
+                ACTOR,
+                status=AgentStatus.IDLE,
+                task="retrying remaining SEO targets",
+            )
+            time.sleep(WATCH_POLL_SECONDS)
+            continue
+        nxt = earliest_next_review_at() or next_noon_at()
+        _sleep_until(nxt)
+
+
+def _sleep_until(when: datetime) -> None:
+    while True:
+        remaining = (_as_aware_utc(when) - datetime.now(UTC)).total_seconds()
+        if remaining <= 0:
+            return
+        local = _as_aware_utc(when).astimezone(review_zone())
+        record_heartbeat(
+            ACTOR,
+            status=AgentStatus.IDLE,
+            task=f"next SEO pass {local.strftime('%Y-%m-%d %H:%M %Z')}",
+        )
+        time.sleep(min(WATCH_POLL_SECONDS, remaining))
+
+
+def _as_aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _run_seo_query(

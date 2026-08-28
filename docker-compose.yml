@@ -204,22 +204,24 @@ services:
     command:
       - agent-crm
       - seo-loop
+      - --watch
       - --max-targets
-      - "8"
+      - "0"
       - --max-pages-per-target
       - "4"
       - --max-minutes
-      - "45"
+      - "0"
     environment:
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_SEARXNG_URL: http://host.docker.internal:8080
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
-      CRM_SEO_MAX_TARGETS_PER_RUN: "8"
+      CRM_SEO_MAX_TARGETS_PER_RUN: "0"
       CRM_SEO_MAX_PAGES_PER_TARGET: "4"
-      CRM_SEO_MAX_MINUTES_DEFAULT: "45"
-      CRM_SEO_REVIEW_INTERVAL_HOURS: "168"
+      CRM_SEO_MAX_MINUTES_DEFAULT: "0"
+      CRM_SEO_REVIEW_HOUR: "12"
+      CRM_SEO_REVIEW_TIMEZONE: "America/Los_Angeles"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

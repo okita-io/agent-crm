@@ -59,15 +59,19 @@ def test_compose_engagement_loop_is_bounded() -> None:
     assert 'CRM_ENGAGEMENT_MAX_VENUES_PER_RUN: "0"' not in block
 
 
-def test_compose_seo_loop_is_bounded() -> None:
+def test_compose_seo_loop_runs_daily_at_noon() -> None:
     content = COMPOSE_PATH.read_text(encoding="utf-8")
     start = content.index("  seo-loop:")
     end = content.index("\n\n", start)
     block = content[start:end]
-    assert 'CRM_SEO_MAX_TARGETS_PER_RUN: "8"' in block
+    assert "--watch" in block
+    assert '--max-targets\n      - "0"' in block or '- --max-targets\n      - "0"' in block
+    assert 'CRM_SEO_MAX_TARGETS_PER_RUN: "0"' in block
     assert 'CRM_SEO_MAX_PAGES_PER_TARGET: "4"' in block
-    assert 'CRM_SEO_MAX_MINUTES_DEFAULT: "45"' in block
-    assert 'CRM_SEO_MAX_TARGETS_PER_RUN: "0"' not in block
+    assert 'CRM_SEO_MAX_MINUTES_DEFAULT: "0"' in block
+    assert 'CRM_SEO_REVIEW_HOUR: "12"' in block
+    assert 'CRM_SEO_REVIEW_TIMEZONE: "America/Los_Angeles"' in block
+    assert "CRM_SEO_REVIEW_INTERVAL_HOURS" not in block
 
 
 def test_contact_worker_and_orchestrator_do_not_require_spark_queue() -> None:

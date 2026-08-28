@@ -252,7 +252,7 @@ def _cmd_engagement_loop(args: argparse.Namespace) -> int:
 def _cmd_seo_loop(args: argparse.Namespace) -> int:
     from .db import init_db
     from .enums import Brand
-    from .seo_loop import SeoBudget, run_seo_loop
+    from .seo_loop import SeoBudget, run_seo_loop, run_seo_loop_watch
 
     init_db()
     brand = Brand(args.brand) if args.brand else None
@@ -261,6 +261,13 @@ def _cmd_seo_loop(args: argparse.Namespace) -> int:
         max_pages_per_target=args.max_pages_per_target,
         max_minutes=args.max_minutes,
     )
+    if args.watch:
+        run_seo_loop_watch(
+            brand=brand,
+            budget=budget,
+            summarize=not args.no_summarize,
+        )
+        return 0
     result = run_seo_loop(
         brand=brand,
         budget=budget,
@@ -562,7 +569,7 @@ def main(argv: list[str] | None = None) -> int:
         "--max-targets",
         type=int,
         default=8,
-        help="Max sites to write documents for this cycle",
+        help="Max sites to write documents for this cycle (0 = unlimited)",
     )
     seo_loop.add_argument(
         "--max-pages-per-target",
@@ -575,6 +582,11 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=45,
         help="Wall-clock budget in minutes (0 = unlimited)",
+    )
+    seo_loop.add_argument(
+        "--watch",
+        action="store_true",
+        help="Stay running: drain due targets, then wait until the next local noon",
     )
     seo_loop.add_argument(
         "--no-summarize",

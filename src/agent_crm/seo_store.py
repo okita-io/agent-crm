@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
+from .config import get_settings
 from .db import session_scope
 from .enums import (
     Brand,
@@ -75,11 +77,61 @@ def list_targets(
         return list(session.scalars(stmt))
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def review_zone() -> ZoneInfo:
+    return ZoneInfo(get_settings().seo_review_timezone)
+
+
+def next_noon_at(now: datetime | None = None) -> datetime:
+    """Return the next local noon (default America/Los_Angeles) as UTC.
+
+    If ``now`` is already at or after today's noon, the slot is tomorrow.
+    That keeps reviews to at least once a day, aligned to 12:00 ranch time.
+    """
+    settings = get_settings()
+    tz = review_zone()
+    hour = max(0, min(23, settings.seo_review_hour))
+    reference = _as_utc(now or datetime.now(UTC)).astimezone(tz)
+    today_slot = reference.replace(hour=hour, minute=0, second=0, microsecond=0)
+    slot = today_slot if reference < today_slot else today_slot + timedelta(days=1)
+    return slot.astimezone(UTC)
+
+
+def align_review_schedule(*, now: datetime | None = None) -> None:
+    """Due now unless last reviewed today, in which case wait until next noon."""
+    reference = _as_utc(now or datetime.now(UTC))
+    tz = review_zone()
+    local_today = reference.astimezone(tz).date()
+    nxt = next_noon_at(reference)
+    with session_scope() as session:
+        for row in session.scalars(select(SeoTarget)):
+            if row.last_reviewed_at is None:
+                row.next_review_at = None
+                continue
+            reviewed = _as_utc(row.last_reviewed_at).astimezone(tz).date()
+            row.next_review_at = nxt if reviewed == local_today else None
+
+
+def earliest_next_review_at() -> datetime | None:
+    with session_scope() as session:
+        value = session.scalar(
+            select(func.min(SeoTarget.next_review_at)).where(
+                SeoTarget.next_review_at.is_not(None)
+            )
+        )
+        return _as_utc(value) if value is not None else None
+
+
 def list_targets_due(
     *,
     brand: Brand | None = None,
     now: datetime | None = None,
-    limit: int = 50,
+    limit: int = 200,
 ) -> list[SeoTarget]:
     reference = now or datetime.now(UTC)
     with session_scope() as session:
@@ -100,16 +152,15 @@ def list_targets_due(
 def mark_target_reviewed(
     target_id: int,
     *,
-    interval_hours: int,
     now: datetime | None = None,
 ) -> None:
-    reference = now or datetime.now(UTC)
+    reference = _as_utc(now or datetime.now(UTC))
     with session_scope() as session:
         row = session.get(SeoTarget, target_id)
         if row is None:
             return
         row.last_reviewed_at = reference
-        row.next_review_at = reference + timedelta(hours=max(interval_hours, 1))
+        row.next_review_at = next_noon_at(reference)
 
 
 def upsert_review(

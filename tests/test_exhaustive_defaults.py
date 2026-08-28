@@ -42,7 +42,8 @@ def test_seo_defaults() -> None:
     assert settings.seo_max_targets_per_run == 8
     assert settings.seo_max_pages_per_target == 4
     assert settings.seo_max_minutes_default == 45
-    assert settings.seo_review_interval_hours == 168
+    assert settings.seo_review_hour == 12
+    assert settings.seo_review_timezone == "America/Los_Angeles"
 
     from agent_crm.schemas import SeoLoopRequest
 

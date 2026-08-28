@@ -249,18 +249,18 @@ OpenSEO-style **site audits** and **implementation plans**, stored as documents.
 | **Review** (`seo_reviews`) | Every due target | Read the one-week action, scorecard, and how-to-fix issues |
 | **Plan** (`seo_plans`) | Owned sites only | Apply titles, meta, copy, and JSON-LD on the live site |
 
-Competitor URLs get a review only — never a plan to change someone else's CMS. The queue (`seo_queries`) is append-only. Completed jobs reopen when `next_review_at` is due (default **168 hours**).
+Competitor URLs get a review only — never a plan to change someone else's CMS. The queue (`seo_queries`) is append-only. Completed jobs reopen when `next_review_at` is due (next **local noon**, default `America/Los_Angeles` 12:00). Sites not reviewed today are due immediately.
 
 No DataForSEO, no Search Console, no rank tracking, no backlink graph. Missing vendor data is `[NEED: …]`, not invented numbers.
 
 | Entry | Command / API |
 |-------|---------------|
-| Loop | `agent-crm seo-loop [--brand …] [--max-targets 8] [--max-pages-per-target 4] [--max-minutes 45]` · `POST /seo/loop` |
+| Loop | `agent-crm seo-loop [--brand …] [--watch] [--max-targets 8] [--max-pages-per-target 4] [--max-minutes 45]` · `POST /seo/loop` |
 | Targets | `GET /seo/targets` |
 | Reviews | `GET /seo/reviews` |
 | Plans | `GET /seo/plans` |
 
-Compose runs `seo-loop` as a standing worker. Seed pack: MidnightSatin (`midnightsatin.app`), Celestial-Nexus, HeyBuddy, tactic.studio, plus named search competitors from brand context.
+Compose runs `seo-loop --watch` as a standing worker: it drains every due site, then sleeps until the next noon. Seed pack: MidnightSatin (`midnightsatin.app`), Celestial-Nexus, HeyBuddy, tactic.studio, plus named search competitors from brand context.
 
 ---
 
@@ -406,7 +406,7 @@ agent-crm engagement-loop \
 
 # SEO documents (never implements on live sites)
 agent-crm seo-loop \
-  [--brand midnightsatin] [--max-targets 8] \
+  [--brand midnightsatin] [--watch] [--max-targets 8] \
   [--max-pages-per-target 4] [--max-minutes 45] [--no-summarize]
 
 # Contacts
@@ -496,10 +496,11 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_ENGAGEMENT_MAX_PAGES_PER_VENUE` | Pages scraped per venue (15) |
 | `CRM_ENGAGEMENT_MAX_MINUTES_DEFAULT` | Engagement-loop wall clock (45) |
 | `CRM_ENGAGEMENT_MAX_BRANCH_TERMS` | Follow-up community/thread terms enqueued per query (8) |
-| `CRM_SEO_MAX_TARGETS_PER_RUN` | Sites processed per SEO cycle (8) |
+| `CRM_SEO_MAX_TARGETS_PER_RUN` | Sites processed per SEO cycle (8; `0` = unlimited) |
 | `CRM_SEO_MAX_PAGES_PER_TARGET` | Pages scraped per target (4) |
-| `CRM_SEO_MAX_MINUTES_DEFAULT` | SEO-loop wall clock (45) |
-| `CRM_SEO_REVIEW_INTERVAL_HOURS` | Re-audit interval after a completed review (168) |
+| `CRM_SEO_MAX_MINUTES_DEFAULT` | SEO-loop wall clock (45; `0` = unlimited) |
+| `CRM_SEO_REVIEW_HOUR` | Local hour for the next daily pass (12) |
+| `CRM_SEO_REVIEW_TIMEZONE` | Timezone for that hour (`America/Los_Angeles`) |
 | `CRM_RESEARCH_MAX_QUERIES_DEFAULT` | Research query budget (20) |
 | `CRM_RESEARCH_MAX_PAGES_PER_RUN` | Research scrape budget (200) |
 | `CRM_RESEARCH_MAX_MINUTES_DEFAULT` | Research wall clock (60) |
