@@ -156,20 +156,21 @@ Competitor, nonprofit, and **ad-placement** prospecting with the same SearXNG + 
 
 | Brand | Default kind | Focus |
 |-------|--------------|-------|
-| `celestial-nexus`, `midnightsatin`, `tactic-studio` | `competitor` | Competitor / landscape scans (XR studios for tactic.studio) |
+| `celestial-nexus`, `midnightsatin` | `competitor` | Competitor / landscape scans |
+| `tactic-studio` | `target_company` | Named retail / grocery / F&B companies ($10M+ revenue) for hunter people searches |
 | `heybuddy` | `nonprofit` | 501(c)(3) partnership / grant prospects (HeyBuddy itself is **not** a nonprofit) |
 | any (explicit `--kind ad_placement`) | `ad_placement` | Sites that sell ads, sponsorships, or promo/sticky/banner/board placement — discovery only |
 
-Pass `--kind ad_placement` (or `"kind": "ad_placement"` on `POST /research`) to hunt newsletters, forums (including offbeat/imageboard surfaces like 4chan boards), Discords, podcasts, subreddits, zines, and trade pubs where each brand’s audience actually hangs out. Summaries capture `ad_product`, `how_to_buy`, `brand_fit`, and `brand_safety` — no ad buying or account creation. Forum and community hits are also catalogued as hunter venues (`engagement_surface`) so the engagement agent can come back and scan popular threads.
+Pass `--kind target_company` (or `"kind": "target_company"` on `POST /research`) for tactic.studio to scrape grocery/retail/F&B rankings and directories. Each finding stores a `companies` list; the hunter then queues `"Company" VP of marketing`, `"Company" marketing manager`, `"Company" VP of sales`, and `"Company" brand manager` at marketing priority. Pass `--kind ad_placement` to hunt newsletters, forums (including offbeat/imageboard surfaces like 4chan boards), Discords, podcasts, subreddits, zines, and trade pubs where each brand’s audience actually hangs out. Summaries capture `ad_product`, `how_to_buy`, `brand_fit`, and `brand_safety` — no ad buying or account creation. Forum and community hits are also catalogued as hunter venues (`engagement_surface`) so the engagement agent can come back and scan popular threads.
 
-Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`. Search terms persist in **`research_queries`** (append-only: rows are never deleted). Seed packs include AI-generated-content audiences and promoters alongside competitor/nonprofit/ad-placement discovery terms. tactic.studio competitor seeds cover **industrial visualization AR experiences** and **industrial training aids**. Celestial-Nexus competitor seeds cover multiple **divination types** (tarot, runes, I Ching, pendulum, scrying, palmistry, numerology, oracle/Lenormand, tasseography, cartomancy, horary, geomancy, aura, dream interpretation).
+Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`. Search terms persist in **`research_queries`** (append-only: rows are never deleted). Seed packs include AI-generated-content audiences and promoters alongside competitor/nonprofit/ad-placement discovery terms. tactic.studio **target-company** seeds cover grocery, CPG, restaurant, convenience, and specialty retail lists over **$10 million** revenue; competitor seeds cover **industrial visualization AR experiences** and **industrial training aids**. Celestial-Nexus competitor seeds cover multiple **divination types** (tarot, runes, I Ching, pendulum, scrying, palmistry, numerology, oracle/Lenormand, tasseography, cartomancy, horary, geomancy, aura, dream interpretation).
 
 After each SearXNG search + Firecrawl scrape, the agent extracts new search terms from hit titles/snippets and page text (heuristic + Spark) and **enqueues** them for every brand — MidnightSatin, Celestial-Nexus, HeyBuddy, and tactic.studio. Completing a query only flips status; the table only grows.
 
 | Entry | Command / API |
 |-------|---------------|
-| Run | `agent-crm research --brand celestial-nexus [--kind ad_placement\|nonprofit\|competitor] [query]` · `POST /research` |
-| Loop | `agent-crm research-loop [--max-queries 0] [--max-pages 0] [--max-minutes 0]` — seeds all four brands (competitor/nonprofit + ad-placement) then drains the growing queue (`0` = unlimited) |
+| Run | `agent-crm research --brand tactic-studio [--kind target_company\|ad_placement\|competitor] [query]` · `POST /research` |
+| Loop | `agent-crm research-loop [--max-queries 0] [--max-pages 0] [--max-minutes 0]` — seeds all four brands (target-company for tactic.studio, competitor/nonprofit + ad-placement) then drains the growing queue (`0` = unlimited) |
 | List | `GET /research/findings` |
 
 ### 5. Agent engagement (comment drafts)
@@ -391,7 +392,7 @@ agent-crm hunt-loop [query] \
   [--no-resume] [--no-summarize]
 
 # Research
-agent-crm research --brand heybuddy [--kind nonprofit|competitor|ad_placement|other] [query] \
+agent-crm research --brand tactic-studio [--kind target_company|competitor|ad_placement|other] [query] \
   [--max-queries 20] [--max-pages 200] [--max-minutes 60] \
   [--search-limit 50] [--no-summarize] [--no-accounts]
 
@@ -540,4 +541,4 @@ alembic upgrade head      # apply all revisions
 alembic current           # show head
 ```
 
-Current chain includes `q2r3s4t5u6v7` (`seo_targets` / `seo_queries` / `seo_reviews` / `seo_plans`, after `p1q2r3s4t5u6` engagement_queries). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.
+Current chain includes `r3s4t5u6v7w8` (`target_company` research kind, after `q2r3s4t5u6v7` SEO documents). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.

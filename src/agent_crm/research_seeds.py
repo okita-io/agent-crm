@@ -157,6 +157,27 @@ AD_PLACEMENT_QUERIES: dict[Brand, list[str]] = {
     ],
 }
 
+TARGET_COMPANY_QUERIES: dict[Brand, list[str]] = {
+    Brand.TACTIC_STUDIO: [
+        "largest US grocery supermarket chains by revenue",
+        "top food and beverage companies over $10 million revenue",
+        "largest CPG consumer packaged goods companies United States",
+        "biggest restaurant QSR chains United States revenue",
+        "convenience store chains US largest companies",
+        "largest retail chains United States by annual revenue",
+        "supermarket companies over $10 million annual revenue list",
+        "beverage brand companies US revenue ranking",
+        "regional grocery chains United States list",
+        "specialty food retailers largest US companies",
+        "department store retail companies United States",
+        "largest alcohol beverage companies US",
+        "snack food companies US over $10 million revenue",
+        "drugstore and convenience retailers largest US chains",
+        "foodservice grocery retailers United States companies",
+        "Fortune 500 retail grocery food beverage companies",
+    ],
+}
+
 NONPROFIT_QUERIES: dict[Brand, list[str]] = {
     Brand.HEYBUDDY: [
         "501c3 loneliness elder companionship nonprofit",
@@ -181,6 +202,12 @@ def loop_kinds_for_brand(brand: Brand) -> tuple[ResearchFindingKind, ...]:
     """Kinds the standing research-loop seeds for one brand."""
     if brand == Brand.HEYBUDDY:
         return (ResearchFindingKind.NONPROFIT, ResearchFindingKind.AD_PLACEMENT)
+    if brand == Brand.TACTIC_STUDIO:
+        return (
+            ResearchFindingKind.TARGET_COMPANY,
+            ResearchFindingKind.COMPETITOR,
+            ResearchFindingKind.AD_PLACEMENT,
+        )
     return (ResearchFindingKind.COMPETITOR, ResearchFindingKind.AD_PLACEMENT)
 
 
@@ -202,7 +229,9 @@ def loop_seed_entries() -> list[tuple[Brand, ResearchFindingKind, str]]:
 def default_kind_for_brand(brand: Brand) -> ResearchFindingKind:
     if brand == Brand.HEYBUDDY:
         return ResearchFindingKind.NONPROFIT
-    if brand in {Brand.CELESTIAL_NEXUS, Brand.MIDNIGHTSATIN, Brand.TACTIC_STUDIO}:
+    if brand == Brand.TACTIC_STUDIO:
+        return ResearchFindingKind.TARGET_COMPANY
+    if brand in {Brand.CELESTIAL_NEXUS, Brand.MIDNIGHTSATIN}:
         return ResearchFindingKind.COMPETITOR
     return ResearchFindingKind.OTHER
 
@@ -225,6 +254,9 @@ def seed_queries(
 
     if kind == ResearchFindingKind.AD_PLACEMENT:
         return list(AD_PLACEMENT_QUERIES.get(brand, []))
+
+    if kind == ResearchFindingKind.TARGET_COMPANY:
+        return list(TARGET_COMPANY_QUERIES.get(brand, []))
 
     competitor = COMPETITOR_QUERIES.get(brand, [])
     nonprofit = NONPROFIT_QUERIES.get(brand, [])

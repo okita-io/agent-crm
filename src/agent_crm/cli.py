@@ -443,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
 
     research = sub.add_parser(
         "research",
-        help="Run a Research agent cycle (competitor, nonprofit, or ad-placement prospecting)",
+        help="Run a Research agent cycle (competitor, nonprofit, ad-placement, or target-company prospecting)",
     )
     research.add_argument(
         "--brand",
@@ -453,8 +453,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     research.add_argument(
         "--kind",
-        choices=["competitor", "nonprofit", "ad_placement", "other"],
-        help="Finding kind (defaults from brand: heybuddy->nonprofit, others->competitor)",
+        choices=["competitor", "nonprofit", "ad_placement", "target_company", "other"],
+        help="Finding kind (defaults from brand: heybuddy->nonprofit, tactic-studio->target_company)",
     )
     research.add_argument(
         "query",

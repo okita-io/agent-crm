@@ -741,8 +741,10 @@ def _render_hunter_tab(refresh_seconds: int) -> None:
 def _render_research_tab() -> None:
     st.subheader("Research findings")
     st.caption(
-        "Competitor, nonprofit, and ad-placement prospecting. The query queue is "
-        "append-only: SearXNG/Firecrawl pages enqueue new search terms and rows are never deleted."
+        "Competitor, nonprofit, ad-placement, and retail target-company prospecting. "
+        "The query queue is append-only: SearXNG/Firecrawl pages enqueue new search "
+        "terms and rows are never deleted. tactic.studio target-company findings "
+        "enqueue hunter searches for VPs of marketing/sales and marketing managers."
     )
 
     queue = ResearchQueryStore().queue_status()
@@ -760,7 +762,7 @@ def _render_research_tab() -> None:
     )
     kind_filter = st.selectbox(
         "Kind filter",
-        options=["all", "competitor", "nonprofit", "ad_placement", "other"],
+        options=["all", "competitor", "nonprofit", "ad_placement", "target_company", "other"],
         index=0,
     )
 

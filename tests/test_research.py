@@ -16,7 +16,14 @@ from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import AgentStatus, Brand, ResearchFindingKind
 from agent_crm.heartbeat import list_heartbeats
 from agent_crm.research import _heuristic_extra, run_research
-from agent_crm.research_seeds import AD_PLACEMENT_QUERIES, COMPETITOR_QUERIES, seed_queries
+from agent_crm.research_seeds import (
+    AD_PLACEMENT_QUERIES,
+    COMPETITOR_QUERIES,
+    TARGET_COMPANY_QUERIES,
+    default_kind_for_brand,
+    loop_kinds_for_brand,
+    seed_queries,
+)
 from agent_crm.research_store import list_findings
 from agent_crm.research_utils import canonical_url, is_junk_finding
 from agent_crm.schemas import ResearchFindingOut, ResearchRequest, ResearchResult
@@ -151,6 +158,22 @@ def _nonprofit_http_client() -> httpx.Client:
 
 def test_research_finding_kind_includes_ad_placement() -> None:
     assert ResearchFindingKind.AD_PLACEMENT.value == "ad_placement"
+
+
+def test_research_finding_kind_includes_target_company() -> None:
+    assert ResearchFindingKind.TARGET_COMPANY.value == "target_company"
+    assert default_kind_for_brand(Brand.TACTIC_STUDIO) == ResearchFindingKind.TARGET_COMPANY
+    assert ResearchFindingKind.TARGET_COMPANY in loop_kinds_for_brand(Brand.TACTIC_STUDIO)
+
+
+def test_tactic_target_company_seeds_cover_retail_and_fnb() -> None:
+    queries = seed_queries(Brand.TACTIC_STUDIO, ResearchFindingKind.TARGET_COMPANY)
+    combined = " ".join(queries).lower()
+    assert Brand.TACTIC_STUDIO in TARGET_COMPANY_QUERIES
+    assert 10 <= len(queries) <= 18
+    assert "grocery" in combined
+    assert "food" in combined or "beverage" in combined
+    assert "10 million" in combined or "revenue" in combined
 
 
 def test_ad_placement_seed_queries_cover_all_brands() -> None:
@@ -307,6 +330,105 @@ def test_run_research_ad_placement_writes_structured_extra(tmp_path, monkeypatch
     _teardown_db()
 
 
+def test_run_research_target_company_enqueues_hunter_people_queries(
+    tmp_path, monkeypatch
+) -> None:
+    _setup_db(tmp_path, monkeypatch, "research-target-company.db")
+    from agent_crm.hunt_store import HuntStore
+
+    payload = {
+        "results": [
+            {
+                "url": "https://retail.example/top-grocers",
+                "title": "Largest US grocery chains by revenue",
+                "content": "Kroger, Albertsons, and Publix lead US grocery.",
+            }
+        ]
+    }
+    firecrawl_ok = {
+        "data": {
+            "markdown": (
+                "The largest US grocery companies include Kroger, Albertsons, "
+                "and Publix Super Markets, each well above $10 million revenue."
+            ),
+            "metadata": {"title": "Largest US grocery chains by revenue"},
+        }
+    }
+
+    def searx_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    def firecrawl_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=firecrawl_ok)
+
+    http = httpx.Client(
+        transport=_mock_transport(
+            {
+                "/search": searx_handler,
+                "/v1/scrape": firecrawl_handler,
+            }
+        )
+    )
+
+    with patch("agent_crm.research.chat_completions") as mock_llm:
+        mock_llm.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "summary": "List of large US grocery retailers.",
+                                "companies": [
+                                    {
+                                        "name": "Kroger",
+                                        "sector": "grocery",
+                                        "revenue_hint": "$150B",
+                                        "why_target": "largest US grocer",
+                                    },
+                                    {
+                                        "name": "Publix",
+                                        "sector": "grocery",
+                                        "revenue_hint": "$50B+",
+                                        "why_target": "regional grocer",
+                                    },
+                                ],
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+        result = run_research(
+            ResearchRequest(
+                brand=Brand.TACTIC_STUDIO,
+                kind=ResearchFindingKind.TARGET_COMPANY,
+                query="largest US grocery supermarket chains by revenue",
+                max_pages=2,
+                max_queries=1,
+                write_accounts=False,
+            ),
+            searx_client=http,
+            firecrawl_client=http,
+        )
+
+    assert result.findings_written
+    findings = list_findings(brand=Brand.TACTIC_STUDIO, kind=ResearchFindingKind.TARGET_COMPANY)
+    assert findings[0].extra is not None
+    names = [row["name"] for row in findings[0].extra["companies"]]
+    assert "Kroger" in names
+    assert "Publix" in names
+
+    hunt_queries = HuntStore().list_queries(brand=Brand.TACTIC_STUDIO, limit=50)
+    hunt_text = " ".join(row.query for row in hunt_queries)
+    origins = {row.origin for row in hunt_queries}
+    assert "Kroger" in hunt_text
+    assert "VP of marketing" in hunt_text
+    assert "marketing manager" in hunt_text
+    assert "VP of sales" in hunt_text
+    assert any(origin.startswith("marketing:company:") for origin in origins)
+    _teardown_db()
+
+
 def test_research_api_accepts_ad_placement_kind(client: TestClient) -> None:
     with patch("agent_crm.api.run_research") as mock_run:
         mock_run.return_value = ResearchResult(
@@ -327,6 +449,28 @@ def test_research_api_accepts_ad_placement_kind(client: TestClient) -> None:
         )
     assert response.status_code == 200
     assert response.json()["kind"] == "ad_placement"
+
+
+def test_research_api_accepts_target_company_kind(client: TestClient) -> None:
+    with patch("agent_crm.api.run_research") as mock_run:
+        mock_run.return_value = ResearchResult(
+            brand=Brand.TACTIC_STUDIO,
+            kind=ResearchFindingKind.TARGET_COMPANY,
+            queries_run=1,
+            pages_scraped=1,
+            findings_written=[1],
+            errors=[],
+        )
+        response = client.post(
+            "/research",
+            json={
+                "brand": "tactic-studio",
+                "kind": "target_company",
+                "query": "largest US grocery chains",
+            },
+        )
+    assert response.status_code == 200
+    assert response.json()["kind"] == "target_company"
 
 
 def test_canonical_url_dedupes_tracking_params() -> None:

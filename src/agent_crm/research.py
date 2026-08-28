@@ -1,4 +1,4 @@
-"""Research agent: competitor, nonprofit, and ad-placement prospecting via SearXNG + Firecrawl + Spark."""
+"""Research agent: competitor, nonprofit, ad-placement, and target-company prospecting via SearXNG + Firecrawl + Spark."""
 
 from __future__ import annotations
 
@@ -39,6 +39,11 @@ from .research_utils import (
 )
 from .schemas import ResearchRequest, ResearchResult
 from .searxng_client import SearchResult, SearxngError, search
+from .target_companies import (
+    companies_from_payload,
+    enqueue_target_company_hunts,
+    heuristic_companies_from_title,
+)
 from .tooling import CRMToolkit
 
 ACTOR = "research"
@@ -223,6 +228,10 @@ def run_research(
                     extra=extra,
                 )
 
+            if kind == ResearchFindingKind.TARGET_COMPANY:
+                extra = _ensure_target_company_extra(extra, title=title)
+                enqueue_target_company_hunts(extra=extra, brand=request.brand)
+
             finding = upsert_finding(
                 url=normalized,
                 title=title,
@@ -236,7 +245,9 @@ def run_research(
             findings_written.append(finding.id)
 
             if request.write_accounts and _is_strong_hit(summary, extra):
-                _maybe_write_account_note(crm, normalized, title, summary, extra)
+                companies = extra.get("companies") if extra else None
+                if not (isinstance(companies, list) and len(companies) > 1):
+                    _maybe_write_account_note(crm, normalized, title, summary, extra)
 
             try:
                 process_scraped_page_contacts(
@@ -368,11 +379,20 @@ def _llm_research_follow_up_terms(
         "Search hits and page excerpts:\n"
         + "\n".join(lines)
         + "\n\n"
-        f"Suggest up to {max_terms} NEW search queries to find more relevant "
-        "competitors, partners, ad surfaces, or topic variants mentioned in the sources. "
-        "Use concrete product, community, or divination/AR/nonprofit terms from the pages. "
-        "Do NOT invent emails, person names, or URLs.\n"
-        'Respond with JSON only: {"terms": ["query one", "query two"]}'
+        + (
+            f"Suggest up to {max_terms} NEW search queries for more named retail, "
+            "grocery, food & beverage, CPG, restaurant, or convenience-store companies "
+            "over $10 million revenue. Prefer lists, directories, and rankings. "
+            "Do NOT invent company names, emails, or URLs.\n"
+            if kind == ResearchFindingKind.TARGET_COMPANY
+            else (
+                f"Suggest up to {max_terms} NEW search queries to find more relevant "
+                "competitors, partners, ad surfaces, or topic variants mentioned in the sources. "
+                "Use concrete product, community, or divination/AR/nonprofit terms from the pages. "
+                "Do NOT invent emails, person names, or URLs.\n"
+            )
+        )
+        + 'Respond with JSON only: {"terms": ["query one", "query two"]}'
     )
     try:
         response = chat_completions(
@@ -425,6 +445,8 @@ def _fallback_summary(
         prefix = "Potential nonprofit / 501(c)(3) partner for HeyBuddy: "
     elif kind == ResearchFindingKind.AD_PLACEMENT:
         prefix = f"Ad placement opportunity for {brand_label}: "
+    elif kind == ResearchFindingKind.TARGET_COMPANY:
+        prefix = f"Retail / F&B target company for {brand_label}: "
     else:
         prefix = "Research finding: "
     parts = [prefix + title]
@@ -467,6 +489,7 @@ def _maybe_summarize(
             f"{page_block}\n\n"
             'Return JSON: {"summary": "...", "why_it_matters": "..."}'
         )
+        max_tokens = 320
     elif kind == ResearchFindingKind.NONPROFIT:
         system = (
             "You analyze US nonprofits and 501(c)(3)-adjacent organizations for partnership "
@@ -480,6 +503,7 @@ def _maybe_summarize(
             'Return JSON: {"summary": "...", "org_name": "...", "mission": "...", '
             '"ein": null or "XX-XXXXXXX", "why_it_matters": "..."}'
         )
+        max_tokens = 320
     elif kind == ResearchFindingKind.AD_PLACEMENT:
         system = (
             "You analyze websites, forums, newsletters, podcasts, and communities that sell ads, "
@@ -499,9 +523,32 @@ def _maybe_summarize(
             '"how_to_buy": "URL or unknown", "brand_fit": "...", '
             '"brand_safety": "ok|caution|avoid — brief reason", "why_it_matters": "..."}'
         )
+        max_tokens = 320
+    elif kind == ResearchFindingKind.TARGET_COMPANY:
+        system = (
+            "You extract named retail, grocery, food & beverage, CPG, restaurant, "
+            "and convenience-store companies as CRM hunt targets. "
+            "Prefer companies that appear to do more than $10 million in annual revenue. "
+            "Never invent company names that are not in the source. "
+            "Skip agencies, XR studios, software vendors, and listicle publishers."
+            + UNTRUSTED_DATA_SYSTEM_SUFFIX
+        )
+        if brand_context:
+            system += f"\n\n--- brand context (excerpt) ---\n{brand_context}"
+        user = (
+            f"Target brand: {brand_label}\n"
+            f"{page_block}\n\n"
+            "Return JSON: "
+            '{"summary":"...","companies":[{"name":"Kroger","sector":"grocery",'
+            '"revenue_hint":"$150B or unknown","why_target":"large US grocer"}]}. '
+            "Include up to 25 companies. If the page is a single company site, "
+            "return one company."
+        )
+        max_tokens = 900
     else:
         system = "You write concise CRM research summaries. Be factual." + UNTRUSTED_DATA_SYSTEM_SUFFIX
         user = page_block
+        max_tokens = 320
 
     try:
         response = chat_completions(
@@ -511,7 +558,7 @@ def _maybe_summarize(
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                "max_tokens": 320,
+                "max_tokens": max_tokens,
                 "temperature": 0.2,
             },
             timeout=120.0,
@@ -563,6 +610,9 @@ def _heuristic_extra(
     if kind == ResearchFindingKind.AD_PLACEMENT:
         return _heuristic_ad_placement_extra(page, hit, text)
 
+    if kind == ResearchFindingKind.TARGET_COMPANY:
+        return _heuristic_target_company_extra(page, hit)
+
     return None
 
 
@@ -583,6 +633,35 @@ _AD_PRODUCT_KEYWORDS: tuple[tuple[str, str], ...] = (
 )
 
 _BUY_LINK_HINTS = ("advertise", "sponsor", "media-kit", "mediakit", "ads.", "/ads")
+
+
+def _heuristic_target_company_extra(
+    page: ScrapeResult,
+    hit: SearchResult,
+) -> dict[str, Any] | None:
+    companies = heuristic_companies_from_title(page.title or hit.title)
+    if not companies:
+        return None
+    extra: dict[str, Any] = {"companies": companies}
+    if len(companies) == 1:
+        extra["org_name"] = companies[0]["name"]
+    return extra
+
+
+def _ensure_target_company_extra(
+    extra: dict[str, Any] | None,
+    *,
+    title: str,
+) -> dict[str, Any]:
+    merged = dict(extra or {})
+    companies = companies_from_payload(merged)
+    if not companies:
+        companies = heuristic_companies_from_title(title)
+    if companies:
+        merged["companies"] = companies
+        if len(companies) == 1:
+            merged["org_name"] = companies[0]["name"]
+    return merged
 
 
 def _heuristic_ad_placement_extra(
@@ -679,6 +758,15 @@ def _normalize_extra(
         if how_to_buy != "unknown":
             extra["how_to_buy"] = how_to_buy
 
+    if kind == ResearchFindingKind.TARGET_COMPANY:
+        companies = companies_from_payload(parsed)
+        if not companies:
+            companies = heuristic_companies_from_title(page.title or hit.title)
+        if companies:
+            extra["companies"] = companies
+            if len(companies) == 1:
+                extra["org_name"] = companies[0]["name"]
+
     return extra or None
 
 
@@ -714,6 +802,7 @@ def _is_strong_hit(summary: str, extra: dict[str, Any] | None) -> bool:
             "ad_product",
             "how_to_buy",
             "brand_fit",
+            "companies",
         )
     ):
         return True

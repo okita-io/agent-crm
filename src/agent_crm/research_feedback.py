@@ -81,8 +81,20 @@ BRAND_TOPIC_HINTS: dict[Brand, tuple[str, ...]] = {
 
 _TITLE_KEEP = re.compile(
     r"\b(app|studio|agency|nonprofit|501|forum|newsletter|community|"
-    r"discord|reddit|podcast|visualization|training|divination|romance)\b",
+    r"discord|reddit|podcast|visualization|training|divination|romance|"
+    r"grocery|supermarket|retail|beverage|restaurant)\b",
     re.IGNORECASE,
+)
+
+_TARGET_COMPANY_HINTS: tuple[str, ...] = (
+    "grocery",
+    "supermarket",
+    "convenience store",
+    "cpg",
+    "restaurant chain",
+    "beverage company",
+    "food retailer",
+    "department store",
 )
 
 
@@ -92,6 +104,8 @@ def follow_up_suffix(brand: Brand, kind: ResearchFindingKind) -> str:
         return "sponsorship advertising"
     if kind == ResearchFindingKind.NONPROFIT:
         return "501c3 nonprofit"
+    if kind == ResearchFindingKind.TARGET_COMPANY:
+        return "retail companies over $10 million revenue"
     if brand == Brand.TACTIC_STUDIO:
         return "AR experience studio"
     if brand == Brand.CELESTIAL_NEXUS:
@@ -133,7 +147,10 @@ def extract_research_follow_up_terms(
 
     candidates: list[str] = []
     suffix = follow_up_suffix(brand, kind)
-    for hint in BRAND_TOPIC_HINTS.get(brand, ()):
+    hints = BRAND_TOPIC_HINTS.get(brand, ())
+    if kind == ResearchFindingKind.TARGET_COMPANY:
+        hints = _TARGET_COMPANY_HINTS
+    for hint in hints:
         if hint not in combined:
             continue
         if hint in original:

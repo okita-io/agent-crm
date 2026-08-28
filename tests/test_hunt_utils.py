@@ -5,6 +5,7 @@ from __future__ import annotations
 from agent_crm.enums import ContactAudience, HuntResourceKind
 from agent_crm.hunt_feedback import (
     community_search_terms,
+    company_people_search_terms,
     is_valid_hunt_person_name,
     person_search_terms,
 )
@@ -111,4 +112,16 @@ def test_marketing_person_search_terms_target_brand_leadership():
     assert "vp of marketing" in combined
     assert "brand manager" in combined
     assert "food and beverage" in combined
+    assert all("@" not in term for term in terms)
+
+
+def test_company_people_search_terms_cover_marketing_and_sales():
+    terms = company_people_search_terms("Kroger")
+    combined = " ".join(terms).lower()
+    assert len(terms) == 4
+    assert all("Kroger" in term for term in terms)
+    assert "vp of marketing" in combined
+    assert "marketing manager" in combined
+    assert "vp of sales" in combined
+    assert "brand manager" in combined
     assert all("@" not in term for term in terms)

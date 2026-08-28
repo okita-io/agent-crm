@@ -40,6 +40,14 @@ def test_extract_follow_ups_from_serp_and_page_for_each_brand() -> None:
             ["Industrial training aids and digital twin CAD visualization."],
             ("industrial visualization", "training aid", "digital twin"),
         ),
+        (
+            Brand.TACTIC_STUDIO,
+            ResearchFindingKind.TARGET_COMPANY,
+            "largest US grocery chains",
+            [{"title": "Top grocery supermarket chains", "content": "Kroger grocery"}],
+            ["Regional grocery chains and convenience store retailers."],
+            ("grocery", "convenience store"),
+        ),
     ]
     for brand, kind, query, serp, pages, expected in cases:
         terms = extract_research_follow_up_terms(

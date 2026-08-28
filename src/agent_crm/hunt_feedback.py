@@ -192,6 +192,21 @@ def person_search_terms(
     return templates[:max_terms]
 
 
+def company_people_search_terms(company: str, *, max_terms: int = 4) -> list[str]:
+    """Build people-discovery queries for a named retail/F&B company."""
+    clean = re.sub(r"\s+", " ", (company or "").strip())
+    if len(clean) < 2 or "@" in clean:
+        return []
+    quoted = f'"{clean}"'
+    templates = [
+        f"{quoted} VP of marketing",
+        f"{quoted} marketing manager",
+        f"{quoted} VP of sales",
+        f"{quoted} brand manager",
+    ]
+    return templates[:max_terms]
+
+
 def engagement_search_terms(
     classification: ResourceClassification,
     *,
@@ -362,6 +377,32 @@ def enqueue_person_terms(
             run_id=run_id,
         ):
             budget.person_terms_remaining -= 1
+            enqueued += 1
+    return enqueued
+
+
+def enqueue_company_people_terms(
+    store: HuntStore,
+    *,
+    company: str,
+    brand: Brand,
+    run_id: str | None = None,
+    audience: ContactAudience | None = None,
+    max_terms: int = 4,
+) -> int:
+    """Enqueue marketing/sales people searches for one named company."""
+    origin = origin_with_audience(f"company:{_origin_slug(company)}", audience)
+    enqueued = 0
+    for term in company_people_search_terms(company, max_terms=max_terms):
+        if "@" in term:
+            continue
+        if store.enqueue_query(
+            query=term,
+            brand=brand,
+            origin=origin,
+            params=None,
+            run_id=run_id,
+        ):
             enqueued += 1
     return enqueued
 
