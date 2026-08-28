@@ -53,6 +53,28 @@ def test_is_filename_as_email_rejects_production_junk(email: str) -> None:
     assert prepare_contact_for_ingest(email, None) is None
 
 
+REAL_ZIP_TLD_EMAIL_CASES = [
+    "someone@lemmy.zip",
+    "someone@piefed.zip",
+    "jane.doe@lemmy.zip",
+    "alex@piefed.zip",
+]
+
+
+@pytest.mark.parametrize("email", REAL_ZIP_TLD_EMAIL_CASES)
+def test_is_filename_as_email_allows_real_zip_tld_domains(email: str) -> None:
+    """`.zip` is a public gTLD — federated social domains must not be flagged."""
+    assert not is_filename_as_email(email)
+    assert not is_skipped_email(email)
+
+
+def test_prepare_contact_ingest_allows_real_zip_tld_person_email() -> None:
+    assert prepare_contact_for_ingest("jane.doe@lemmy.zip", "Jane Doe") == (
+        "jane.doe@lemmy.zip",
+        "Jane Doe",
+    )
+
+
 @pytest.mark.parametrize("email", FILENAME_AS_EMAIL_CASES)
 def test_upsert_rejects_filename_emails(email: str) -> None:
     with pytest.raises(ValueError, match="rejected at ingest"):
