@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     engagement_scan_interval_hours: int = 24
     engagement_popularity_threshold: int = 40
     engagement_draft_threshold: int = 55
+    engagement_max_branch_terms: int = 8
 
     # Research agent defaults
     research_max_queries_default: int = 20

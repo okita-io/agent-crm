@@ -227,6 +227,7 @@ class EngagementLoopResultOut(BaseModel):
     pages_scraped: int
     errors: list[str]
     stop_reason: str
+    follow_up_terms_enqueued: int = 0
 
 
 class EngagementThreadOut(ORMModel):

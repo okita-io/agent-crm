@@ -267,6 +267,7 @@ def engagement_loop(payload: EngagementLoopRequest) -> EngagementLoopResultOut:
         pages_scraped=result.pages_scraped,
         errors=result.errors,
         stop_reason=result.stop_reason,
+        follow_up_terms_enqueued=result.follow_up_terms_enqueued,
     )
 
 

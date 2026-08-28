@@ -239,6 +239,7 @@ def _cmd_engagement_loop(args: argparse.Namespace) -> int:
                 "threads_cataloged": result.threads_cataloged,
                 "drafts_written": result.drafts_written,
                 "pages_scraped": result.pages_scraped,
+                "follow_up_terms_enqueued": result.follow_up_terms_enqueued,
                 "stop_reason": result.stop_reason,
                 "errors": result.errors,
             },
@@ -483,7 +484,7 @@ def main(argv: list[str] | None = None) -> int:
 
     engagement_loop = sub.add_parser(
         "engagement-loop",
-        help="Rescan catalogued forums and draft comment replies (never posts)",
+        help="Drain the append-only engagement queue and draft comment replies (never posts)",
     )
     engagement_loop.add_argument(
         "--brand",
@@ -494,7 +495,7 @@ def main(argv: list[str] | None = None) -> int:
         "--max-venues",
         type=int,
         default=10,
-        help="Max forums/communities to rescan",
+        help="Max queued searches to run this cycle",
     )
     engagement_loop.add_argument(
         "--max-pages-per-venue",

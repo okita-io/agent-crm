@@ -22,6 +22,7 @@ from agent_crm.contact_store import (
     list_contact_profiles,
 )
 from agent_crm.db import database_kind, init_db
+from agent_crm.engagement_query_store import EngagementQueryStore
 from agent_crm.engagement_store import count_drafts, count_threads, list_drafts, list_threads
 from agent_crm.enums import (
     AgentStatus,
@@ -753,9 +754,11 @@ def _render_engagement_tab() -> None:
     st.subheader("Agent engagement")
     st.caption(
         "High-traffic forums and popular threads catalogued for later comment drafts. "
+        "The query queue is append-only: scraped pages enqueue new community/thread searches. "
         "This stack never posts — drafts stay here for human review."
     )
 
+    queue = EngagementQueryStore().queue_status()
     brand_filter = st.selectbox(
         "Brand filter",
         options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
@@ -763,9 +766,11 @@ def _render_engagement_tab() -> None:
     )
     brand = None if brand_filter == "all" else Brand(brand_filter)
 
-    cols = st.columns(2)
-    cols[0].metric("Catalogued threads", count_threads(brand=brand))
-    cols[1].metric("Comment drafts", count_drafts(brand=brand))
+    qcols = st.columns(4)
+    qcols[0].metric("Queued terms (total)", queue.get("total", 0))
+    qcols[1].metric("Pending", queue.get("pending", 0))
+    qcols[2].metric("Catalogued threads", count_threads(brand=brand))
+    qcols[3].metric("Comment drafts", count_drafts(brand=brand))
 
     st.subheader("Popular threads")
     threads = list_threads(brand=brand, limit=200)

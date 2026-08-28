@@ -105,3 +105,83 @@ def test_engagement_loop_catalogs_hot_thread_and_drafts(loop_db) -> None:
     assert drafts
     assert "MidnightSatin" in drafts[0].draft_text
     assert drafts[0].status.value == "draft"
+
+
+def test_engagement_loop_enqueues_follow_ups_and_queue_only_grows(loop_db) -> None:
+    from agent_crm.engagement_query_store import EngagementQueryStore
+
+    store_hunt = HuntStore()
+    store_hunt.upsert_resource(
+        url="https://www.reddit.com/r/RomanceBooks/",
+        brand=Brand.MIDNIGHTSATIN,
+        title="Romance Books — 80,000 members",
+        found_via_query="romance forums",
+        snippet="Most popular romance community. High traffic.",
+        kind=HuntResourceKind.COMMUNITY,
+    )
+
+    thread_url = "https://www.reddit.com/r/RomanceBooks/comments/abc123/weekly_recs/"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/search":
+            payload = {
+                "results": [
+                    {
+                        "url": thread_url,
+                        "title": "Weekly recs megathread — 500 comments",
+                        "content": (
+                            "Also see r/HistoricalRomance and r/Romance_for_men. "
+                            "Galatea spicy romance booktok community."
+                        ),
+                    }
+                ]
+            }
+            return httpx.Response(200, json=payload)
+        if request.url.path == "/v1/scrape":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "markdown": (
+                            "500 comments. Cross-post from r/HistoricalRomance. "
+                            "Galatea and Radish readers hang out here."
+                        ),
+                        "metadata": {"title": "Weekly recs megathread — 500 comments"},
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    queue = EngagementQueryStore()
+    before = queue.count_all()
+    with patch("agent_crm.engagement_loop.chat_completions") as mock_llm:
+        mock_llm.return_value = {
+            "choices": [{"message": {"content": '{"should_skip": true}'}}]
+        }
+        result = run_engagement_loop(
+            brand=Brand.MIDNIGHTSATIN,
+            budget=EngagementBudget(max_venues=1, max_pages_per_venue=3, max_minutes=5),
+            summarize=False,
+            searx_client=http,
+            firecrawl_client=http,
+        )
+
+    after = queue.count_all()
+    assert result.venues_scanned >= 1
+    assert result.follow_up_terms_enqueued >= 1
+    assert after > before
+    pending = queue.count_pending(brand=Brand.MIDNIGHTSATIN)
+    assert pending >= 1
+    combined = " ".join(_engagement_query_texts()).lower()
+    assert "historicalromance" in combined or "galatea" in combined or "radish" in combined
+
+
+def _engagement_query_texts() -> list[str]:
+    from sqlalchemy import select
+
+    from agent_crm.db import session_scope
+    from agent_crm.models import EngagementQuery
+
+    with session_scope() as session:
+        return list(session.scalars(select(EngagementQuery.query)))

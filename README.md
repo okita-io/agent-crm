@@ -179,7 +179,7 @@ The comment-reply arm of ad-placement. The hunter (and ad-placement research) ca
 | Threads | `GET /engagement/threads` · dashboard **Engagement** tab |
 | Drafts | `GET /engagement/drafts` |
 
-Compose runs `engagement-loop` as a standing worker. It picks catalogued venues due for rescan (ordered by `engagement_score`), searches for hot/top threads, scrapes them, and asks Spark for a draft when popularity is high enough (`CRM_ENGAGEMENT_DRAFT_THRESHOLD`, default **55**).
+Compose runs `engagement-loop` as a standing worker. It seeds scan queries from catalogued venues into an append-only **`engagement_queries`** table, drains pending searches, catalogs popular threads, and drafts replies when popularity is high enough (`CRM_ENGAGEMENT_DRAFT_THRESHOLD`, default **55**). SearXNG hits and Firecrawl pages enqueue new community/thread terms (related subreddits, Discords, weekly threads) so the queue only grows — rows are never deleted.
 
 ### 6. Contact extraction and social lookup
 
@@ -451,6 +451,7 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_ENGAGEMENT_MAX_VENUES_PER_RUN` | Forums/communities rescanned per engagement cycle (10) |
 | `CRM_ENGAGEMENT_MAX_PAGES_PER_VENUE` | Pages scraped per venue (15) |
 | `CRM_ENGAGEMENT_MAX_MINUTES_DEFAULT` | Engagement-loop wall clock (45) |
+| `CRM_ENGAGEMENT_MAX_BRANCH_TERMS` | Follow-up community/thread terms enqueued per query (8) |
 | `CRM_RESEARCH_MAX_QUERIES_DEFAULT` | Research query budget (20) |
 | `CRM_RESEARCH_MAX_PAGES_PER_RUN` | Research scrape budget (200) |
 | `CRM_RESEARCH_MAX_MINUTES_DEFAULT` | Research wall clock (60) |

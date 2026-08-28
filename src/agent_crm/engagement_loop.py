@@ -1,4 +1,4 @@
-"""Agent engagement loop: rescan catalogued forums and draft comment replies.
+"""Agent engagement loop: drain an append-only query queue and draft comment replies.
 
 Discovery only. This agent never posts, creates accounts, or sends mail.
 """
@@ -14,13 +14,16 @@ import httpx
 from .config import get_settings
 from .engagement import (
     extract_engagement_signals,
+    is_engagement_venue,
     is_thread_url,
     venue_scan_queries,
     venue_url_from_thread,
 )
+from .engagement_feedback import extract_engagement_follow_up_terms
+from .engagement_query_store import EngagementQueryStore
 from .engagement_store import (
     has_draft,
-    list_venues_due_for_scan,
+    list_engagement_venues,
     mark_thread_draft_ready,
     mark_thread_scanned,
     mark_venue_scanned,
@@ -30,6 +33,7 @@ from .engagement_store import (
 from .enums import ActivityType, AgentStatus, Brand, ImprovementSourceAgent
 from .firecrawl_client import FirecrawlError, scrape
 from .heartbeat import record_heartbeat
+from .hunt_store import HuntStore
 from .hunt_utils import classify_resource_detailed, is_junk_title
 from .llm_client import chat_completions
 from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
@@ -40,6 +44,13 @@ from .tooling import CRMToolkit
 from .url_safety import is_public_http_url
 
 ACTOR = "engagement"
+
+ENGAGEMENT_LOOP_BRANDS: tuple[Brand, ...] = (
+    Brand.CELESTIAL_NEXUS,
+    Brand.MIDNIGHTSATIN,
+    Brand.HEYBUDDY,
+    Brand.TACTIC_STUDIO,
+)
 
 
 @dataclass
@@ -62,8 +73,28 @@ class EngagementLoopResult:
     threads_cataloged: int = 0
     drafts_written: int = 0
     pages_scraped: int = 0
+    follow_up_terms_enqueued: int = 0
     errors: list[str] = field(default_factory=list)
     stop_reason: str = "queue_empty"
+
+
+def _seed_engagement_queue(
+    store: EngagementQueryStore, *, brand: Brand | None
+) -> None:
+    venues = list_engagement_venues(brand=brand, limit=200)
+    for venue in venues:
+        classification = classify_resource_detailed(venue.url, venue.title, venue.notes)
+        queries = venue_scan_queries(classification, url=venue.url)
+        if not queries:
+            queries = [f"site:{venue.domain} popular threads"]
+        origin = f"venue:{venue.domain}"[:128]
+        for query in queries:
+            store.enqueue_query(
+                query=query,
+                brand=venue.brand,
+                origin=origin,
+                hunt_resource_id=venue.id,
+            )
 
 
 def run_engagement_loop(
@@ -74,7 +105,7 @@ def run_engagement_loop(
     searx_client: httpx.Client | None = None,
     firecrawl_client: httpx.Client | None = None,
 ) -> EngagementLoopResult:
-    """Scan catalogued high-engagement venues and draft replies (never post)."""
+    """Drain the append-only engagement queue and draft replies (never post)."""
     settings = get_settings()
     budget = budget or EngagementBudget(
         max_venues=settings.engagement_max_venues_per_run,
@@ -84,59 +115,88 @@ def run_engagement_loop(
     crm = CRMToolkit(actor=ACTOR)
     result = EngagementLoopResult()
     deadline = None if budget.max_minutes <= 0 else time.monotonic() + budget.max_minutes * 60
+    store = EngagementQueryStore()
+    store.reset_stale_running_queries(stale_minutes=0)
+    _seed_engagement_queue(store, brand=brand)
 
-    venues = list_venues_due_for_scan(brand=brand, limit=budget.max_venues)
-    if not venues:
+    if store.count_pending(brand=brand) == 0:
         record_heartbeat(ACTOR, status=AgentStatus.IDLE, task="no venues due")
         result.stop_reason = "queue_empty"
         return result
 
     crm.log_note(
-        f"Engagement scan started ({len(venues)} venues)",
+        f"Engagement scan started ({store.count_pending(brand=brand)} pending queries)",
         type=ActivityType.NOTE,
-        payload={"venues": len(venues), "brand": brand.value if brand else None},
+        payload={"brand": brand.value if brand else None},
     )
 
-    for venue in venues:
+    scanned_venues: set[int] = set()
+    queries_run = 0
+    brand_cycle = 0
+    idle_rounds = 0
+    brands = (brand,) if brand is not None else ENGAGEMENT_LOOP_BRANDS
+
+    while True:
         if deadline is not None and time.monotonic() >= deadline:
             result.stop_reason = "max_minutes"
             break
-        if result.venues_scanned >= budget.max_venues:
+        if queries_run >= budget.max_venues:
             result.stop_reason = "max_venues"
             break
 
+        cycle_brand = brands[brand_cycle % len(brands)]
+        brand_cycle += 1
+        claimed = store.claim_next_pending_query(brand=cycle_brand)
+        if claimed is None:
+            idle_rounds += 1
+            if idle_rounds >= len(brands):
+                result.stop_reason = "queue_empty"
+                break
+            continue
+
+        idle_rounds = 0
+        queries_run += 1
+        venue = _load_venue(claimed.hunt_resource_id)
         record_heartbeat(
             ACTOR,
             status=AgentStatus.THINKING,
-            task=f"scanning {venue.domain}",
+            task=f"searching: {claimed.query}",
             resource=settings.searxng_url,
         )
         try:
-            stats = _scan_venue(
-                venue,
+            stats = _run_engagement_query(
+                query=claimed.query,
+                brand=claimed.brand,
+                venue=venue,
                 budget=budget,
                 summarize=summarize,
                 searx_client=searx_client,
                 firecrawl_client=firecrawl_client,
+                queue=store,
             )
         except Exception as exc:  # noqa: BLE001
             from .orchestrator import note_worker_failure
 
-            message = f"engagement scan failed for {venue.url}: {exc}"
+            message = f"engagement scan failed for {claimed.query!r}: {exc}"
             result.errors.append(message)
             note_worker_failure(
                 source_agent=ImprovementSourceAgent.ENGAGEMENT_LOOP,
                 error_text=str(exc),
-                context=f"venue {venue.id}",
+                context=f"query {claimed.id}",
             )
+            store.mark_query_failed(claimed.id, message)
             continue
 
-        result.venues_scanned += 1
         result.threads_cataloged += stats["threads"]
         result.drafts_written += stats["drafts"]
         result.pages_scraped += stats["pages"]
-        mark_venue_scanned(venue.id, interval_hours=settings.engagement_scan_interval_hours)
+        result.follow_up_terms_enqueued += stats["follow_ups"]
+        store.mark_query_completed(claimed.id)
+        if venue is not None and venue.id not in scanned_venues:
+            scanned_venues.add(venue.id)
+            mark_venue_scanned(venue.id, interval_hours=settings.engagement_scan_interval_hours)
 
+    result.venues_scanned = len(scanned_venues) or queries_run
     record_heartbeat(
         ACTOR,
         status=AgentStatus.IDLE,
@@ -145,108 +205,274 @@ def run_engagement_loop(
             f"{result.threads_cataloged} threads, {result.drafts_written} drafts"
         ),
     )
-    if result.stop_reason == "queue_empty" and result.venues_scanned:
+    if result.stop_reason == "queue_empty" and (result.venues_scanned or queries_run):
         result.stop_reason = "complete"
     return result
 
 
-def _scan_venue(
-    venue: HuntResource,
+def _load_venue(resource_id: int | None) -> HuntResource | None:
+    if resource_id is None:
+        return None
+    from .db import session_scope
+    from .models import HuntResource as HuntResourceModel
+
+    with session_scope() as session:
+        return session.get(HuntResourceModel, resource_id)
+
+
+def _run_engagement_query(
     *,
+    query: str,
+    brand: Brand,
+    venue: HuntResource | None,
     budget: EngagementBudget,
     summarize: bool,
     searx_client: httpx.Client | None,
     firecrawl_client: httpx.Client | None,
+    queue: EngagementQueryStore,
 ) -> dict[str, int]:
     settings = get_settings()
-    classification = classify_resource_detailed(venue.url, venue.title, venue.notes)
-    queries = venue_scan_queries(classification, url=venue.url)
-    if not queries:
-        queries = [f"site:{venue.domain} popular threads"]
+    venue_class = None
+    if venue is not None:
+        venue_class = classify_resource_detailed(venue.url, venue.title, venue.notes)
 
     threads = 0
     drafts = 0
     pages = 0
     seen: set[str] = set()
+    serp_dicts: list[dict[str, Any]] = []
+    page_texts: list[str] = []
 
-    for query in queries:
+    try:
+        hits = search(
+            query,
+            limit=min(settings.hunter_search_result_limit, 20),
+            client=searx_client,
+        )
+    except SearxngError:
+        return {"threads": 0, "drafts": 0, "pages": 0, "follow_ups": 0}
+
+    for hit in hits:
+        serp_dicts.append({"title": hit.title, "url": hit.url, "content": hit.snippet})
         if pages >= budget.max_pages_per_venue:
             break
-        try:
-            hits = search(
-                query,
-                limit=min(settings.hunter_search_result_limit, 20),
-                client=searx_client,
+        if hit.url in seen:
+            continue
+        if not is_public_http_url(hit.url, resolve_dns=False):
+            continue
+        seen.add(hit.url)
+
+        markdown = hit.snippet or ""
+        title = hit.title
+        if is_thread_url(hit.url) or pages < budget.max_pages_per_venue:
+            record_heartbeat(
+                ACTOR,
+                status=AgentStatus.WORKING,
+                task=f"scraping {hit.url}",
+                resource=settings.firecrawl_url,
             )
-        except SearxngError:
+            try:
+                page = scrape(hit.url, client=firecrawl_client)
+                title = page.title or hit.title
+                markdown = page.markdown or hit.snippet or ""
+                pages += 1
+                if page.markdown:
+                    page_texts.append(page.markdown[:8000])
+            except FirecrawlError:
+                if not is_thread_url(hit.url):
+                    continue
+
+        if is_junk_title(title) and not is_thread_url(hit.url):
             continue
 
-        for hit in hits:
-            if pages >= budget.max_pages_per_venue:
-                break
-            if hit.url in seen:
-                continue
-            if not is_public_http_url(hit.url, resolve_dns=False):
-                continue
-            seen.add(hit.url)
-
-            markdown = hit.snippet or ""
-            title = hit.title
-            if is_thread_url(hit.url) or pages < budget.max_pages_per_venue:
-                record_heartbeat(
-                    ACTOR,
-                    status=AgentStatus.WORKING,
-                    task=f"scraping {hit.url}",
-                    resource=settings.firecrawl_url,
-                )
-                try:
-                    page = scrape(hit.url, client=firecrawl_client)
-                    title = page.title or hit.title
-                    markdown = page.markdown or hit.snippet or ""
-                    pages += 1
-                except FirecrawlError:
-                    if not is_thread_url(hit.url):
-                        continue
-
-            if is_junk_title(title) and not is_thread_url(hit.url):
-                continue
-
-            hit_class = classify_resource_detailed(hit.url, title, markdown)
-            signals = extract_engagement_signals(
-                title, hit.snippet, markdown, kind=hit_class.kind
-            )
-            if not is_thread_url(hit.url) and signals.score < settings.engagement_popularity_threshold:
-                continue
-
-            thread = upsert_thread(
+        hit_class = classify_resource_detailed(hit.url, title, markdown)
+        if is_engagement_venue(hit_class, hit.url):
+            upsert = HuntStore().upsert_resource(
                 url=hit.url,
-                brand=venue.brand,
+                brand=brand,
                 title=title,
-                signals=signals,
-                hunt_resource_id=venue.id,
-                platform=hit_class.platform or classification.platform,
-                venue_url=venue_url_from_thread(hit.url, hit_class) or venue.url,
-                excerpt=markdown[:800],
                 found_via_query=query,
-                scanned=True,
+                snippet=(markdown or hit.snippet or "")[:500] or None,
+                kind=hit_class.kind,
             )
-            if thread is None:
-                continue
-            threads += 1
-            mark_thread_scanned(
-                thread.id, interval_hours=settings.engagement_scan_interval_hours
+            if upsert.is_new and upsert.resource is not None:
+                for term in venue_scan_queries(hit_class, url=hit.url):
+                    queue.enqueue_query(
+                        query=term,
+                        brand=brand,
+                        origin=f"venue:{upsert.resource.domain}"[:128],
+                        hunt_resource_id=upsert.resource.id,
+                    )
+
+        signals = extract_engagement_signals(
+            title, hit.snippet, markdown, kind=hit_class.kind
+        )
+        if not is_thread_url(hit.url) and signals.score < settings.engagement_popularity_threshold:
+            continue
+
+        thread = upsert_thread(
+            url=hit.url,
+            brand=brand,
+            title=title,
+            signals=signals,
+            hunt_resource_id=venue.id if venue is not None else None,
+            platform=hit_class.platform or (venue_class.platform if venue_class else None),
+            venue_url=(
+                venue_url_from_thread(hit.url, hit_class)
+                or (venue.url if venue is not None else None)
+            ),
+            excerpt=markdown[:800],
+            found_via_query=query,
+            scanned=True,
+        )
+        if thread is None:
+            continue
+        threads += 1
+        mark_thread_scanned(
+            thread.id, interval_hours=settings.engagement_scan_interval_hours
+        )
+
+        if (
+            summarize
+            and signals.score >= settings.engagement_draft_threshold
+            and not has_draft(thread.id, brand)
+        ):
+            drafted = _maybe_draft_reply(thread, markdown=markdown, brand=brand)
+            if drafted:
+                drafts += 1
+
+    follow_ups = _enqueue_engagement_follow_ups(
+        queue,
+        query=query,
+        brand=brand,
+        hunt_resource_id=venue.id if venue is not None else None,
+        serp_results=serp_dicts,
+        page_texts=page_texts,
+        summarize=summarize,
+    )
+    return {
+        "threads": threads,
+        "drafts": drafts,
+        "pages": pages,
+        "follow_ups": follow_ups,
+    }
+
+
+def _enqueue_engagement_follow_ups(
+    store: EngagementQueryStore,
+    *,
+    query: str,
+    brand: Brand,
+    hunt_resource_id: int | None,
+    serp_results: list[dict[str, Any]],
+    page_texts: list[str],
+    summarize: bool,
+) -> int:
+    settings = get_settings()
+    max_terms = settings.engagement_max_branch_terms
+    heuristic = extract_engagement_follow_up_terms(
+        query=query,
+        brand=brand,
+        serp_results=serp_results,
+        page_texts=page_texts,
+        max_terms=max_terms,
+    )
+    llm_terms: list[str] = []
+    if summarize:
+        llm_terms = _llm_engagement_follow_up_terms(
+            query=query,
+            brand=brand,
+            serp_results=serp_results,
+            page_texts=page_texts,
+            max_terms=max_terms,
+        )
+    merged: list[str] = []
+    seen: set[str] = {EngagementQueryStore.make_dedupe_key(brand, query)}
+    for term in heuristic + llm_terms:
+        key = EngagementQueryStore.make_dedupe_key(brand, term)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(term)
+        if len(merged) >= max_terms:
+            break
+    origin = f"branch:{query}".strip()[:128]
+    enqueued = 0
+    for term in merged:
+        if store.enqueue_query(
+            query=term,
+            brand=brand,
+            origin=origin,
+            hunt_resource_id=hunt_resource_id,
+        ):
+            enqueued += 1
+    return enqueued
+
+
+def _llm_engagement_follow_up_terms(
+    *,
+    query: str,
+    brand: Brand,
+    serp_results: list[dict[str, Any]],
+    page_texts: list[str],
+    max_terms: int,
+) -> list[str]:
+    lines = []
+    for idx, item in enumerate(serp_results[:12], start=1):
+        lines.append(
+            wrap_untrusted(
+                f"hit_{idx}",
+                f"{item.get('title', '')} | {item.get('url', '')} | "
+                f"{(item.get('content') or '')[:200]}",
+                max_chars=280,
             )
-
-            if (
-                summarize
-                and signals.score >= settings.engagement_draft_threshold
-                and not has_draft(thread.id, venue.brand)
-            ):
-                drafted = _maybe_draft_reply(thread, markdown=markdown, brand=venue.brand)
-                if drafted:
-                    drafts += 1
-
-    return {"threads": threads, "drafts": drafts, "pages": pages}
+        )
+    for idx, text in enumerate(page_texts[:4], start=1):
+        lines.append(wrap_untrusted(f"page_{idx}", text, max_chars=1200))
+    prompt = (
+        f"You help a CRM engagement agent find more high-traffic forums, subreddits, "
+        f"Discords, and weekly threads for {brand.value}.\n"
+        f"Original query: {wrap_untrusted('query', query, max_chars=300)}\n"
+        "Search hits and page excerpts:\n"
+        + "\n".join(lines)
+        + "\n\n"
+        f"Suggest up to {max_terms} NEW search queries to find more communities or "
+        "popular threads mentioned in the sources. Focus on venues, not people. "
+        "Do NOT invent emails, person names, or URLs.\n"
+        'Respond with JSON only: {"terms": ["query one", "query two"]}'
+    )
+    try:
+        response = chat_completions(
+            {
+                "model": "crm",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You output JSON only." + UNTRUSTED_DATA_SYSTEM_SUFFIX,
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.2,
+                "max_tokens": 240,
+            },
+            timeout=120.0,
+            actor=ACTOR,
+            task=f"engagement follow-ups for {query[:40]}",
+        )
+        content = _extract_chat_content(response) or ""
+    except Exception:  # noqa: BLE001
+        return []
+    payload = extract_json_object(content)
+    if not payload:
+        return []
+    terms = payload.get("terms") or payload.get("queries") or []
+    cleaned: list[str] = []
+    for term in terms:
+        if isinstance(term, str) and term.strip():
+            cleaned.append(term.strip()[:200])
+        if len(cleaned) >= max_terms:
+            break
+    return cleaned
 
 
 def _maybe_draft_reply(

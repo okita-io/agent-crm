@@ -178,6 +178,27 @@ def list_venues_due_for_scan(
         return list(session.scalars(stmt))
 
 
+def list_engagement_venues(
+    *,
+    brand: Brand | None = None,
+    limit: int = 200,
+) -> list[HuntResource]:
+    """All catalogued community/forum/social venues (not only those due for rescan)."""
+    with session_scope() as session:
+        stmt = (
+            select(HuntResource)
+            .where(HuntResource.kind.in_(VENUE_KINDS))
+            .order_by(
+                HuntResource.engagement_score.desc(),
+                HuntResource.last_seen.desc(),
+            )
+            .limit(limit)
+        )
+        if brand is not None:
+            stmt = stmt.where(HuntResource.brand == brand)
+        return list(session.scalars(stmt))
+
+
 def mark_venue_scanned(
     resource_id: int,
     *,
