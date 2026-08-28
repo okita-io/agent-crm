@@ -14,17 +14,19 @@ from .comment_people_store import process_scraped_page_comment_people
 from .config import get_settings
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
 from .engagement import ENGAGEMENT_VENUE_KINDS
-from .enums import ActivityType, AgentStatus, Brand, ResearchFindingKind
+from .enums import ActivityType, AgentStatus, Brand, ResearchFindingKind, ResearchQueryStatus
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
 from .hunt_store import HuntStore
 from .hunt_utils import classify_resource_detailed
 from .llm_client import chat_completions
-from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, wrap_untrusted
+from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
 from .marketing_skill import (
     ad_placement_summarizer_guidance,
     brand_context_snippet,
     competitor_summarizer_guidance,
 )
+from .research_feedback import extract_research_follow_up_terms
+from .research_query_store import ResearchQueryStore
 from .research_seeds import BRAND_DISPLAY, default_kind_for_brand, seed_queries
 from .research_store import upsert_finding
 from .research_utils import (
@@ -67,30 +69,68 @@ def run_research(
     )
     search_limit = min(request.search_limit, settings.research_search_result_limit)
 
-    queries = seed_queries(request.brand, kind, explicit_query=request.query)
-    queries = queries[: budget.max_queries]
-
+    store = ResearchQueryStore()
     started = time.monotonic()
     errors: list[str] = []
     findings_written: list[int] = []
     queries_run = 0
     pages_scraped = 0
+    follow_up_terms_enqueued = 0
     seen_urls: set[str] = set()
     contact_budget = ContactExtractionBudget.from_settings()
+    explicit_work: list[tuple[str, int | None]] | None = None
+
+    if request.query and request.query.strip():
+        query = request.query.strip()
+        store.enqueue_query(
+            query=query,
+            brand=request.brand,
+            kind=kind,
+            origin="explicit",
+        )
+        row = store.get_by_dedupe(request.brand, kind, query)
+        if row is not None and row.status == ResearchQueryStatus.PENDING:
+            store.mark_query_running(row.id)
+        explicit_work = [(query, row.id if row is not None else None)]
+    else:
+        for seed in seed_queries(request.brand, kind):
+            store.enqueue_query(
+                query=seed,
+                brand=request.brand,
+                kind=kind,
+                origin="seed_pack",
+            )
 
     crm.log_note(
         f"Research run started for {request.brand.value} ({kind.value})",
         type=ActivityType.NOTE,
-        payload={"brand": request.brand.value, "kind": kind.value, "queries": len(queries)},
+        payload={
+            "brand": request.brand.value,
+            "kind": kind.value,
+            "queued": store.count_pending(brand=request.brand, kind=kind),
+        },
     )
 
-    for query in queries:
+    explicit_index = 0
+    while True:
         if queries_run >= budget.max_queries:
             break
         if _elapsed_minutes(started) >= budget.max_minutes:
             break
         if pages_scraped >= budget.max_pages:
             break
+
+        query_id: int | None
+        if explicit_work is not None:
+            if explicit_index >= len(explicit_work):
+                break
+            query, query_id = explicit_work[explicit_index]
+            explicit_index += 1
+        else:
+            claimed = store.claim_next_pending_query(brand=request.brand, kind=kind)
+            if claimed is None:
+                break
+            query, query_id = claimed.query, claimed.id
 
         queries_run += 1
         crm.record_heartbeat(
@@ -105,7 +145,14 @@ def run_research(
             message = f"SearXNG search failed for {query!r}: {exc}"
             errors.append(message)
             crm.log_note(message, type=ActivityType.ERROR, payload={"query": query})
+            if query_id is not None:
+                store.mark_query_failed(query_id, message)
             continue
+
+        serp_dicts = [
+            {"title": hit.title, "url": hit.url, "content": hit.snippet} for hit in results
+        ]
+        page_texts: list[str] = []
 
         for hit in results:
             if pages_scraped >= budget.max_pages:
@@ -142,6 +189,8 @@ def run_research(
                 continue
 
             pages_scraped += 1
+            if page.markdown:
+                page_texts.append(page.markdown[:8000])
             fallback = _fallback_summary(hit, page, kind, request.brand)
             summary = fallback
             extra: dict[str, Any] | None = None
@@ -206,6 +255,19 @@ def run_research(
             except Exception:  # noqa: BLE001
                 pass
 
+        follow_up_terms_enqueued += _enqueue_research_follow_ups(
+            store,
+            query=query,
+            brand=request.brand,
+            kind=kind,
+            serp_results=serp_dicts,
+            page_texts=page_texts,
+            summarize=request.summarize,
+            errors=errors,
+        )
+        if query_id is not None:
+            store.mark_query_completed(query_id)
+
     crm.record_heartbeat(status=AgentStatus.IDLE)
     return ResearchResult(
         brand=request.brand,
@@ -214,11 +276,138 @@ def run_research(
         pages_scraped=pages_scraped,
         findings_written=findings_written,
         errors=errors,
+        follow_up_terms_enqueued=follow_up_terms_enqueued,
     )
 
 
 def _elapsed_minutes(started: float) -> float:
     return (time.monotonic() - started) / 60.0
+
+
+def _enqueue_research_follow_ups(
+    store: ResearchQueryStore,
+    *,
+    query: str,
+    brand: Brand,
+    kind: ResearchFindingKind,
+    serp_results: list[dict[str, Any]],
+    page_texts: list[str],
+    summarize: bool,
+    errors: list[str],
+) -> int:
+    """Append discovered search terms to the research queue. Never deletes."""
+    settings = get_settings()
+    max_terms = settings.research_max_branch_terms
+    heuristic = extract_research_follow_up_terms(
+        query=query,
+        brand=brand,
+        kind=kind,
+        serp_results=serp_results,
+        page_texts=page_texts,
+        max_terms=max_terms,
+    )
+    llm_terms: list[str] = []
+    if summarize:
+        llm_terms = _llm_research_follow_up_terms(
+            query=query,
+            brand=brand,
+            kind=kind,
+            serp_results=serp_results,
+            page_texts=page_texts,
+            max_terms=max_terms,
+            errors=errors,
+        )
+
+    merged: list[str] = []
+    seen: set[str] = {ResearchQueryStore.make_dedupe_key(brand, kind, query)}
+    for term in heuristic + llm_terms:
+        key = ResearchQueryStore.make_dedupe_key(brand, kind, term)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(term)
+        if len(merged) >= max_terms:
+            break
+
+    origin = f"branch:{query}".strip()[:128]
+    enqueued = 0
+    for term in merged:
+        if store.enqueue_query(query=term, brand=brand, kind=kind, origin=origin):
+            enqueued += 1
+    return enqueued
+
+
+def _llm_research_follow_up_terms(
+    *,
+    query: str,
+    brand: Brand,
+    kind: ResearchFindingKind,
+    serp_results: list[dict[str, Any]],
+    page_texts: list[str],
+    max_terms: int,
+    errors: list[str],
+) -> list[str]:
+    brand_label = BRAND_DISPLAY.get(brand, brand.value)
+    lines = []
+    for idx, item in enumerate(serp_results[:12], start=1):
+        lines.append(
+            wrap_untrusted(
+                f"hit_{idx}",
+                f"{item.get('title', '')} | {item.get('url', '')} | "
+                f"{(item.get('content') or '')[:200]}",
+                max_chars=280,
+            )
+        )
+    for idx, text in enumerate(page_texts[:4], start=1):
+        lines.append(wrap_untrusted(f"page_{idx}", text, max_chars=1200))
+
+    prompt = (
+        f"You help a CRM research agent expand its search queue for {brand_label} "
+        f"({kind.value}).\n"
+        f"Original query: {wrap_untrusted('query', query, max_chars=300)}\n"
+        "Search hits and page excerpts:\n"
+        + "\n".join(lines)
+        + "\n\n"
+        f"Suggest up to {max_terms} NEW search queries to find more relevant "
+        "competitors, partners, ad surfaces, or topic variants mentioned in the sources. "
+        "Use concrete product, community, or divination/AR/nonprofit terms from the pages. "
+        "Do NOT invent emails, person names, or URLs.\n"
+        'Respond with JSON only: {"terms": ["query one", "query two"]}'
+    )
+    try:
+        response = chat_completions(
+            {
+                "model": "crm",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You output JSON only." + UNTRUSTED_DATA_SYSTEM_SUFFIX,
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.2,
+                "max_tokens": 240,
+            },
+            timeout=120.0,
+            actor=ACTOR,
+            task=f"research follow-ups for {query[:40]}",
+        )
+        content = _extract_chat_content(response) or ""
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"LLM follow-up terms failed for {query!r}: {exc}")
+        return []
+
+    payload = extract_json_object(content)
+    if not payload:
+        return []
+    terms = payload.get("terms") or payload.get("queries") or []
+    cleaned: list[str] = []
+    for term in terms:
+        if isinstance(term, str) and term.strip():
+            cleaned.append(term.strip()[:200])
+        if len(cleaned) >= max_terms:
+            break
+    return cleaned
 
 
 def _fallback_summary(

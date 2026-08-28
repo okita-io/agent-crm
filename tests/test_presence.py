@@ -125,7 +125,22 @@ def test_spark_slot_summary_extracts_actor_names() -> None:
     assert summary["token_usage"]["output_usd_per_million"] == get_settings().llm_output_usd_per_million
 
 
-def test_avoided_cloud_usd_uses_two_and_ten_per_million() -> None:
+def test_spark_slot_summary_does_not_load_token_db_for_occupancy(monkeypatch) -> None:
+    def _boom() -> dict:
+        raise AssertionError("occupancy summary must not query llm_token_usage")
+
+    monkeypatch.setattr("agent_crm.presence.load_token_usage_snapshot", _boom)
+    summary = spark_slot_summary(
+        {
+            "max_concurrency": 4,
+            "observed_upstream_in_flight": 0,
+            "local_in_flight": 0,
+            "waiting": 0,
+            "waiters": [],
+            "in_flight": [],
+        }
+    )
+    assert summary["token_usage"]["totals"]["prompt_tokens"] == 0
     from agent_crm.presence import avoided_cloud_usd
 
     assert avoided_cloud_usd(

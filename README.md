@@ -25,7 +25,7 @@ docker compose up -d --build
 | `spark-queue` | 8088 | GPU-aware LLM queue proxy |
 | `contact-worker` | — | Job dispatcher — enrich + verify (`agent-crm jobs`) |
 | `hunt-loop` | — | Standing outbound hunter (`agent-crm hunt-loop`, global priority queue) |
-| `research-loop` | — | Standing ad-placement research (20 queries / 60 min / 200 pages per cycle) |
+| `research-loop` | — | Standing research queue drain (20 queries / 60 min / 200 pages per cycle; queue only grows) |
 | `engagement-loop` | — | Standing forum rescan + comment drafts (never posts) |
 | `orchestrator` | — | Self-learning stack inspector (`agent-crm orchestrate`) — writes improvement notes |
 
@@ -56,7 +56,7 @@ CRM_LLM_BASE_URL=http://spark-queue:8088/v1
 - Global cap: **4 concurrent Spark sessions** (shared with Hermes; leaves GPU headroom for ComfyUI)
 - **Never point agents at Spark SGLang directly**
 
-The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats, a compact hunt-loop phase strip, and per-agent in/out token counts with an hourly average rate and estimated cloud-cost avoided (default **$2.00 / million input** and **$10.00 / million output**). Token totals persist in the CRM database. The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
+The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats, a compact hunt-loop phase strip, and per-agent in/out token counts with an hourly average rate and estimated cloud-cost avoided (default **$2.00 / million input** and **$10.00 / million output**). Token totals persist in the CRM database. Live panels cache Spark/API/DB snapshots and auto-refresh every **10 minutes** (use **Refresh now** for an immediate pull). The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
 
 ### Database and migrations
 
@@ -157,12 +157,14 @@ Competitor, nonprofit, and **ad-placement** prospecting with the same SearXNG + 
 
 Pass `--kind ad_placement` (or `"kind": "ad_placement"` on `POST /research`) to hunt newsletters, forums (including offbeat/imageboard surfaces like 4chan boards), Discords, podcasts, subreddits, zines, and trade pubs where each brand’s audience actually hangs out. Summaries capture `ad_product`, `how_to_buy`, `brand_fit`, and `brand_safety` — no ad buying or account creation. Forum and community hits are also catalogued as hunter venues (`engagement_surface`) so the engagement agent can come back and scan popular threads.
 
-Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`. Seed packs include AI-generated-content audiences and promoters alongside competitor/nonprofit/ad-placement discovery terms.
+Run-wide defaults: **20 queries**, **200 pages scraped**, **60 minutes**, **50 SERP hits** per query. Output persists in `research_findings`. Search terms persist in **`research_queries`** (append-only: rows are never deleted). Seed packs include AI-generated-content audiences and promoters alongside competitor/nonprofit/ad-placement discovery terms. tactic.studio competitor seeds cover **industrial visualization AR experiences** and **industrial training aids**. Celestial-Nexus competitor seeds cover multiple **divination types** (tarot, runes, I Ching, pendulum, scrying, palmistry, numerology, oracle/Lenormand, tasseography, cartomancy, horary, geomancy, aura, dream interpretation).
+
+After each SearXNG search + Firecrawl scrape, the agent extracts new search terms from hit titles/snippets and page text (heuristic + Spark) and **enqueues** them for every brand — MidnightSatin, Celestial-Nexus, HeyBuddy, and tactic.studio. Completing a query only flips status; the table only grows.
 
 | Entry | Command / API |
 |-------|---------------|
 | Run | `agent-crm research --brand celestial-nexus [--kind ad_placement\|nonprofit\|competitor] [query]` · `POST /research` |
-| Loop | `agent-crm research-loop [--max-queries 0] [--max-pages 0] [--max-minutes 0]` — cycles all four brands on ad-placement seeds (`0` = unlimited) |
+| Loop | `agent-crm research-loop [--max-queries 0] [--max-pages 0] [--max-minutes 0]` — seeds all four brands (competitor/nonprofit + ad-placement) then drains the growing queue (`0` = unlimited) |
 | List | `GET /research/findings` |
 
 ### 5. Agent engagement (comment drafts)
@@ -303,7 +305,7 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `
 
 | Tab | Shows |
 |-----|-------|
-| **Live agents** | Heartbeats + spark-queue slot occupancy + persisted in/out tokens + tok/hr + estimated cloud cost avoided (auto-refresh) |
+| **Live agents** | Heartbeats + spark-queue occupancy + persisted tokens / tok/hr / savings (cached, refresh every 10 min) |
 | **Pipeline & leads** | Weekly metrics, stage chart, lead table, activity history, verifications |
 | **Hunter** | Live hunt-loop drain status + query queue + `hunt_resources` table |
 | **Research** | `research_findings` with brand/kind filters |
@@ -453,9 +455,11 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_RESEARCH_MAX_PAGES_PER_RUN` | Research scrape budget (200) |
 | `CRM_RESEARCH_MAX_MINUTES_DEFAULT` | Research wall clock (60) |
 | `CRM_RESEARCH_SEARCH_RESULT_LIMIT` | Research SERP hits per query (50) |
+| `CRM_RESEARCH_MAX_BRANCH_TERMS` | Follow-up search terms enqueued per query (8) |
 | `CRM_CONTACT_SOCIAL_QUERIES_PER_PROFILE` | SearXNG queries per social lookup (4) |
 | `CRM_CONTACT_SOCIAL_LOOKUPS_PER_RUN` | Profiles looked up per run (40) |
 | `CRM_API_BASE_URL` | Dashboard → API for live agent panel |
+| `CRM_OBSERVER_REFRESH_SECONDS` | Live Agents / Hunter cache + auto-refresh interval (600 = 10 min) |
 | `CRM_HOT_LEAD_THRESHOLD` | Score threshold for hot-lead flag (80) |
 
 Spark queue container vars (`SPARK_LLM_*`) are documented in `.env.example`.

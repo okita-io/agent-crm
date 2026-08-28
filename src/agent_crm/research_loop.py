@@ -1,4 +1,4 @@
-"""Bounded ad-placement research loop across all four brands."""
+"""Standing research loop: drain an append-only query queue across all four brands."""
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ import time
 from dataclasses import dataclass, field
 
 from .config import get_settings
-from .enums import Brand, ResearchFindingKind
+from .enums import Brand
 from .research import run_research
-from .research_seeds import seed_queries
+from .research_query_store import ResearchQueryStore
+from .research_seeds import loop_seed_entries
 from .schemas import ResearchRequest
 
 RESEARCH_LOOP_BRANDS: tuple[Brand, ...] = (
@@ -36,6 +37,7 @@ class ResearchLoopResult:
     queries_run: int = 0
     pages_scraped: int = 0
     findings_written: list[int] = field(default_factory=list)
+    follow_up_terms_enqueued: int = 0
     errors: list[str] = field(default_factory=list)
     stop_reason: str = "queue_empty"
 
@@ -62,17 +64,31 @@ def _remaining_pages(max_pages: int, pages_scraped: int) -> int:
     return max(max_pages - pages_scraped, 1)
 
 
+def _seed_research_queue(store: ResearchQueryStore) -> None:
+    for brand, kind, query in loop_seed_entries():
+        store.enqueue_query(
+            query=query,
+            brand=brand,
+            kind=kind,
+            origin="seed_pack",
+        )
+
+
 def run_research_loop(
     *,
     budget: ResearchLoopBudget | None = None,
     summarize: bool = True,
     write_accounts: bool = True,
 ) -> ResearchLoopResult:
-    """Cycle the four brands on ad-placement seed queries until budgets or seeds exhaust."""
+    """Cycle brands on the persistent research queue until budgets exhaust.
+
+    Seeds are inserted if missing. Follow-up terms from scraped pages are
+    appended by ``run_research``. Rows are never deleted, so the queue only grows.
+    """
     budget = budget or ResearchLoopBudget()
-    kind = ResearchFindingKind.AD_PLACEMENT
-    queries_by_brand = {brand: seed_queries(brand, kind) for brand in RESEARCH_LOOP_BRANDS}
-    query_indices = {brand: 0 for brand in RESEARCH_LOOP_BRANDS}
+    store = ResearchQueryStore()
+    store.reset_stale_running_queries(stale_minutes=0)
+    _seed_research_queue(store)
 
     result = ResearchLoopResult()
     started = time.monotonic()
@@ -92,9 +108,8 @@ def run_research_loop(
 
         brand = RESEARCH_LOOP_BRANDS[brand_cycle % len(RESEARCH_LOOP_BRANDS)]
         brand_cycle += 1
-        idx = query_indices[brand]
-        brand_queries = queries_by_brand[brand]
-        if idx >= len(brand_queries):
+        claimed = store.claim_next_pending_query(brand=brand)
+        if claimed is None:
             idle_rounds += 1
             if idle_rounds >= len(RESEARCH_LOOP_BRANDS):
                 result.stop_reason = "queue_empty"
@@ -102,8 +117,9 @@ def run_research_loop(
             continue
 
         idle_rounds = 0
-        query = brand_queries[idx]
-        query_indices[brand] = idx + 1
+        query = claimed.query
+        kind = claimed.kind
+        query_id = claimed.id
 
         run_result = run_research(
             ResearchRequest(
@@ -122,6 +138,7 @@ def run_research_loop(
         result.queries_run += run_result.queries_run
         result.pages_scraped += run_result.pages_scraped
         result.findings_written.extend(run_result.findings_written)
+        result.follow_up_terms_enqueued += run_result.follow_up_terms_enqueued
         result.errors.extend(run_result.errors)
         for error in run_result.errors:
             from .enums import ImprovementSourceAgent
@@ -134,7 +151,10 @@ def run_research_loop(
             )
 
         if run_result.queries_run == 0:
+            store.mark_query_failed(query_id, "; ".join(run_result.errors) or "query_failed")
             result.stop_reason = "query_failed"
             break
+
+        store.mark_query_completed(query_id)
 
     return result

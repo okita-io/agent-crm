@@ -283,6 +283,7 @@ class ResearchResult(BaseModel):
     pages_scraped: int
     findings_written: list[int]
     errors: list[str]
+    follow_up_terms_enqueued: int = 0
 
 
 class VerifyRawRequest(BaseModel):

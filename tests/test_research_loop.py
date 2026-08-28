@@ -62,6 +62,45 @@ def test_research_loop_cycles_brands_on_ad_placement(tmp_path, monkeypatch) -> N
     _teardown_db()
 
 
+def test_research_loop_keeps_queue_after_drain(tmp_path, monkeypatch) -> None:
+    _setup_db(tmp_path, monkeypatch, "research-loop-grow.db")
+    from agent_crm.research_query_store import ResearchQueryStore
+    from agent_crm.research_seeds import loop_seed_entries
+
+    def fake_run_research(request):
+        from agent_crm.research_query_store import ResearchQueryStore as Store
+
+        Store().enqueue_query(
+            query=f"follow-up from {request.query}",
+            brand=request.brand,
+            kind=request.kind,
+            origin="branch:test",
+        )
+        return ResearchResult(
+            brand=request.brand,
+            kind=request.kind,
+            queries_run=1,
+            pages_scraped=1,
+            findings_written=[1],
+            errors=[],
+            follow_up_terms_enqueued=1,
+        )
+
+    seed_count = len(loop_seed_entries())
+    with patch("agent_crm.research_loop.run_research", side_effect=fake_run_research):
+        result = run_research_loop(
+            budget=ResearchLoopBudget(max_queries=4, max_pages=4, max_minutes=5),
+            summarize=False,
+            write_accounts=False,
+        )
+
+    store = ResearchQueryStore()
+    assert result.follow_up_terms_enqueued == 4
+    assert store.count_all() >= seed_count + 4
+    assert store.count_pending() >= 1
+    _teardown_db()
+
+
 def test_research_loop_stops_on_query_budget(tmp_path, monkeypatch) -> None:
     _setup_db(tmp_path, monkeypatch, "research-loop-budget.db")
 

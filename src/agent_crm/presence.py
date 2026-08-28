@@ -213,9 +213,16 @@ def external_upstream_slots(queue_health: dict[str, Any] | None) -> int:
 
 def spark_slot_summary(
     queue_health: dict[str, Any] | None,
-    persisted_usage: dict[str, Any] | None | object = _LOAD_PERSISTED,
+    persisted_usage: dict[str, Any] | None | object = None,
 ) -> dict[str, Any]:
-    """Normalize Spark queue health for the dashboard resource strip."""
+    """Normalize Spark queue health for the dashboard resource strip.
+
+    Occupancy callers pass nothing (or ``{}``) so this stays a cheap health
+    parse. Pass a token snapshot when the Live Agents totals strip needs it.
+    """
+    usage_arg: dict[str, Any] | object = (
+        {} if persisted_usage is None else persisted_usage
+    )
     if not queue_health:
         return {
             "max_concurrency": 4,
@@ -226,7 +233,7 @@ def spark_slot_summary(
             "model": None,
             "waiters": [],
             "in_flight": [],
-            "token_usage": _token_usage_block(None, persisted_usage=persisted_usage),
+            "token_usage": _token_usage_block(None, persisted_usage=usage_arg),
         }
     waiters, in_flight = _queue_actor_lists(queue_health)
     return {
@@ -238,7 +245,7 @@ def spark_slot_summary(
         "model": queue_health.get("model"),
         "waiters": waiters,
         "in_flight": in_flight,
-        "token_usage": _token_usage_block(queue_health, persisted_usage=persisted_usage),
+        "token_usage": _token_usage_block(queue_health, persisted_usage=usage_arg),
     }
 
 

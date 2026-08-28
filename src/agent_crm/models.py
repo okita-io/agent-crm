@@ -55,6 +55,7 @@ from .enums import (
     LeadStatus,
     Priority,
     ResearchFindingKind,
+    ResearchQueryStatus,
     Stage,
     TopicalRelevanceVerdict,
 )
@@ -408,6 +409,31 @@ class EngagementDraft(Base, TimestampMixin):
     )
 
     thread: Mapped[EngagementThread] = relationship(back_populates="drafts")
+
+
+class ResearchQuery(Base, TimestampMixin):
+    """Append-only queue of research search terms. Rows are never deleted."""
+
+    __tablename__ = "research_queries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    origin: Mapped[str] = mapped_column(String(128), nullable=False, default="seed")
+    brand: Mapped[Brand] = mapped_column(existing_brand_enum(), nullable=False, index=True)
+    kind: Mapped[ResearchFindingKind] = mapped_column(
+        str_enum(ResearchFindingKind), nullable=False, index=True
+    )
+    status: Mapped[ResearchQueryStatus] = mapped_column(
+        str_enum(ResearchQueryStatus),
+        default=ResearchQueryStatus.PENDING,
+        nullable=False,
+        index=True,
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ResearchFinding(Base):

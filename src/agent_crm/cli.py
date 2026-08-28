@@ -205,6 +205,7 @@ def _cmd_research_loop(args: argparse.Namespace) -> int:
                 "queries_run": result.queries_run,
                 "pages_scraped": result.pages_scraped,
                 "findings_written": result.findings_written,
+                "follow_up_terms_enqueued": result.follow_up_terms_enqueued,
                 "stop_reason": result.stop_reason,
                 "errors": result.errors,
             },
@@ -442,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
 
     research_loop = sub.add_parser(
         "research-loop",
-        help="Cycle all four brands on ad-placement seed queries (0 budgets = unlimited)",
+        help="Drain the append-only research queue across all four brands (0 budgets = unlimited)",
     )
     research_loop.add_argument(
         "--max-queries",

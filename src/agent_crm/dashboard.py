@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hmac
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pandas as pd
@@ -44,7 +44,9 @@ from agent_crm.presence import (
     fetch_spark_queue_health,
     spark_slot_summary,
 )
+from agent_crm.research_query_store import ResearchQueryStore
 from agent_crm.research_store import list_findings
+from agent_crm.token_usage_store import load_token_usage_snapshot
 from agent_crm.tooling import CRMToolkit
 from agent_crm.verifier import list_verifications
 
@@ -189,8 +191,65 @@ def _priority_label(priority: int) -> str:
     return str(priority)
 
 
-def _render_hunt_loop_status(*, compact: bool = False) -> None:
-    status = build_hunt_status()
+def _observer_refresh_seconds() -> int:
+    """Floor at 10s so a 0/empty env cannot busy-loop Streamlit fragments."""
+    return max(10, int(get_settings().observer_refresh_seconds or 600))
+
+
+def _format_refresh_interval(seconds: int) -> str:
+    if seconds >= 60 and seconds % 60 == 0:
+        minutes = seconds // 60
+        return "1 min" if minutes == 1 else f"{minutes} min"
+    if seconds >= 60:
+        minutes, remainder = divmod(seconds, 60)
+        return f"{minutes}m {remainder}s"
+    return f"{seconds}s"
+
+
+_CACHE_TTL = _observer_refresh_seconds()
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def _cached_spark_health() -> dict | None:
+    return fetch_spark_queue_health()
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def _cached_api_agents() -> list[dict] | None:
+    return _fetch_api_agents()
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def _cached_hunt_status() -> dict:
+    return build_hunt_status()
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def _cached_token_snapshot() -> dict:
+    return load_token_usage_snapshot()
+
+
+def _clear_live_caches() -> None:
+    _cached_spark_health.clear()
+    _cached_api_agents.clear()
+    _cached_hunt_status.clear()
+    _cached_token_snapshot.clear()
+
+
+def _render_live_refresh_bar(refresh_seconds: int, *, key: str) -> None:
+    left, right = st.columns([4, 1])
+    with left:
+        st.caption(
+            f"Cached snapshot · auto-refresh every {_format_refresh_interval(refresh_seconds)} · "
+            f"updated {datetime.now(UTC).strftime('%H:%M:%S')} UTC"
+        )
+    with right:
+        if st.button("Refresh now", key=key, use_container_width=True):
+            _clear_live_caches()
+
+
+def _render_hunt_loop_status(*, compact: bool = False, refresh_seconds: int | None = None) -> None:
+    status = _cached_hunt_status()
     phase = status["phase"]
     now_playing = status.get("now_playing")
 
@@ -212,8 +271,10 @@ def _render_hunt_loop_status(*, compact: bool = False) -> None:
         return
 
     st.subheader("Hunt loop (live)")
+    if refresh_seconds is not None:
+        _render_live_refresh_bar(refresh_seconds, key="hunter_refresh_now")
     st.caption(
-        f"Auto-refresh · stale running rows ignored after {STALE_RUNNING_MINUTES} minutes"
+        f"Stale running rows ignored after {STALE_RUNNING_MINUTES} minutes"
     )
 
     phase_cols = st.columns(4)
@@ -309,7 +370,7 @@ def _fetch_api_agents() -> list[dict] | None:
     if token:
         headers["X-CRM-Token"] = token
     try:
-        response = httpx.get(url, timeout=2.0, headers=headers)
+        response = httpx.get(url, timeout=5.0, headers=headers)
         response.raise_for_status()
         return response.json()
     except httpx.HTTPError:
@@ -354,14 +415,14 @@ def _render_spark_strip(summary: dict) -> None:
 
 def _render_agent_observer(refresh_seconds: int) -> None:
     st.subheader("Live agent observer")
-    st.caption(f"Auto-refresh every {refresh_seconds}s")
+    _render_live_refresh_bar(refresh_seconds, key="observer_refresh_now")
 
-    queue_health = fetch_spark_queue_health()
-    summary = spark_slot_summary(queue_health)
+    queue_health = _cached_spark_health()
+    summary = spark_slot_summary(queue_health, persisted_usage=_cached_token_snapshot())
     _render_spark_strip(summary)
     _render_hunt_loop_status(compact=True)
 
-    api_agents = _fetch_api_agents()
+    api_agents = _cached_api_agents()
     if api_agents is not None:
         rows = api_agents
     else:
@@ -534,7 +595,7 @@ def _render_hunter_tab(refresh_seconds: int) -> None:
 
     @fragment
     def _hunter_live() -> None:
-        _render_hunt_loop_status()
+        _render_hunt_loop_status(refresh_seconds=refresh_seconds)
 
     _hunter_live()
 
@@ -630,8 +691,16 @@ def _render_hunter_tab(refresh_seconds: int) -> None:
 def _render_research_tab() -> None:
     st.subheader("Research findings")
     st.caption(
-        "Competitor, nonprofit, and ad-placement prospecting output from the Research agent."
+        "Competitor, nonprofit, and ad-placement prospecting. The query queue is "
+        "append-only: SearXNG/Firecrawl pages enqueue new search terms and rows are never deleted."
     )
+
+    queue = ResearchQueryStore().queue_status()
+    qcols = st.columns(4)
+    qcols[0].metric("Queued terms (total)", queue.get("total", 0))
+    qcols[1].metric("Pending", queue.get("pending", 0))
+    qcols[2].metric("Completed", queue.get("completed", 0))
+    qcols[3].metric("Failed", queue.get("failed", 0))
 
     brand_filter = st.selectbox(
         "Brand filter",
@@ -1119,8 +1188,7 @@ def main() -> None:
     if not _require_dashboard_access():
         return
 
-    settings = get_settings()
-    refresh_seconds = settings.observer_refresh_seconds
+    refresh_seconds = _observer_refresh_seconds()
 
     st.title("Agent CRM")
     st.caption(f"Store: {database_kind()}")

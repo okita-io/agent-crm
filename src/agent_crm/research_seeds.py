@@ -20,6 +20,20 @@ COMPETITOR_QUERIES: dict[Brand, list[str]] = {
         "cosmic guidance app wellness astrology",
         "ai generated astrology content app",
         "AI tarot influencer platforms",
+        "rune casting elder futhark divination app",
+        "I Ching hexagram reading app",
+        "pendulum dowsing divination app",
+        "scrying crystal ball reading app",
+        "palmistry chiromancy reading app",
+        "numerology life path calculator app",
+        "oracle card reading app",
+        "Lenormand card reading app",
+        "tea leaf tasseography reading app",
+        "cartomancy playing card divination app",
+        "horary astrology reading app",
+        "dream interpretation oneiromancy app",
+        "geomancy divination reading app",
+        "aura reading spiritual app",
     ],
     Brand.MIDNIGHTSATIN: [
         "romance reading app serial fiction",
@@ -50,6 +64,16 @@ COMPETITOR_QUERIES: dict[Brand, list[str]] = {
         "augmented reality industrial training company",
         "mixed reality studio commercial activations",
         "AR glasses enterprise deployment vendor",
+        "industrial visualization AR experience manufacturing",
+        "AR industrial product visualization experience studio",
+        "factory floor AR visualization experience",
+        "CAD to AR industrial visualization experience",
+        "digital twin industrial AR visualization experience",
+        "industrial AR training aids manufacturing",
+        "AR work instruction training aids factory",
+        "mixed reality industrial training aids vendor",
+        "enterprise industrial training aid AR overlay",
+        "assembly line AR training aid experience",
     ],
 }
 
@@ -151,6 +175,28 @@ NONPROFIT_QUERIES: dict[Brand, list[str]] = {
         "nonprofit digital storytelling companionship AI program",
     ],
 }
+
+
+def loop_kinds_for_brand(brand: Brand) -> tuple[ResearchFindingKind, ...]:
+    """Kinds the standing research-loop seeds for one brand."""
+    if brand == Brand.HEYBUDDY:
+        return (ResearchFindingKind.NONPROFIT, ResearchFindingKind.AD_PLACEMENT)
+    return (ResearchFindingKind.COMPETITOR, ResearchFindingKind.AD_PLACEMENT)
+
+
+def loop_seed_entries() -> list[tuple[Brand, ResearchFindingKind, str]]:
+    """Flatten seed packs the standing loop should enqueue (append-only)."""
+    entries: list[tuple[Brand, ResearchFindingKind, str]] = []
+    for brand in (
+        Brand.CELESTIAL_NEXUS,
+        Brand.MIDNIGHTSATIN,
+        Brand.HEYBUDDY,
+        Brand.TACTIC_STUDIO,
+    ):
+        for kind in loop_kinds_for_brand(brand):
+            for query in seed_queries(brand, kind):
+                entries.append((brand, kind, query))
+    return entries
 
 
 def default_kind_for_brand(brand: Brand) -> ResearchFindingKind:

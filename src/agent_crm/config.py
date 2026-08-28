@@ -71,10 +71,13 @@ class Settings(BaseSettings):
     research_max_pages_per_run: int = 200
     research_max_minutes_default: int = 60
     research_search_result_limit: int = 50
+    research_max_branch_terms: int = 8
 
     # Observer / presence
     api_base_url: str = "http://api:8000"
-    observer_refresh_seconds: int = 3
+    # Live Agents + Hunter auto-refresh interval. 10 minutes keeps Streamlit
+    # from hammering Spark/Postgres while still updating the ranch view.
+    observer_refresh_seconds: int = 600
 
     # Behavior
     hot_lead_threshold: int = 80

@@ -147,6 +147,15 @@ class HuntQueryStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class ResearchQueryStatus(str, enum.Enum):
+    """Lifecycle of a queued research search term. Rows are never deleted."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class AgentJobKind(str, enum.Enum):
     """Kinds of background CRM work dispatched by the job runner."""
 

@@ -16,7 +16,7 @@ from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import AgentStatus, Brand, ResearchFindingKind
 from agent_crm.heartbeat import list_heartbeats
 from agent_crm.research import _heuristic_extra, run_research
-from agent_crm.research_seeds import AD_PLACEMENT_QUERIES, seed_queries
+from agent_crm.research_seeds import AD_PLACEMENT_QUERIES, COMPETITOR_QUERIES, seed_queries
 from agent_crm.research_store import list_findings
 from agent_crm.research_utils import canonical_url, is_junk_finding
 from agent_crm.schemas import ResearchFindingOut, ResearchRequest, ResearchResult
@@ -25,6 +25,7 @@ from agent_crm.schemas import ResearchFindingOut, ResearchRequest, ResearchResul
 def _setup_db(tmp_path, monkeypatch, name: str) -> None:
     db_path = tmp_path / name
     monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("CRM_API_TOKEN", "")
     get_settings.cache_clear()
     reset_engine()
     init_db()
@@ -172,6 +173,32 @@ def test_ad_placement_seed_queries_include_offbeat_surfaces() -> None:
     ).lower()
     assert "4chan" in all_queries
     assert any("discord" in query for query in all_queries.split())
+
+
+def test_tactic_competitor_seeds_include_industrial_visualization_and_training_aids() -> None:
+    queries = " ".join(COMPETITOR_QUERIES[Brand.TACTIC_STUDIO]).lower()
+    assert "industrial visualization" in queries
+    assert "ar experience" in queries
+    assert "training aid" in queries
+
+
+def test_celestial_competitor_seeds_include_divination_types() -> None:
+    queries = " ".join(COMPETITOR_QUERIES[Brand.CELESTIAL_NEXUS]).lower()
+    for term in (
+        "rune",
+        "i ching",
+        "pendulum",
+        "scrying",
+        "palmistry",
+        "numerology",
+        "oracle",
+        "lenormand",
+        "tea leaf",
+        "cartomancy",
+        "horary",
+        "geomancy",
+    ):
+        assert term in queries
 
 
 def test_heuristic_ad_placement_extra_detects_imageboard_caution(
@@ -647,3 +674,174 @@ def test_research_findings_api(client: TestClient) -> None:
         response = client.get("/research/findings?brand=celestial-nexus")
     assert response.status_code == 200
     assert response.json()[0]["domain"] == "co-star.app"
+
+
+def test_run_research_enqueues_follow_ups_and_queue_only_grows(
+    tmp_path, monkeypatch
+) -> None:
+    _setup_db(tmp_path, monkeypatch, "research-queue-grow.db")
+    from agent_crm.research_query_store import ResearchQueryStore
+
+    payload = {
+        "results": [
+            {
+                "url": "https://runes.example",
+                "title": "Elder Futhark Rune Casting App",
+                "content": "Pendulum dowsing and I Ching hexagrams alongside tarot.",
+            }
+        ]
+    }
+    firecrawl_ok = {
+        "data": {
+            "markdown": (
+                "Learn rune casting, pendulum dowsing, scrying, and palmistry. "
+                "Also try our Lenormand and tea leaf tasseography lessons."
+            ),
+            "metadata": {"title": "Rune Casting App"},
+        }
+    }
+
+    def searx_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    def firecrawl_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=firecrawl_ok)
+
+    http = httpx.Client(
+        transport=_mock_transport(
+            {
+                "/search": searx_handler,
+                "/v1/scrape": firecrawl_handler,
+            }
+        )
+    )
+
+    store = ResearchQueryStore()
+    before = store.count_all()
+    result = run_research(
+        ResearchRequest(
+            brand=Brand.CELESTIAL_NEXUS,
+            kind=ResearchFindingKind.COMPETITOR,
+            query="natal chart app",
+            max_pages=2,
+            max_queries=1,
+            summarize=False,
+            write_accounts=False,
+        ),
+        searx_client=http,
+        firecrawl_client=http,
+    )
+
+    after = store.count_all()
+    pending = store.count_pending(brand=Brand.CELESTIAL_NEXUS)
+    assert result.pages_scraped == 1
+    assert result.follow_up_terms_enqueued >= 1
+    assert after > before
+    assert after >= before + result.follow_up_terms_enqueued
+    assert pending >= result.follow_up_terms_enqueued
+    _teardown_db()
+
+
+def test_run_research_follow_ups_cover_midnight_satin_heybuddy_and_tactic(
+    tmp_path, monkeypatch
+) -> None:
+    _setup_db(tmp_path, monkeypatch, "research-queue-brands.db")
+    from agent_crm.research_query_store import ResearchQueryStore
+
+    cases = [
+        (
+            Brand.MIDNIGHTSATIN,
+            ResearchFindingKind.COMPETITOR,
+            "serialized romance app",
+            "https://galatea.example",
+            "Galatea romance app",
+            "BookTok spicy romance and Galatea serialized stories. Radish and Dreame too.",
+            "galatea",
+        ),
+        (
+            Brand.HEYBUDDY,
+            ResearchFindingKind.NONPROFIT,
+            "501c3 loneliness nonprofit",
+            "https://elders.example",
+            "Elder isolation 501c3",
+            "Veteran mental health and caregiver support programs for social isolation.",
+            "veteran mental health",
+        ),
+        (
+            Brand.TACTIC_STUDIO,
+            ResearchFindingKind.COMPETITOR,
+            "WebAR XR experience studio",
+            "https://viz.example",
+            "Industrial visualization AR experience studio",
+            "Factory digital twin and industrial training aids with CAD visualization.",
+            "industrial visualization",
+        ),
+    ]
+
+    store = ResearchQueryStore()
+    totals: list[int] = []
+    for brand, kind, query, url, title, markdown, expected_hint in cases:
+        payload = {
+            "results": [{"url": url, "title": title, "content": markdown}]
+        }
+        firecrawl_ok = {
+            "data": {"markdown": markdown, "metadata": {"title": title}}
+        }
+
+        def searx_handler(_request: httpx.Request, payload=payload) -> httpx.Response:
+            return httpx.Response(200, json=payload)
+
+        def firecrawl_handler(
+            _request: httpx.Request, firecrawl_ok=firecrawl_ok
+        ) -> httpx.Response:
+            return httpx.Response(200, json=firecrawl_ok)
+
+        http = httpx.Client(
+            transport=_mock_transport(
+                {
+                    "/search": searx_handler,
+                    "/v1/scrape": firecrawl_handler,
+                }
+            )
+        )
+        before = store.count_all()
+        result = run_research(
+            ResearchRequest(
+                brand=brand,
+                kind=kind,
+                query=query,
+                max_pages=2,
+                max_queries=1,
+                summarize=False,
+                write_accounts=False,
+            ),
+            searx_client=http,
+            firecrawl_client=http,
+        )
+        after = store.count_all()
+        assert after >= before
+        assert result.follow_up_terms_enqueued >= 1
+        combined = " ".join(_queued_query_texts(brand, kind)).lower()
+        assert expected_hint in combined
+        totals.append(after)
+
+    assert totals == sorted(totals)
+    assert totals[-1] > totals[0]
+    _teardown_db()
+
+
+def _queued_query_texts(brand, kind) -> list[str]:
+    from sqlalchemy import select
+
+    from agent_crm.db import session_scope
+    from agent_crm.models import ResearchQuery
+
+    with session_scope() as session:
+        return list(
+            session.scalars(
+                select(ResearchQuery.query).where(
+                    ResearchQuery.brand == brand,
+                    ResearchQuery.kind == kind,
+                )
+            )
+        )
