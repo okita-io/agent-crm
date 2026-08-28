@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_crm.enums import HuntResourceKind
+from agent_crm.enums import ContactAudience, HuntResourceKind
 from agent_crm.hunt_feedback import (
     community_search_terms,
     is_valid_hunt_person_name,
@@ -100,4 +100,15 @@ def test_person_search_terms_and_name_validation():
     terms = person_search_terms("Ada Vega")
     assert len(terms) == 4
     assert all("Ada Vega" in term for term in terms)
+    assert all("@" not in term for term in terms)
+
+
+def test_marketing_person_search_terms_target_brand_leadership():
+    terms = person_search_terms("Ada Vega", audience=ContactAudience.MARKETING)
+    combined = " ".join(terms).lower()
+    assert len(terms) == 4
+    assert all("Ada Vega" in term for term in terms)
+    assert "vp of marketing" in combined
+    assert "brand manager" in combined
+    assert "food and beverage" in combined
     assert all("@" not in term for term in terms)

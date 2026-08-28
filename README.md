@@ -81,7 +81,7 @@ Set `CRM_DATABASE_URL` in `.env`. On Postgres, do **not** rely on `create_all`; 
 | `heybuddy` | HeyBuddy routing; research defaults to nonprofit partnership hunts |
 | `tactic-studio` | tactic.studio AR/XR/VR vendor BD (collection only; Pete + naming-rights gate outbound) |
 
-tactic.studio contacts are tagged with an **audience** bucket on `contact_profiles` and matching `leads`: `marketing` (brand/industrial bid list), `influencer` (XR creators), `user` (community members who should see tactic work). Other brands leave audience unset.
+tactic.studio contacts are tagged with an **audience** bucket on `contact_profiles` and matching `leads`: `marketing` (VPs of marketing, marketing managers, and brand management at retail and food & beverage companies with more than $10M annual revenue), `influencer` (XR creators), `user` (community members who should see tactic work). Other brands leave audience unset.
 
 ### Marketing skill
 
@@ -126,7 +126,7 @@ Each search hit can be scraped to markdown via the host Firecrawl API. Hunter de
 - LLM branch-term extraction to enqueue new queries
 - **Community/person feedback**: newly catalogued communities and extracted contact names enqueue deterministic follow-up queries (`origin` prefix `marketing:` / `influencer:` / `user:` plus `community:` / `person:` when applicable)
 - Defaults: **unlimited queries**, **unlimited wall clock**, **50 pages per query** (still capped by community/person term limits per run)
-- Per-brand **seed packs** include AI-generated-content readers and promoters (communities, BookTok/TikTok creators, influencers) in addition to generic discovery terms; tactic.studio packs are split by audience intent
+- Per-brand **seed packs** include AI-generated-content readers and promoters (communities, BookTok/TikTok creators, influencers) in addition to generic discovery terms; tactic.studio packs are split by audience intent, with marketing seeds aimed at VPs / brand and marketing managers at $10M+ retail and food & beverage companies.
 
 | Entry | Command / API |
 |-------|---------------|

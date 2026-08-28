@@ -164,18 +164,31 @@ def community_search_terms(
     return deduped[:max_terms]
 
 
-def person_search_terms(name: str, *, max_terms: int = 4) -> list[str]:
+def person_search_terms(
+    name: str,
+    *,
+    max_terms: int = 4,
+    audience: ContactAudience | None = None,
+) -> list[str]:
     """Build brand-scoped person discovery queries (never raw emails)."""
     clean = re.sub(r"\s+", " ", name.strip())
     if not is_valid_hunt_person_name(clean):
         return []
     quoted = f'"{clean}"'
-    templates = [
-        f"{quoted} reddit",
-        f"{quoted} site:reddit.com",
-        f"{quoted} discord",
-        f"{quoted} facebook group",
-    ]
+    if audience == ContactAudience.MARKETING:
+        templates = [
+            f"{quoted} VP of marketing",
+            f"{quoted} brand manager",
+            f"{quoted} marketing director retail",
+            f"{quoted} food and beverage company",
+        ]
+    else:
+        templates = [
+            f"{quoted} reddit",
+            f"{quoted} site:reddit.com",
+            f"{quoted} discord",
+            f"{quoted} facebook group",
+        ]
     return templates[:max_terms]
 
 
@@ -336,7 +349,7 @@ def enqueue_person_terms(
 
     origin = origin_with_audience(f"person:{_origin_slug(name)}", audience)
     enqueued = 0
-    for term in person_search_terms(name):
+    for term in person_search_terms(name, audience=audience):
         if budget.person_terms_remaining <= 0:
             break
         if "@" in term:

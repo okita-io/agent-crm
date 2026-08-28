@@ -9,8 +9,8 @@ import pytest
 
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
-from agent_crm.enums import Brand, HuntResourceKind, TopicalRelevanceVerdict
-from agent_crm.hunt_loop import HuntBudget, run_hunt_loop
+from agent_crm.enums import Brand, ContactAudience, HuntResourceKind, TopicalRelevanceVerdict
+from agent_crm.hunt_loop import HuntBudget, _llm_branch_terms, run_hunt_loop
 from agent_crm.hunt_store import HuntStore
 from agent_crm.searxng_client import SearchResult
 
@@ -469,4 +469,30 @@ def test_reset_stale_running_queries_zero_minutes_clears_all(loop_db) -> None:
     assert pending is not None
     assert pending.status == HuntQueryStatus.PENDING
     assert pending.query == "fresh running"
+
+
+def test_tactic_marketing_branch_prompt_targets_retail_fnb_leaders() -> None:
+    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+        mock_llm.return_value = {
+            "choices": [{"message": {"content": '{"terms": []}'}}]
+        }
+        _llm_branch_terms(
+            "VP of marketing grocery",
+            [
+                {
+                    "title": "Leadership",
+                    "url": "https://grocery.example/leadership",
+                    "content": "marketing team",
+                }
+            ],
+            max_terms=3,
+            brand=Brand.TACTIC_STUDIO,
+            audience=ContactAudience.MARKETING,
+        )
+    prompt = mock_llm.call_args[0][0]["messages"][1]["content"].lower()
+    assert "food" in prompt and "beverage" in prompt
+    assert "10 million" in prompt
+    assert "vp of marketing" in prompt
+    assert "brand manager" in prompt
+    assert "not individual people" not in prompt
 

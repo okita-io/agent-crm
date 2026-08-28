@@ -40,6 +40,15 @@ def test_tactic_studio_seeds_cover_audiences_and_xr_terms() -> None:
     assert "influencer:seed_pack" in origins
     assert "user:seed_pack" in origins
 
+    marketing = " ".join(query for query, origin in entries if origin == "marketing:seed_pack")
+    marketing_lower = marketing.lower()
+    assert "vp" in marketing_lower or "vice president" in marketing_lower
+    assert "marketing" in marketing_lower
+    assert "brand" in marketing_lower
+    assert "retail" in marketing_lower
+    assert "food" in marketing_lower or "beverage" in marketing_lower
+    assert "10 million" in marketing_lower or "$10" in marketing_lower
+
 
 def test_marketing_origin_labels_contact_profile(db_url) -> None:
     markdown = "Jane Marketing <jane@brandstudio.com>\nhttps://x.com/janemarketing"

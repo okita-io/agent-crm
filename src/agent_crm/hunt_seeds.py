@@ -57,22 +57,25 @@ SEED_PACKS: dict[str, list[str]] = {
     ],
 }
 
-# tactic.studio: brand-direct/industrial marketing first; influencers and XR communities second.
+# tactic.studio: retail/F&B marketing leadership first ($10M+ revenue);
+# influencers and XR communities second.
 SEED_PACKS_BY_AUDIENCE: dict[str, dict[str, list[str]]] = {
     Brand.TACTIC_STUDIO.value: {
         ContactAudience.MARKETING.value: [
-            "WebAR brand activation campaign case study",
-            "Snap AR lens CPG retail marketing campaign",
-            "pack scan AR beverage marketing activation",
-            "industrial AR training overlay manufacturing",
-            "enterprise AR glasses product visualization",
-            "8th Wall WebXR brand experience portfolio",
-            "place and scale AR product viz retail",
-            "in-store AR beauty retail marketing team",
-            "brand marketing director WebAR campaign",
-            "CPG marketing augmented reality app launch",
-            "manufacturing marketing industrial AR training program",
-            "retail brand marketing Snap AR lens campaign",
+            "VP of marketing grocery retail leadership team",
+            "vice president marketing food and beverage company",
+            "brand manager CPG beverage about team",
+            "marketing director supermarket chain leadership",
+            "VP brand management retail company over $10 million revenue",
+            "head of marketing restaurant group leadership",
+            "marketing manager food company $10 million annual revenue",
+            "brand marketing VP consumer packaged goods",
+            "director of marketing QSR restaurant chain",
+            "food and beverage company marketing leadership directory",
+            "large retail VP marketing press contact",
+            "grocery chain marketing vice president bio",
+            "beverage brand head of marketing team page",
+            "convenience store chain VP of marketing",
         ],
         ContactAudience.INFLUENCER.value: [
             "AR glasses reviewer YouTube TikTok",

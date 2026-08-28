@@ -53,6 +53,14 @@ def test_marketing_contact_from_press_page() -> None:
     assert audience == ContactAudience.MARKETING
 
 
+def test_marketing_contact_from_vp_title() -> None:
+    audience = infer_audience_from_ingest(
+        source_url="https://grocery.example/leadership/jane-smith",
+        name="Jane Smith, VP of Marketing",
+    )
+    assert audience == ContactAudience.MARKETING
+
+
 def test_b2b_contact_from_team_page() -> None:
     audience = infer_audience_from_ingest(
         source_url="https://industrial-corp.com/solutions/enterprise-ar",

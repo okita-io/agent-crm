@@ -11,7 +11,7 @@
 
 ## Audience
 
-**Who buys:** Brand marketing directors, industrial L&D/training leaders, innovation teams at CPG/retail/manufacturing — **direct to brand/industrial**, not agency-first outbound.
+**Who buys:** VPs of marketing, marketing managers, and brand management leaders at large retail and food & beverage companies doing more than $10M in annual revenue — **direct to brand**, not agency-first outbound.
 
 **What they believe before they arrive:** AR must prove ROI; 8th Wall sunset/migration created vendor churn; they need a partner who ships, not decks.
 

@@ -378,6 +378,8 @@ def _run_queued_query(
         result_dicts,
         max_terms=settings.hunter_max_branch_terms,
         summarize=summarize_branches,
+        brand=brand,
+        audience=audience,
     )
     enqueued = 0
     for term in branch_terms:
@@ -491,12 +493,20 @@ def _extract_branch_terms(
     *,
     max_terms: int,
     summarize: bool,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
 ) -> list[str]:
     heuristic = extract_heuristic_terms(results, max_terms=max_terms)
     if not summarize:
         return heuristic
 
-    llm_terms = _llm_branch_terms(query, results, max_terms=max_terms)
+    llm_terms = _llm_branch_terms(
+        query,
+        results,
+        max_terms=max_terms,
+        brand=brand,
+        audience=audience,
+    )
     merged: list[str] = []
     seen: set[str] = set()
     for term in heuristic + llm_terms:
@@ -510,7 +520,14 @@ def _extract_branch_terms(
     return merged
 
 
-def _llm_branch_terms(query: str, results: list[dict[str, Any]], *, max_terms: int) -> list[str]:
+def _llm_branch_terms(
+    query: str,
+    results: list[dict[str, Any]],
+    *,
+    max_terms: int,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+) -> list[str]:
     lines = []
     for idx, item in enumerate(results[:12], start=1):
         lines.append(
@@ -521,18 +538,35 @@ def _llm_branch_terms(query: str, results: list[dict[str, Any]], *, max_terms: i
                 max_chars=280,
             )
         )
-    prompt = (
-        "You help an outbound researcher find online communities, directories, "
-        "newsletters, forums, and listicles where potential users gather.\n"
-        f"Original query: {wrap_untrusted('query', query, max_chars=300)}\n"
-        "Search results:\n"
-        + "\n".join(lines)
-        + "\n\n"
-        f"Suggest up to {max_terms} NEW search queries to find more such resources. "
-        "Focus on communities, directories, newsletters, forums — not individual people. "
-        "Do NOT invent emails or person names.\n"
-        'Respond with JSON only: {"terms": ["query one", "query two"]}'
-    )
+    if brand == Brand.TACTIC_STUDIO and audience == ContactAudience.MARKETING:
+        prompt = (
+            "You help an outbound researcher find named marketing leaders at "
+            "large retail and food & beverage companies (more than $10 million "
+            "annual revenue).\n"
+            f"Original query: {wrap_untrusted('query', query, max_chars=300)}\n"
+            "Search results:\n"
+            + "\n".join(lines)
+            + "\n\n"
+            f"Suggest up to {max_terms} NEW search queries for VP of marketing, "
+            "brand managers, marketing managers, and brand-management leadership "
+            "directories, team pages, and press bios at those companies. "
+            "Prefer company about/leadership pages over XR communities. "
+            "Do NOT invent emails or person names.\n"
+            'Respond with JSON only: {"terms": ["query one", "query two"]}'
+        )
+    else:
+        prompt = (
+            "You help an outbound researcher find online communities, directories, "
+            "newsletters, forums, and listicles where potential users gather.\n"
+            f"Original query: {wrap_untrusted('query', query, max_chars=300)}\n"
+            "Search results:\n"
+            + "\n".join(lines)
+            + "\n\n"
+            f"Suggest up to {max_terms} NEW search queries to find more such resources. "
+            "Focus on communities, directories, newsletters, forums — not individual people. "
+            "Do NOT invent emails or person names.\n"
+            'Respond with JSON only: {"terms": ["query one", "query two"]}'
+        )
     try:
         response = chat_completions(
             {

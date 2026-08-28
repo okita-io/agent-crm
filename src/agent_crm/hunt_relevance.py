@@ -72,8 +72,10 @@ BRAND_TOPIC_SUMMARIES: dict[Brand, str] = {
         "male-oriented communities and creators"
     ),
     Brand.TACTIC_STUDIO: (
-        "augmented reality, WebAR, WebXR, AR glasses, mixed reality, "
-        "industrial AR, brand AR activations"
+        "marketing and brand leadership at large retail and food & beverage "
+        "companies (more than $10 million annual revenue): VP of marketing, "
+        "marketing managers, brand managers, brand management; also WebAR "
+        "and brand AR activations"
     ),
 }
 
@@ -114,15 +116,27 @@ BRAND_ON_TOPIC_KEYWORDS: dict[Brand, tuple[str, ...]] = {
         "men's hobbies",
     ),
     Brand.TACTIC_STUDIO: (
+        "vp of marketing",
+        "vice president of marketing",
+        "vice president marketing",
+        "brand manager",
+        "marketing manager",
+        "brand management",
+        "head of marketing",
+        "director of marketing",
+        "chief marketing officer",
+        "food and beverage",
+        "food & beverage",
+        "grocery chain",
+        "retail marketing",
+        "consumer packaged goods",
         "augmented reality",
         "webxr",
         "webar",
         "ar glasses",
         "mixed reality",
-        "xr",
         "snap ar",
         "8th wall",
-        "industrial ar",
         "ar campaign",
         "ar activation",
     ),

@@ -175,7 +175,18 @@ def infer_audience_from_ingest(
 
     if name:
         lowered = name.lower()
-        if any(token in lowered for token in ("marketing", "brand", "media", "pr")):
+        if any(
+            token in lowered
+            for token in (
+                "marketing",
+                "brand manager",
+                "brand management",
+                "brand",
+                "media",
+                "pr",
+                "cmo",
+            )
+        ):
             return ContactAudience.MARKETING
 
     return hunt_audience
@@ -368,7 +379,9 @@ def _spark_qualification(
         "Return JSON only: "
         '{"audience":"end_user|influencer|b2b|client|marketing",'
         '"evidence":["short reason"],"public_email":null}. '
-        "Use marketing for press kits, brand media, promotional contacts. "
+        "Use marketing for press kits, brand media, promotional contacts, "
+        "and marketing/brand leadership (VP of marketing, brand manager, "
+        "marketing manager). "
         "Use influencer for creators with followers/subscribers. "
         "Use end_user for commenters and community participants. "
         "Use b2b for company/industrial prospects. "

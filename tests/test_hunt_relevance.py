@@ -54,6 +54,21 @@ def test_ar_case_study_accepted_for_tactic_studio() -> None:
     assert result.verdict == TopicalRelevanceVerdict.ON_TOPIC
 
 
+def test_retail_marketing_vp_page_accepted_for_tactic_studio() -> None:
+    result = assess_topical_relevance(
+        brand=Brand.TACTIC_STUDIO,
+        url="https://grocery.example/leadership/jane-smith",
+        title="Jane Smith, VP of Marketing at FreshMart Grocery",
+        snippet=(
+            "brand management and marketing manager leadership at a "
+            "food and beverage retailer with $50 million revenue"
+        ),
+        query="VP of marketing grocery retail leadership team",
+        allow_spark=False,
+    )
+    assert result.verdict == TopicalRelevanceVerdict.ON_TOPIC
+
+
 def test_horoscope_page_accepted_for_celestial_nexus() -> None:
     result = assess_topical_relevance(
         brand=Brand.CELESTIAL_NEXUS,
