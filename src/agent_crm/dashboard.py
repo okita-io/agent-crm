@@ -213,6 +213,32 @@ def _format_refresh_interval(seconds: int) -> str:
 
 _CACHE_TTL = _observer_refresh_seconds()
 
+# Streamlit greys out the previous frame (opacity 0.33 after 0.5s) while a
+# rerun or fragment refresh is in flight. Live-agent polling hits this often.
+_STALE_FADE_CSS = """
+.stApp [data-testid="stElementContainer"],
+.stApp [data-testid="stVerticalBlock"],
+.stApp [data-testid="stHorizontalBlock"],
+.stApp [data-testid="stVerticalBlockBorderWrapper"],
+.stApp [data-stale="true"],
+.stApp .stElementContainer,
+.stApp .stVerticalBlock,
+.stApp .stHorizontalBlock,
+.stApp .element-container {
+    opacity: 1 !important;
+    transition: none !important;
+}
+"""
+
+
+def _disable_stale_fade() -> None:
+    html = f"<style>{_STALE_FADE_CSS}</style>"
+    inject = getattr(st, "html", None)
+    if callable(inject):
+        inject(html)
+        return
+    st.markdown(html, unsafe_allow_html=True)
+
 
 @st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
 def _cached_hunt_status() -> dict:
@@ -1203,6 +1229,7 @@ def _require_dashboard_access() -> bool:
 
 def main() -> None:
     st.set_page_config(page_title="Agent CRM", layout="wide")
+    _disable_stale_fade()
     init_db()
     if not _require_dashboard_access():
         return
