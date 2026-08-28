@@ -76,8 +76,9 @@ class Settings(BaseSettings):
 
     # Observer / presence
     api_base_url: str = "http://api:8000"
-    # Live Agents + Hunter auto-refresh interval. 10 minutes keeps Streamlit
-    # from hammering Spark/Postgres while still updating the ranch view.
+    # Spark slots + heartbeat/status/task on Live Agents.
+    observer_live_refresh_seconds: int = 5
+    # Token totals / hunt-loop snapshot. 10 minutes avoids extra Postgres load.
     observer_refresh_seconds: int = 600
 
     # Behavior

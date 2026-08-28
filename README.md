@@ -56,7 +56,7 @@ CRM_LLM_BASE_URL=http://spark-queue:8088/v1
 - Global cap: **4 concurrent Spark sessions** (shared with Hermes; leaves GPU headroom for ComfyUI)
 - **Never point agents at Spark SGLang directly**
 
-The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats, a compact hunt-loop phase strip, and per-agent in/out token counts with an hourly average rate and estimated cloud-cost avoided (default **$2.00 / million input** and **$10.00 / million output**). Token totals persist in the CRM database. Live panels cache Spark/API/DB snapshots and auto-refresh every **10 minutes** (use **Refresh now** for an immediate pull). The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
+The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats, a compact hunt-loop phase strip, and per-agent in/out token counts with an hourly average rate and estimated cloud-cost avoided (default **$2.00 / million input** and **$10.00 / million output**). Token totals persist in the CRM database. Spark slots, work status, current task, and last heartbeat refresh every **5 seconds**; token totals cache for **10 minutes** (use **Refresh now** for an immediate pull). The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
 
 ### Database and migrations
 
@@ -299,13 +299,13 @@ Dashboard list GETs stay unchanged for the Streamlit UI.
 
 Agents call `CRMToolkit(actor="…")` for typed writes. Every mutation appends an `Activity`. Stage changes go through `PipelineManager`.
 
-Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The dashboard polls `GET /agents` and `GET /agents/spark`.
+Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The Live Agents tab reads heartbeats and spark-queue `/health` every 5 seconds, and overlays cached token totals.
 
 ### Dashboard tabs
 
 | Tab | Shows |
 |-----|-------|
-| **Live agents** | Heartbeats + spark-queue occupancy + persisted tokens / tok/hr / savings (cached, refresh every 10 min) |
+| **Live agents** | Slots / status / task / heartbeat every 5s; persisted tokens / tok/hr / savings every 10 min |
 | **Pipeline & leads** | Weekly metrics, stage chart, lead table, activity history, verifications |
 | **Hunter** | Live hunt-loop drain status + query queue + `hunt_resources` table |
 | **Research** | `research_findings` with brand/kind filters |
@@ -459,8 +459,9 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_RESEARCH_MAX_BRANCH_TERMS` | Follow-up search terms enqueued per query (8) |
 | `CRM_CONTACT_SOCIAL_QUERIES_PER_PROFILE` | SearXNG queries per social lookup (4) |
 | `CRM_CONTACT_SOCIAL_LOOKUPS_PER_RUN` | Profiles looked up per run (40) |
-| `CRM_API_BASE_URL` | Dashboard → API for live agent panel |
-| `CRM_OBSERVER_REFRESH_SECONDS` | Live Agents / Hunter cache + auto-refresh interval (600 = 10 min) |
+| `CRM_API_BASE_URL` | Dashboard → API (pipeline and other tabs) |
+| `CRM_OBSERVER_LIVE_REFRESH_SECONDS` | Live Agents slots / status / task / heartbeat interval (5) |
+| `CRM_OBSERVER_REFRESH_SECONDS` | Token totals + Hunter live snapshot interval (600 = 10 min) |
 | `CRM_HOT_LEAD_THRESHOLD` | Score threshold for hot-lead flag (80) |
 
 Spark queue container vars (`SPARK_LLM_*`) are documented in `.env.example`.

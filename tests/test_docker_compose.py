@@ -76,6 +76,7 @@ def test_compose_dashboard_uses_ten_minute_observer_refresh() -> None:
     start = content.index("  dashboard:")
     end = content.index("\n\n", start)
     block = content[start:end]
+    assert 'CRM_OBSERVER_LIVE_REFRESH_SECONDS: "5"' in block
     assert 'CRM_OBSERVER_REFRESH_SECONDS: "600"' in block
     content = COMPOSE_PATH.read_text(encoding="utf-8")
     start = content.index("  spark-queue:")

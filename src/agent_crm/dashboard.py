@@ -6,7 +6,6 @@ import hmac
 import json
 from datetime import UTC, datetime, timedelta
 
-import httpx
 import pandas as pd
 import streamlit as st
 
@@ -35,7 +34,7 @@ from agent_crm.enums import (
 )
 from agent_crm.heartbeat import list_heartbeats
 from agent_crm.hunt_feedback import parse_community_notes
-from agent_crm.hunt_status import STALE_RUNNING_MINUTES, build_hunt_status
+from agent_crm.hunt_status import STALE_RUNNING_MINUTES, build_hunt_status, infer_hunt_phase
 from agent_crm.hunt_store import HuntStore
 from agent_crm.improvement_store import count_open_improvement_notes, list_improvement_notes
 from agent_crm.pipeline import PipelineManager
@@ -192,8 +191,13 @@ def _priority_label(priority: int) -> str:
     return str(priority)
 
 
+def _observer_live_refresh_seconds() -> int:
+    """Spark slots + heartbeat/status/task. Floor at 2s to avoid a busy loop."""
+    return max(2, int(get_settings().observer_live_refresh_seconds or 5))
+
+
 def _observer_refresh_seconds() -> int:
-    """Floor at 10s so a 0/empty env cannot busy-loop Streamlit fragments."""
+    """Token totals / hunt snapshot. Floor at 10s so 0 cannot hammer Postgres."""
     return max(10, int(get_settings().observer_refresh_seconds or 600))
 
 
@@ -211,16 +215,6 @@ _CACHE_TTL = _observer_refresh_seconds()
 
 
 @st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
-def _cached_spark_health() -> dict | None:
-    return fetch_spark_queue_health()
-
-
-@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
-def _cached_api_agents() -> list[dict] | None:
-    return _fetch_api_agents()
-
-
-@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
 def _cached_hunt_status() -> dict:
     return build_hunt_status()
 
@@ -231,28 +225,58 @@ def _cached_token_snapshot() -> dict:
 
 
 def _clear_live_caches() -> None:
-    _cached_spark_health.clear()
-    _cached_api_agents.clear()
     _cached_hunt_status.clear()
     _cached_token_snapshot.clear()
 
 
-def _render_live_refresh_bar(refresh_seconds: int, *, key: str) -> None:
+def _render_live_refresh_bar(
+    refresh_seconds: int,
+    *,
+    key: str,
+    token_seconds: int | None = None,
+) -> None:
     left, right = st.columns([4, 1])
     with left:
-        st.caption(
-            f"Cached snapshot · auto-refresh every {_format_refresh_interval(refresh_seconds)} · "
-            f"updated {datetime.now(UTC).strftime('%H:%M:%S')} UTC"
-        )
+        stamp = datetime.now(UTC).strftime("%H:%M:%S")
+        if token_seconds is None:
+            caption = (
+                f"Cached snapshot · auto-refresh every "
+                f"{_format_refresh_interval(refresh_seconds)} · updated {stamp} UTC"
+            )
+        else:
+            caption = (
+                f"Slots / status every {_format_refresh_interval(refresh_seconds)} · "
+                f"token totals every {_format_refresh_interval(token_seconds)} · "
+                f"updated {stamp} UTC"
+            )
+        st.caption(caption)
     with right:
         if st.button("Refresh now", key=key, use_container_width=True):
             _clear_live_caches()
 
 
-def _render_hunt_loop_status(*, compact: bool = False, refresh_seconds: int | None = None) -> None:
+def _render_hunt_loop_status(
+    *,
+    compact: bool = False,
+    refresh_seconds: int | None = None,
+    live_spark: dict | None = None,
+) -> None:
     status = _cached_hunt_status()
-    phase = status["phase"]
     now_playing = status.get("now_playing")
+    spark = live_spark if live_spark is not None else status.get("spark") or {}
+    in_flight_count = (
+        len(spark["in_flight"])
+        if isinstance(spark.get("in_flight"), list)
+        else int(spark.get("in_flight") or 0)
+    )
+    if live_spark is not None:
+        phase = infer_hunt_phase(
+            has_fresh_running=now_playing is not None,
+            spark_waiting=int(spark.get("waiting") or 0),
+            spark_in_flight=in_flight_count,
+        )
+    else:
+        phase = status["phase"]
 
     if compact:
         if now_playing:
@@ -266,8 +290,8 @@ def _render_hunt_loop_status(*, compact: bool = False, refresh_seconds: int | No
             pending = status.get("pending", 0)
             st.caption(
                 f"Hunt loop · **{phase}** · pending {pending} · "
-                f"Spark waiting {status['spark']['waiting']} · "
-                f"in-flight {status['spark']['in_flight']}"
+                f"Spark waiting {spark.get('waiting', 0)} · "
+                f"in-flight {in_flight_count}"
             )
         return
 
@@ -363,21 +387,6 @@ def _render_hunt_loop_status(*, compact: bool = False, refresh_seconds: int | No
         st.info("No completed hunt queries yet.")
 
 
-def _fetch_api_agents() -> list[dict] | None:
-    settings = get_settings()
-    url = f"{settings.api_base_url.rstrip('/')}/agents"
-    headers = {}
-    token = settings.api_token.strip()
-    if token:
-        headers["X-CRM-Token"] = token
-    try:
-        response = httpx.get(url, timeout=5.0, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError:
-        return None
-
-
 def _render_spark_strip(summary: dict) -> None:
     max_slots = int(summary.get("max_concurrency", 4))
     in_flight = list(summary.get("in_flight", []))
@@ -414,34 +423,39 @@ def _render_spark_strip(summary: dict) -> None:
         st.write("Waiting for a slot:", ", ".join(waiters))
 
 
-def _render_agent_observer(refresh_seconds: int) -> None:
+def _render_agent_observer(*, live_seconds: int, token_seconds: int) -> None:
     st.subheader("Live agent observer")
-    _render_live_refresh_bar(refresh_seconds, key="observer_refresh_now")
+    _render_live_refresh_bar(
+        live_seconds,
+        key="observer_refresh_now",
+        token_seconds=token_seconds,
+    )
 
-    queue_health = _cached_spark_health()
-    summary = spark_slot_summary(queue_health, persisted_usage=_cached_token_snapshot())
+    queue_health = fetch_spark_queue_health()
+    token_snapshot = _cached_token_snapshot()
+    summary = spark_slot_summary(queue_health, persisted_usage=token_snapshot)
     _render_spark_strip(summary)
-    _render_hunt_loop_status(compact=True)
+    _render_hunt_loop_status(compact=True, live_spark=summary)
 
-    api_agents = _cached_api_agents()
-    if api_agents is not None:
-        rows = api_agents
-    else:
-        observer_rows = build_observer_rows(list_heartbeats(), queue_health)
-        rows = [
-            {
-                "display_name": row.display_name,
-                "status": row.status.value,
-                "task": row.task,
-                "resource": row.resource,
-                "last_heartbeat": row.last_heartbeat,
-                "prompt_tokens": row.prompt_tokens,
-                "completion_tokens": row.completion_tokens,
-                "saved_usd": row.saved_usd,
-                "tokens_per_hour": row.tokens_per_hour,
-            }
-            for row in observer_rows
-        ]
+    observer_rows = build_observer_rows(
+        list_heartbeats(),
+        queue_health,
+        persisted_usage=token_snapshot,
+    )
+    rows = [
+        {
+            "display_name": row.display_name,
+            "status": row.status.value,
+            "task": row.task,
+            "resource": row.resource,
+            "last_heartbeat": row.last_heartbeat,
+            "prompt_tokens": row.prompt_tokens,
+            "completion_tokens": row.completion_tokens,
+            "saved_usd": row.saved_usd,
+            "tokens_per_hour": row.tokens_per_hour,
+        }
+        for row in observer_rows
+    ]
 
     if not rows:
         st.info("No agents in roster.")
@@ -1156,15 +1170,15 @@ def _render_improvement_tab() -> None:
                 st.caption(f"Suggested fix: {note.suggested_fix}")
 
 
-def _observer_fragment(refresh_seconds: int) -> None:
+def _observer_fragment(*, live_seconds: int, token_seconds: int) -> None:
     try:
-        fragment = st.fragment(run_every=timedelta(seconds=refresh_seconds))
+        fragment = st.fragment(run_every=timedelta(seconds=live_seconds))
     except TypeError:
         fragment = st.fragment
 
     @fragment
     def _observer() -> None:
-        _render_agent_observer(refresh_seconds)
+        _render_agent_observer(live_seconds=live_seconds, token_seconds=token_seconds)
 
     _observer()
 
@@ -1193,6 +1207,7 @@ def main() -> None:
     if not _require_dashboard_access():
         return
 
+    live_seconds = _observer_live_refresh_seconds()
     refresh_seconds = _observer_refresh_seconds()
 
     st.title("Agent CRM")
@@ -1212,7 +1227,7 @@ def main() -> None:
     )
 
     with observer_tab:
-        _observer_fragment(refresh_seconds)
+        _observer_fragment(live_seconds=live_seconds, token_seconds=refresh_seconds)
 
     with pipeline_tab:
         _render_pipeline_tab()
