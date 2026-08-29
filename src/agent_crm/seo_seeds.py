@@ -57,6 +57,20 @@ SEO_SEEDS: dict[Brand, tuple[SeoSeed, ...]] = {
             notes="Named competitor: serialized fiction app.",
             query_kind=SeoQueryKind.COMPETITOR,
         ),
+        SeoSeed(
+            url="https://www.wattpad.com",
+            role=SeoTargetRole.COMPETITOR,
+            title="Wattpad",
+            notes="Named search competitor: user-upload romance serials (not a clone target).",
+            query_kind=SeoQueryKind.COMPETITOR,
+        ),
+        SeoSeed(
+            url="https://www.passionflix.com",
+            role=SeoTargetRole.COMPETITOR,
+            title="Passionflix",
+            notes="Named search competitor: romance adaptation / serial-adjacent media.",
+            query_kind=SeoQueryKind.COMPETITOR,
+        ),
     ),
     Brand.CELESTIAL_NEXUS: (
         SeoSeed(
@@ -138,6 +152,8 @@ KEYWORD_SEEDS: dict[Brand, tuple[str, ...]] = {
         "AI romance serial app",
         "serialized romance reading app",
         "spicy romance stories mobile",
+        "BookTok romance serial",
+        "dark romance serialized fiction",
     ),
     Brand.CELESTIAL_NEXUS: (
         "natal chart app",

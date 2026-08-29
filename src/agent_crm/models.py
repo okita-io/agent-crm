@@ -45,6 +45,7 @@ from .enums import (
     EngagementDraftStatus,
     EngagementQueryStatus,
     EngagementThreadStatus,
+    HuntPageType,
     HuntQueryStatus,
     HuntResourceKind,
     ImprovementNoteKind,
@@ -329,6 +330,13 @@ class HuntResource(Base, TimestampMixin):
         default=HuntResourceKind.OTHER,
         nullable=False,
     )
+    page_type: Mapped[HuntPageType] = mapped_column(
+        str_enum(HuntPageType),
+        default=HuntPageType.OTHER,
+        nullable=False,
+        index=True,
+    )
+    domain_class: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     found_via_query: Mapped[str | None] = mapped_column(Text, nullable=True)
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
@@ -473,9 +481,12 @@ class ResearchFinding(Base):
     """First-class research output from the Research agent."""
 
     __tablename__ = "research_findings"
+    __table_args__ = (
+        UniqueConstraint("url", "brand", name="uq_research_findings_url_brand"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True, index=True)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
     domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     brand: Mapped[Brand] = mapped_column(

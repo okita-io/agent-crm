@@ -93,6 +93,25 @@ def test_mens_interest_page_accepted_for_heybuddy() -> None:
     assert result.verdict == TopicalRelevanceVerdict.ON_TOPIC
 
 
+def test_query_cannot_mark_denied_host_on_topic() -> None:
+    result = assess_topical_relevance(
+        brand=Brand.MIDNIGHTSATIN,
+        url="https://developer.mozilla.org/en-US/docs/Web/API",
+        title="Generic documentation",
+        snippet="web platform reference",
+        query="romance booktok communities",
+        allow_spark=False,
+    )
+    assert result.verdict == TopicalRelevanceVerdict.OFF_TOPIC
+
+
+def test_docker_and_aggregator_hosts_are_denied() -> None:
+    assert is_obvious_off_topic_url("https://hub.docker.com/r/library/nginx")
+    assert is_obvious_off_topic_url("https://wiki.haskell.org/Web")
+    assert is_obvious_off_topic_url("https://www.reuters.com/world/")
+    assert is_obvious_off_topic_url("https://flipboard.com/topic/romance")
+
+
 def test_spark_used_for_ambiguous_page() -> None:
     with patch("agent_crm.hunt_relevance.chat_completions") as mock_llm:
         mock_llm.return_value = {

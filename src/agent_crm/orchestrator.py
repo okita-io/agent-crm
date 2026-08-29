@@ -35,6 +35,7 @@ STANDING_WORKERS: tuple[str, ...] = (
     "job-dispatcher",
     "outbound_hunter",
     "research",
+    "queue-review",
     "orchestrator",
 )
 

@@ -57,7 +57,8 @@ def test_completing_a_query_does_not_shrink_the_queue(store: ResearchQueryStore)
     assert claimed is not None
     store.mark_query_completed(claimed.id)
     assert store.count_all() == before
-    assert store.count_pending(brand=Brand.MIDNIGHTSATIN) == before - 1
+    assert store.count_pending(brand=Brand.MIDNIGHTSATIN) == 0
+    assert store.queue_status().get("pending_review", 0) == 1
     row = store.get_by_dedupe(
         Brand.MIDNIGHTSATIN, ResearchFindingKind.COMPETITOR, claimed.query
     )

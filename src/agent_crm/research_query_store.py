@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .db import session_scope, with_row_lock
 from .enums import Brand, ResearchFindingKind, ResearchQueryStatus
-from .hunt_utils import normalize_query
+from .hunt_utils import normalize_query, origin_needs_review
 from .models import ResearchQuery
 
 
@@ -41,6 +41,11 @@ class ResearchQueryStore:
         if not cleaned:
             return False
         dedupe_key = self.make_dedupe_key(brand, kind, cleaned)
+        initial = (
+            ResearchQueryStatus.PENDING_REVIEW
+            if origin_needs_review(origin)
+            else ResearchQueryStatus.PENDING
+        )
         try:
             with session_scope() as session:
                 existing = session.scalar(
@@ -48,7 +53,7 @@ class ResearchQueryStore:
                 )
                 if existing is not None:
                     if existing.status == ResearchQueryStatus.FAILED:
-                        existing.status = ResearchQueryStatus.PENDING
+                        existing.status = initial
                         existing.error_message = None
                         existing.completed_at = None
                         existing.origin = origin
@@ -60,7 +65,7 @@ class ResearchQueryStore:
                         origin=origin[:128],
                         brand=brand,
                         kind=kind,
-                        status=ResearchQueryStatus.PENDING,
+                        status=initial,
                         dedupe_key=dedupe_key,
                     )
                 )
@@ -117,6 +122,38 @@ class ResearchQueryStore:
                 return
             row.status = ResearchQueryStatus.FAILED
             row.error_message = error[:2000]
+            row.completed_at = datetime.now(UTC)
+
+    def claim_next_pending_review_query(
+        self,
+    ) -> tuple[int, Brand, str, str] | None:
+        with session_scope() as session:
+            stmt = (
+                select(ResearchQuery)
+                .where(ResearchQuery.status == ResearchQueryStatus.PENDING_REVIEW)
+                .order_by(ResearchQuery.id.asc())
+                .limit(1)
+            )
+            row = session.scalar(with_row_lock(stmt, session))
+            if row is None:
+                return None
+            return (row.id, row.brand, row.query, row.origin)
+
+    def mark_query_kept(self, query_id: int) -> None:
+        with session_scope() as session:
+            row = session.get(ResearchQuery, query_id)
+            if row is None or row.status != ResearchQueryStatus.PENDING_REVIEW:
+                return
+            row.status = ResearchQueryStatus.PENDING
+            row.error_message = None
+
+    def mark_query_rejected(self, query_id: int, reason: str) -> None:
+        with session_scope() as session:
+            row = session.get(ResearchQuery, query_id)
+            if row is None:
+                return
+            row.status = ResearchQueryStatus.REJECTED
+            row.error_message = reason[:2000]
             row.completed_at = datetime.now(UTC)
 
     def get_by_dedupe(

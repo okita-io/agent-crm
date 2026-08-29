@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 ACTOR = "hunt-relevance"
 
-# Obvious popularity/docs noise — never spend GPU unless a page is clearly on-topic.
+# Obvious popularity/docs/aggregator noise — never spend GPU unless a page is
+# clearly on-topic, and never persist even then (deny-list always wins).
 ALWAYS_OFF_TOPIC_HOSTS: frozenset[str] = frozenset(
     {
         "mozilla.org",
@@ -42,6 +43,43 @@ ALWAYS_OFF_TOPIC_HOSTS: frozenset[str] = frozenset(
         "apache.org",
         "ietf.org",
         "gnu.org",
+        "docker.com",
+        "hub.docker.com",
+        "haskell.org",
+        "hackage.haskell.org",
+        "reuters.com",
+        "flipboard.com",
+        "msn.com",
+        "yahoo.com",
+        "forbes.com",
+        "wsj.com",
+        "bloomberg.com",
+        "dictionary.com",
+        "merriam-webster.com",
+        "britannica.com",
+        "sportsbots.xyz",
+    }
+)
+
+# Suffix-match these even when the host is a subdomain (hub.docker.com, wiki.haskell.org).
+DENIED_HOST_SUFFIXES: frozenset[str] = frozenset(
+    {
+        "mozilla.org",
+        "wikipedia.org",
+        "w3.org",
+        "docker.com",
+        "haskell.org",
+        "stackoverflow.com",
+        "stackexchange.com",
+        "reuters.com",
+        "flipboard.com",
+        "msn.com",
+        "yahoo.com",
+        "forbes.com",
+        "wsj.com",
+        "dictionary.com",
+        "merriam-webster.com",
+        "britannica.com",
     }
 )
 
@@ -167,19 +205,38 @@ def _normalize_host(host: str) -> str:
         return "mozilla.org"
     if host.endswith(".wikipedia.org"):
         return "wikipedia.org"
+    if host.endswith(".docker.com"):
+        return "docker.com"
+    if host.endswith(".haskell.org"):
+        return "haskell.org"
     return host
 
 
-def is_obvious_off_topic_url(url: str) -> str | None:
-    """Return a rejection reason when the URL is clearly generic noise."""
+def denied_host_reason(url: str) -> str | None:
+    """Return a rejection reason when the registrable host is on the deny-list."""
     host = _normalize_host(_host(url))
     if not host:
         return "invalid URL"
     if host in ALWAYS_OFF_TOPIC_HOSTS:
         return f"generic docs/popularity domain: {host}"
-    if host == "github.com" and any(fragment in _path(url) for fragment in DOCS_PATH_FRAGMENTS):
+    for suffix in DENIED_HOST_SUFFIXES:
+        if host == suffix or host.endswith("." + suffix):
+            return f"generic docs/popularity domain: {host}"
+    return None
+
+
+def is_obvious_off_topic_url(url: str) -> str | None:
+    """Return a rejection reason when the URL is clearly generic noise."""
+    denied = denied_host_reason(url)
+    if denied:
+        return denied
+    host = _normalize_host(_host(url))
+    path = _path(url)
+    if host == "github.com" and any(fragment in path for fragment in DOCS_PATH_FRAGMENTS):
         return "github documentation page"
-    if any(fragment in _path(url) for fragment in DOCS_PATH_FRAGMENTS):
+    if "/amp" in path and host in {"google.com", "www.google.com"}:
+        return "google amp aggregator page"
+    if any(fragment in path for fragment in DOCS_PATH_FRAGMENTS):
         if host in {"github.com", "gitlab.com", "bitbucket.org"}:
             return f"repository documentation path on {host}"
     return None
@@ -212,14 +269,16 @@ def assess_topical_relevance(
         )
 
     obvious = is_obvious_off_topic_url(url)
-    text = _text_blob(title, snippet, page_excerpt, query)
-    keyword_hits = _keyword_on_topic_score(brand, text)
-
-    if obvious and keyword_hits < 2:
+    if obvious:
         return RelevanceAssessment(
             verdict=TopicalRelevanceVerdict.OFF_TOPIC,
             reason=obvious,
         )
+
+    # Score the page, never the search query — seed queries already contain
+    # brand keywords and would otherwise mark every SERP hit on-topic.
+    text = _text_blob(title, snippet, page_excerpt)
+    keyword_hits = _keyword_on_topic_score(brand, text)
 
     if keyword_hits >= 2:
         return RelevanceAssessment(
@@ -227,16 +286,10 @@ def assess_topical_relevance(
             reason=f"on-topic keywords matched ({keyword_hits} signals)",
         )
 
-    if keyword_hits == 1 and not obvious:
+    if keyword_hits == 1:
         return RelevanceAssessment(
             verdict=TopicalRelevanceVerdict.ON_TOPIC,
             reason="single strong on-topic keyword in page context",
-        )
-
-    if obvious:
-        return RelevanceAssessment(
-            verdict=TopicalRelevanceVerdict.OFF_TOPIC,
-            reason=obvious,
         )
 
     if not allow_spark:

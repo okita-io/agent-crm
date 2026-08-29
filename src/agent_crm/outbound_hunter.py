@@ -193,8 +193,11 @@ def run_hunt(
     )
 
 def _is_scrapable_url(url: str) -> bool:
+    from .hunt_relevance import is_obvious_off_topic_url
     from .url_safety import is_public_http_url
 
+    if is_obvious_off_topic_url(url):
+        return False
     return is_public_http_url(url, resolve_dns=False)
 
 

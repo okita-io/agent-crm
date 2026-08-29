@@ -14,6 +14,7 @@ def test_compose_declares_standing_workers() -> None:
     assert "research-loop" in content
     assert "engagement-loop" in content
     assert "seo-loop" in content
+    assert "queue-review" in content
     assert 'command: ["agent-crm", "orchestrate"]' in content
 
 
@@ -40,7 +41,15 @@ def test_compose_hunt_loop_stays_unbounded() -> None:
     assert 'CRM_HUNTER_MAX_MINUTES_DEFAULT: "0"' in block
 
     content = COMPOSE_PATH.read_text(encoding="utf-8")
-    for service in ("contact-worker", "hunt-loop", "research-loop", "engagement-loop", "seo-loop", "orchestrator"):
+    for service in (
+        "contact-worker",
+        "hunt-loop",
+        "research-loop",
+        "engagement-loop",
+        "seo-loop",
+        "queue-review",
+        "orchestrator",
+    ):
         marker = f"  {service}:"
         start = content.index(marker)
         end = content.index("\n\n", start)
@@ -72,6 +81,16 @@ def test_compose_seo_loop_runs_daily_at_noon() -> None:
     assert 'CRM_SEO_REVIEW_HOUR: "12"' in block
     assert 'CRM_SEO_REVIEW_TIMEZONE: "America/Los_Angeles"' in block
     assert "CRM_SEO_REVIEW_INTERVAL_HOURS" not in block
+
+
+def test_compose_queue_review_watches_backlog() -> None:
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    start = content.index("  queue-review:")
+    end = content.index("\n\n", start)
+    block = content[start:end]
+    assert "--watch" in block
+    assert "spark-queue:" in block[block.index("depends_on:") :]
+    assert 'CRM_QUEUE_REVIEW_MAX_QUERIES: "40"' in block
 
 
 def test_contact_worker_and_orchestrator_do_not_require_spark_queue() -> None:
@@ -116,7 +135,15 @@ def test_compose_binds_sensitive_ports_to_localhost() -> None:
 def test_workers_wait_for_api_migrations() -> None:
     """Standing workers must start after api so Alembic finishes before init_db."""
     content = COMPOSE_PATH.read_text(encoding="utf-8")
-    for service in ("contact-worker", "hunt-loop", "research-loop", "engagement-loop", "seo-loop", "orchestrator"):
+    for service in (
+        "contact-worker",
+        "hunt-loop",
+        "research-loop",
+        "engagement-loop",
+        "seo-loop",
+        "queue-review",
+        "orchestrator",
+    ):
         start = content.index(f"  {service}:")
         end = content.index("\n\n", start)
         block = content[start:end]

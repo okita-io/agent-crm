@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .db import session_scope, with_row_lock
 from .enums import Brand, EngagementQueryStatus
-from .hunt_utils import normalize_query
+from .hunt_utils import normalize_query, origin_needs_review
 from .models import EngagementQuery
 
 
@@ -41,6 +41,11 @@ class EngagementQueryStore:
         if not cleaned:
             return False
         dedupe_key = self.make_dedupe_key(brand, cleaned)
+        initial = (
+            EngagementQueryStatus.PENDING_REVIEW
+            if origin_needs_review(origin)
+            else EngagementQueryStatus.PENDING
+        )
         try:
             with session_scope() as session:
                 existing = session.scalar(
@@ -48,7 +53,7 @@ class EngagementQueryStore:
                 )
                 if existing is not None:
                     if existing.status == EngagementQueryStatus.FAILED:
-                        existing.status = EngagementQueryStatus.PENDING
+                        existing.status = initial
                         existing.error_message = None
                         existing.completed_at = None
                         existing.origin = origin[:128]
@@ -62,7 +67,7 @@ class EngagementQueryStore:
                         origin=origin[:128],
                         brand=brand,
                         hunt_resource_id=hunt_resource_id,
-                        status=EngagementQueryStatus.PENDING,
+                        status=initial,
                         dedupe_key=dedupe_key,
                     )
                 )
@@ -106,6 +111,38 @@ class EngagementQueryStore:
                 return
             row.status = EngagementQueryStatus.FAILED
             row.error_message = error[:2000]
+            row.completed_at = datetime.now(UTC)
+
+    def claim_next_pending_review_query(
+        self,
+    ) -> tuple[int, Brand, str, str] | None:
+        with session_scope() as session:
+            stmt = (
+                select(EngagementQuery)
+                .where(EngagementQuery.status == EngagementQueryStatus.PENDING_REVIEW)
+                .order_by(EngagementQuery.id.asc())
+                .limit(1)
+            )
+            row = session.scalar(with_row_lock(stmt, session))
+            if row is None:
+                return None
+            return (row.id, row.brand, row.query, row.origin)
+
+    def mark_query_kept(self, query_id: int) -> None:
+        with session_scope() as session:
+            row = session.get(EngagementQuery, query_id)
+            if row is None or row.status != EngagementQueryStatus.PENDING_REVIEW:
+                return
+            row.status = EngagementQueryStatus.PENDING
+            row.error_message = None
+
+    def mark_query_rejected(self, query_id: int, reason: str) -> None:
+        with session_scope() as session:
+            row = session.get(EngagementQuery, query_id)
+            if row is None:
+                return
+            row.status = EngagementQueryStatus.REJECTED
+            row.error_message = reason[:2000]
             row.completed_at = datetime.now(UTC)
 
     def count_pending(self, *, brand: Brand | None = None) -> int:

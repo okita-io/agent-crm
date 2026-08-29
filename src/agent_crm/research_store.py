@@ -29,7 +29,10 @@ def upsert_finding(
     now = datetime.now(UTC)
     with session_scope() as session:
         row = session.scalar(
-            select(ResearchFinding).where(ResearchFinding.url == normalized)
+            select(ResearchFinding).where(
+                ResearchFinding.url == normalized,
+                ResearchFinding.brand == brand,
+            )
         )
         if row is None:
             row = ResearchFinding(
@@ -48,7 +51,6 @@ def upsert_finding(
             session.add(row)
         else:
             row.title = title
-            row.brand = brand
             row.kind = kind
             row.summary = summary
             row.source_query = source_query

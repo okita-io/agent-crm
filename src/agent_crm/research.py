@@ -14,8 +14,9 @@ from .comment_people_store import process_scraped_page_comment_people
 from .config import get_settings
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
 from .engagement import ENGAGEMENT_VENUE_KINDS
-from .enums import ActivityType, AgentStatus, Brand, ResearchFindingKind, ResearchQueryStatus
+from .enums import ActivityType, AgentStatus, Brand, ResearchFindingKind, ResearchQueryStatus, TopicalRelevanceVerdict
 from .firecrawl_client import FirecrawlError, ScrapeResult, scrape
+from .hunt_relevance import assess_topical_relevance, is_obvious_off_topic_url
 from .hunt_store import HuntStore
 from .hunt_utils import classify_resource_detailed
 from .llm_client import chat_completions
@@ -172,6 +173,19 @@ def run_research(
                 continue
             if is_junk_finding(title=hit.title, snippet=hit.snippet):
                 continue
+            if is_obvious_off_topic_url(normalized):
+                continue
+            if request.brand != Brand.UNASSIGNED:
+                assessment = assess_topical_relevance(
+                    brand=request.brand,
+                    url=normalized,
+                    title=hit.title,
+                    snippet=hit.snippet,
+                    query=query,
+                    allow_spark=False,
+                )
+                if assessment.verdict == TopicalRelevanceVerdict.OFF_TOPIC:
+                    continue
 
             seen_urls.add(normalized)
 
@@ -250,19 +264,20 @@ def run_research(
                     _maybe_write_account_note(crm, normalized, title, summary, extra)
 
             try:
-                process_scraped_page_contacts(
-                    markdown=page.markdown,
-                    source_url=normalized,
-                    brand=request.brand,
-                    searx_client=searx_client,
-                    budget=contact_budget,
-                )
-                process_scraped_page_comment_people(
-                    markdown=page.markdown,
-                    source_url=normalized,
-                    brand=request.brand,
-                    budget=contact_budget,
-                )
+                if kind != ResearchFindingKind.AD_PLACEMENT:
+                    process_scraped_page_contacts(
+                        markdown=page.markdown,
+                        source_url=normalized,
+                        brand=request.brand,
+                        searx_client=searx_client,
+                        budget=contact_budget,
+                    )
+                    process_scraped_page_comment_people(
+                        markdown=page.markdown,
+                        source_url=normalized,
+                        brand=request.brand,
+                        budget=contact_budget,
+                    )
             except Exception:  # noqa: BLE001
                 pass
 

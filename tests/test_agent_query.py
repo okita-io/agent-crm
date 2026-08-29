@@ -19,7 +19,7 @@ from agent_crm.research_utils import canonical_url, extract_domain
 def api_client(tmp_path, monkeypatch):
     db_path = tmp_path / "agent_query.db"
     monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
-    monkeypatch.delenv("CRM_API_TOKEN", raising=False)
+    monkeypatch.setenv("CRM_API_TOKEN", "")
     get_settings.cache_clear()
     reset_engine()
     init_db()

@@ -30,6 +30,7 @@ docker compose up -d --build
 | `research-loop` | — | Standing research queue drain (20 queries / 60 min / 200 pages per cycle; queue only grows) |
 | `engagement-loop` | — | Standing forum rescan + comment drafts (never posts) |
 | `seo-loop` | — | Standing SEO reviews + implementation plans (never patches sites) |
+| `queue-review` | — | Keeps or tosses hunter-added search-queue terms before they run |
 | `orchestrator` | — | Self-learning stack inspector (`agent-crm orchestrate`) — writes improvement notes |
 
 API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -122,8 +123,8 @@ Each search hit can be scraped to markdown via the host Firecrawl API. Hunter de
 **Hunt loop** (`hunt_loop`): bounded branching collection of **sites** into `hunt_resources` (not people). Features:
 
 - **Priority queue** (`hunt_queries.priority`, higher number runs first) with composite index `(status, priority, id)`. tactic.studio marketing/influencer/user seeds dequeue ahead of older MidnightSatin rows. Unlisted origins (generic seeds, branch terms) use priority **30** and still run, but never block tactic marketing.
-- SearXNG param rotation (general, social media, news, IT, …)
-- LLM branch-term extraction to enqueue new queries
+- SearXNG param rotation (general + social media for consumer brands; news/IT only for tactic.studio)
+- LLM branch-term extraction to enqueue new queries (those terms wait in `pending_review` until `queue-review` keeps or tosses them)
 - **Community/person feedback**: newly catalogued communities and extracted contact names enqueue deterministic follow-up queries (`origin` prefix `marketing:` / `influencer:` / `user:` plus `community:` / `person:` when applicable)
 - Defaults: **unlimited queries**, **unlimited wall clock**, **50 pages per query** (still capped by community/person term limits per run)
 - Per-brand **seed packs** include AI-generated-content readers and promoters (communities, BookTok/TikTok creators, influencers) in addition to generic discovery terms; tactic.studio packs are split by audience intent, with marketing seeds aimed at VPs / brand and marketing managers at $10M+ retail and food & beverage companies.
@@ -541,4 +542,4 @@ alembic upgrade head      # apply all revisions
 alembic current           # show head
 ```
 
-Current chain includes `r3s4t5u6v7w8` (`target_company` research kind, after `q2r3s4t5u6v7` SEO documents). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.
+Current chain includes `s4t5u6v7w8x9` (queue review, page type, and ingest deny-list, after `r3s4t5u6v7w8` target_company). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.

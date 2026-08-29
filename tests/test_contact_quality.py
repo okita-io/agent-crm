@@ -30,6 +30,7 @@ from sqlalchemy import select
 def db_url(tmp_path, monkeypatch):
     db_path = tmp_path / "contact_quality.db"
     monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("CRM_API_TOKEN", "")
     from agent_crm.config import get_settings
 
     get_settings.cache_clear()

@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from agent_crm.db import session_scope, with_row_lock
 from agent_crm.engagement import engagement_payload, extract_engagement_signals
-from agent_crm.enums import AgentStatus, Brand, HuntQueryStatus, HuntResourceKind
+from agent_crm.enums import AgentStatus, Brand, HuntPageType, HuntQueryStatus, HuntResourceKind
 from agent_crm.heartbeat import record_heartbeat
 from agent_crm.hunt_priority import hunt_query_priority
 from agent_crm.hunt_seeds import audience_from_origin
@@ -23,6 +23,8 @@ from agent_crm.hunt_utils import (
     is_junk_url,
     make_dedupe_key,
     normalize_query,
+    origin_needs_review,
+    query_enqueue_status,
     registrable_domain,
 )
 from agent_crm.models import HuntQuery, HuntResource
@@ -61,11 +63,14 @@ class HuntStore:
     ) -> bool:
         """Enqueue a query if not already present. Returns True if enqueued.
 
-        Failed rows with the same dedupe_key are reset to PENDING (retry).
+        Hunter-added origins (branch, community, person, …) land in
+        ``pending_review`` until the queue-review agent keeps or tosses them.
+        Failed rows with the same dedupe_key are reset for retry.
         """
         dedupe_key = make_dedupe_key(query, params)
         if priority is None:
             priority = hunt_query_priority(brand, audience_from_origin(origin))
+        initial_status = query_enqueue_status(origin)
         try:
             with session_scope() as session:
                 existing = session.scalar(
@@ -73,7 +78,12 @@ class HuntStore:
                 )
                 if existing is not None:
                     if existing.status == HuntQueryStatus.FAILED:
-                        existing.status = HuntQueryStatus.PENDING
+                        retry_status = (
+                            HuntQueryStatus.PENDING_REVIEW
+                            if origin_needs_review(origin)
+                            else HuntQueryStatus.PENDING
+                        )
+                        existing.status = retry_status
                         existing.error_message = None
                         existing.completed_at = None
                         existing.priority = priority
@@ -89,7 +99,7 @@ class HuntStore:
                         origin=origin,
                         brand=brand,
                         priority=priority,
-                        status=HuntQueryStatus.PENDING,
+                        status=initial_status,
                         dedupe_key=dedupe_key,
                         run_id=run_id,
                     )
@@ -171,6 +181,39 @@ class HuntStore:
             row.error_message = error[:2000]
             row.completed_at = datetime.now(UTC)
 
+    def claim_next_pending_review_query(
+        self,
+    ) -> tuple[int, Brand, str, str] | None:
+        """Return (id, brand, query, origin) for the next term waiting for review."""
+        with session_scope() as session:
+            stmt = (
+                select(HuntQuery)
+                .where(HuntQuery.status == HuntQueryStatus.PENDING_REVIEW)
+                .order_by(HuntQuery.priority.desc(), HuntQuery.id.asc())
+                .limit(1)
+            )
+            row = session.scalar(with_row_lock(stmt, session))
+            if row is None:
+                return None
+            return (row.id, row.brand, row.query, row.origin)
+
+    def mark_query_kept(self, query_id: int) -> None:
+        with session_scope() as session:
+            row = session.get(HuntQuery, query_id)
+            if row is None or row.status != HuntQueryStatus.PENDING_REVIEW:
+                return
+            row.status = HuntQueryStatus.PENDING
+            row.error_message = None
+
+    def mark_query_rejected(self, query_id: int, reason: str) -> None:
+        with session_scope() as session:
+            row = session.get(HuntQuery, query_id)
+            if row is None:
+                return
+            row.status = HuntQueryStatus.REJECTED
+            row.error_message = reason[:2000]
+            row.completed_at = datetime.now(UTC)
+
     def reset_stale_running_queries(self, *, stale_minutes: int = 30) -> int:
         """Return stuck RUNNING hunt queries to PENDING (crash recovery).
 
@@ -200,10 +243,15 @@ class HuntStore:
         kind: HuntResourceKind | None = None,
     ) -> UpsertResourceResult:
         """Insert or bump a discovered resource. Returns None resource for junk URLs."""
+        from .hunt_relevance import is_obvious_off_topic_url
+        from .hunt_utils import classify_domain_class, classify_page_type
+
         if is_junk_url(url):
             return UpsertResourceResult(resource=None, is_new=False)
         clean_url = canonical_url(url)
         if is_junk_url(clean_url):
+            return UpsertResourceResult(resource=None, is_new=False)
+        if is_obvious_off_topic_url(clean_url):
             return UpsertResourceResult(resource=None, is_new=False)
         if is_junk_title(title):
             title = None
@@ -217,6 +265,10 @@ class HuntStore:
             community_label=classification.community_label or title,
             platform=classification.platform,
         )
+        page_type = classify_page_type(clean_url, title, snippet)
+        if page_type == HuntPageType.DOCS:
+            return UpsertResourceResult(resource=None, is_new=False)
+        domain_class = classify_domain_class(clean_url)
         signals = extract_engagement_signals(title, snippet, kind=resource_kind)
         engagement = engagement_payload(signals)
         now = datetime.now(UTC)
@@ -237,6 +289,8 @@ class HuntStore:
                     title=title,
                     brand=brand,
                     kind=resource_kind,
+                    page_type=page_type,
+                    domain_class=domain_class,
                     found_via_query=found_via_query,
                     first_seen=now,
                     last_seen=now,
@@ -254,6 +308,8 @@ class HuntStore:
                     row.notes = notes
                 if resource_kind != HuntResourceKind.OTHER:
                     row.kind = resource_kind
+                row.page_type = page_type
+                row.domain_class = domain_class
                 row.found_via_query = found_via_query
                 row.engagement_score = max(row.engagement_score or 0, signals.score)
             session.flush()

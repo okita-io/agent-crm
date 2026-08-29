@@ -47,13 +47,29 @@ ACTOR = "outbound_hunter"
 
 logger = logging.getLogger(__name__)
 
-PARAM_PALETTES: list[dict | None] = [
+CONSUMER_PARAM_PALETTES: list[dict | None] = [
     None,
     {"categories": "general", "pageno": 1},
     {"categories": "social media"},
+]
+
+# tactic.studio may still want trade-press and XR/IT sources.
+PARAM_PALETTES: list[dict | None] = [
+    *CONSUMER_PARAM_PALETTES,
     {"categories": "news", "time_range": "year"},
     {"categories": "it"},
 ]
+
+_CONSUMER_BRANDS = frozenset(
+    {Brand.MIDNIGHTSATIN, Brand.CELESTIAL_NEXUS, Brand.HEYBUDDY}
+)
+
+
+def param_palettes_for_brand(brand: Brand) -> list[dict | None]:
+    """SearXNG category rotation. Consumer brands skip IT/news aggregators."""
+    if brand in _CONSUMER_BRANDS:
+        return CONSUMER_PARAM_PALETTES
+    return PARAM_PALETTES
 
 
 @dataclass
@@ -150,10 +166,11 @@ def run_hunt_loop(
             result.stop_reason = "queue_empty"
             break
 
+        palettes = param_palettes_for_brand(pending.brand)
         params = (
             pending.params
             if pending.params is not None
-            else PARAM_PALETTES[palette_index % len(PARAM_PALETTES)] or {}
+            else palettes[palette_index % len(palettes)] or {}
         )
         palette_index += 1
 
@@ -654,6 +671,9 @@ def _filter_relevant_hunt_results(
 
 
 def _is_scrapable_url(url: str) -> bool:
+    from .hunt_relevance import is_obvious_off_topic_url
     from .url_safety import is_public_http_url
 
+    if is_obvious_off_topic_url(url):
+        return False
     return is_public_http_url(url, resolve_dns=False)

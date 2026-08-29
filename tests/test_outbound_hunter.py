@@ -31,10 +31,15 @@ def _on_topic_assessment():
 def client(tmp_path, monkeypatch):
     db_path = tmp_path / "hunter.db"
     monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("CRM_API_TOKEN", "")
+    from agent_crm.config import get_settings
+
+    get_settings.cache_clear()
     reset_engine()
     init_db()
     yield TestClient(app)
     reset_engine()
+    get_settings.cache_clear()
 
 
 def _mock_transport(handlers: dict[str, callable]) -> httpx.MockTransport:

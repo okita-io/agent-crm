@@ -233,6 +233,34 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  queue-review:
+    build: .
+    command:
+      - agent-crm
+      - queue-review
+      - --watch
+      - --max-queries
+      - "40"
+      - --max-minutes
+      - "0"
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
+      CRM_QUEUE_REVIEW_POLL_SECONDS: "20"
+      CRM_QUEUE_REVIEW_MAX_QUERIES: "40"
+      CRM_QUEUE_REVIEW_SPARK_PER_CYCLE: "8"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+      spark-queue:
+        condition: service_started
+    restart: unless-stopped
+
   orchestrator:
     build: .
     command: ["agent-crm", "orchestrate"]

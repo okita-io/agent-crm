@@ -112,6 +112,11 @@ class Settings(BaseSettings):
     # Orchestrator self-learning loop
     orchestrator_poll_seconds: int = 180
 
+    # Queue-review agent (keep/toss hunter-added search terms)
+    queue_review_poll_seconds: int = 20
+    queue_review_max_queries: int = 40
+    queue_review_spark_per_cycle: int = 8
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")

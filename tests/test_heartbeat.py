@@ -102,6 +102,7 @@ def client(tmp_path, monkeypatch):
 def test_record_and_list_heartbeat(tmp_path, monkeypatch) -> None:
     db_path = tmp_path / "heartbeat-memory.db"
     monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    get_settings.cache_clear()
     reset_engine()
     init_db()
 

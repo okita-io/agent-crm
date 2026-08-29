@@ -110,6 +110,18 @@ def test_junk_url_skipped(loop_db):
     )
 
 
+def test_denied_docs_host_not_stored(loop_db):
+    assert (
+        HuntStore().upsert_resource(
+            url="https://developer.mozilla.org/en-US/docs/Web/API",
+            brand=Brand.MIDNIGHTSATIN,
+            title="MDN Web API",
+            found_via_query="romance booktok communities",
+        ).resource
+        is None
+    )
+
+
 def test_queue_branching_and_dedupe(loop_db):
     store = HuntStore()
     assert store.enqueue_query(query="alpha", brand=Brand.MIDNIGHTSATIN, origin="seed")
@@ -206,6 +218,7 @@ def test_param_variation_hits_searxng(loop_db, mock_pages):
     categories = [call.get("categories") for call in first_page_calls]
     assert categories[0] is None
     assert categories[1] == "general"
+    assert "it" not in categories
 
 
 def test_loop_scrapes_beyond_legacy_eight_page_cap(loop_db):

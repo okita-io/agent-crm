@@ -877,12 +877,13 @@ def test_run_research_enqueues_follow_ups_and_queue_only_grows(
     )
 
     after = store.count_all()
-    pending = store.count_pending(brand=Brand.CELESTIAL_NEXUS)
+    queued = store.queue_status()
+    waiting = queued.get("pending", 0) + queued.get("pending_review", 0)
     assert result.pages_scraped == 1
     assert result.follow_up_terms_enqueued >= 1
     assert after > before
     assert after >= before + result.follow_up_terms_enqueued
-    assert pending >= result.follow_up_terms_enqueued
+    assert waiting >= result.follow_up_terms_enqueued
     _teardown_db()
 
 

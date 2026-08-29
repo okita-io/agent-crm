@@ -141,28 +141,34 @@ class AgentStatus(str, enum.Enum):
 class HuntQueryStatus(str, enum.Enum):
     """Lifecycle of a queued hunter search term."""
 
+    PENDING_REVIEW = "pending_review"
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    REJECTED = "rejected"
 
 
 class ResearchQueryStatus(str, enum.Enum):
     """Lifecycle of a queued research search term. Rows are never deleted."""
 
+    PENDING_REVIEW = "pending_review"
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    REJECTED = "rejected"
 
 
 class EngagementQueryStatus(str, enum.Enum):
     """Lifecycle of a queued engagement search term. Rows are never deleted."""
 
+    PENDING_REVIEW = "pending_review"
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    REJECTED = "rejected"
 
 
 class AgentJobKind(str, enum.Enum):
@@ -227,6 +233,7 @@ class ImprovementSourceAgent(str, enum.Enum):
     RESEARCH_LOOP = "research-loop"
     ENGAGEMENT_LOOP = "engagement-loop"
     SEO_LOOP = "seo-loop"
+    QUEUE_REVIEW = "queue-review"
     LEAD_VERIFIER = "lead_verifier"
     SPARK_QUEUE = "spark-queue"
     ORCHESTRATOR = "orchestrator"
@@ -241,6 +248,18 @@ class HuntResourceKind(str, enum.Enum):
     FORUM = "forum"
     LIST = "list"
     SOCIAL = "social"
+    OTHER = "other"
+
+
+class HuntPageType(str, enum.Enum):
+    """Page-type classifier for hunt resources (outlet vs profile vs docs)."""
+
+    OUTLET_ARTICLE = "outlet_article"
+    OUTLET_SECTION = "outlet_section"
+    SOCIAL_PROFILE = "social_profile"
+    COMMUNITY = "community"
+    DOCS = "docs"
+    AD_PAGE = "ad_page"
     OTHER = "other"
 
 

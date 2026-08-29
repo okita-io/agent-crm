@@ -468,6 +468,10 @@ def process_scraped_page_contacts(
     audience: ContactAudience | None = None,
 ) -> list[ContactProfileOut]:
     """Extract contacts from a scraped page, upsert profiles, optionally run social lookup."""
+    from .hunt_relevance import is_obvious_off_topic_url
+
+    if is_obvious_off_topic_url(source_url):
+        return []
     try:
         extracted = extract_contacts(markdown=markdown, html=html, budget=budget)
     except Exception:  # noqa: BLE001

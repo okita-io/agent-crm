@@ -147,6 +147,8 @@ class HuntResourceOut(ORMModel):
     title: str | None
     brand: Brand
     kind: HuntResourceKind
+    page_type: str | None = None
+    domain_class: str | None = None
     found_via_query: str | None
     first_seen: datetime
     last_seen: datetime

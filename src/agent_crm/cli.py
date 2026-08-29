@@ -339,6 +339,51 @@ def _cmd_orchestrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_queue_review(args: argparse.Namespace) -> int:
+    from .config import get_settings
+    from .db import init_db
+    from .queue_review import QueueReviewBudget, run_queue_review, run_queue_review_watch
+
+    init_db()
+    settings = get_settings()
+    budget = QueueReviewBudget(
+        max_queries=args.max_queries
+        if args.max_queries is not None
+        else settings.queue_review_max_queries,
+        max_minutes=args.max_minutes,
+        allow_spark=not args.no_spark,
+        spark_per_cycle=settings.queue_review_spark_per_cycle,
+    )
+    if args.watch:
+        run_queue_review_watch(budget=budget)
+        return 0
+    result = run_queue_review(budget=budget)
+    print(
+        json.dumps(
+            {
+                "reviewed": result.reviewed,
+                "kept": result.kept,
+                "tossed": result.tossed,
+                "spark_used": result.spark_used,
+                "stop_reason": result.stop_reason,
+                "errors": result.errors,
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _cmd_purge_noise(args: argparse.Namespace) -> int:
+    from .db import init_db
+    from .noise_purge import purge_denied_ingest
+
+    init_db()
+    result = purge_denied_ingest(dry_run=not args.apply)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def _cmd_verify(args: argparse.Namespace) -> int:
     from .db import init_db
     from .schemas import VerifyRawRequest
@@ -675,6 +720,45 @@ def main(argv: list[str] | None = None) -> int:
         help="Inspection interval in seconds (default from settings)",
     )
     orchestrate.set_defaults(func=_cmd_orchestrate)
+
+    queue_review = sub.add_parser(
+        "queue-review",
+        help="Keep or toss hunter-added search-queue terms before they run",
+    )
+    queue_review.add_argument(
+        "--watch",
+        action="store_true",
+        help="Keep reviewing as the hunter enqueues new terms",
+    )
+    queue_review.add_argument(
+        "--max-queries",
+        type=int,
+        default=None,
+        help="Review budget per cycle (default from settings)",
+    )
+    queue_review.add_argument(
+        "--max-minutes",
+        type=int,
+        default=10,
+        help="Wall-clock budget in minutes (0 = unlimited)",
+    )
+    queue_review.add_argument(
+        "--no-spark",
+        action="store_true",
+        help="Deterministic review only (no Spark)",
+    )
+    queue_review.set_defaults(func=_cmd_queue_review)
+
+    purge_noise = sub.add_parser(
+        "purge-noise",
+        help="Drop deny-listed hunt resources and mark sourced contacts junk",
+    )
+    purge_noise.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write changes (default is dry-run)",
+    )
+    purge_noise.set_defaults(func=_cmd_purge_noise)
 
     verify = sub.add_parser("verify", help="Verify lead contacts (DNS/MX/HTTP, no mail)")
     verify.add_argument("--lead-id", type=int, help="Verify a single lead by id")

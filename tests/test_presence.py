@@ -8,6 +8,7 @@ from agent_crm.config import get_settings
 from agent_crm.enums import AgentStatus
 from agent_crm.presence import (
     HeartbeatSnapshot,
+    KNOWN_AGENT_ROSTER,
     build_observer_rows,
     external_upstream_slots,
     map_queue_actor_status,
@@ -72,7 +73,7 @@ def test_merge_agent_status_prefers_working_over_idle() -> None:
 
 def test_build_observer_rows_idle_without_signals() -> None:
     rows = build_observer_rows([], None, persisted_usage={})
-    assert len(rows) == 12
+    assert len(rows) == len(KNOWN_AGENT_ROSTER)
     assert all(row.status == AgentStatus.IDLE for row in rows)
     assert all(row.task is None for row in rows)
 
