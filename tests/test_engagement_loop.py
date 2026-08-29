@@ -105,6 +105,15 @@ def test_engagement_loop_catalogs_hot_thread_and_drafts(loop_db) -> None:
     assert drafts
     assert "MidnightSatin" in drafts[0].draft_text
     assert drafts[0].status.value == "draft"
+    system_blobs = []
+    for call in mock_llm.call_args_list:
+        payload = call.args[0]
+        for message in payload.get("messages", []):
+            if message.get("role") == "system":
+                system_blobs.append(message.get("content") or "")
+    joined = "\n".join(system_blobs).lower()
+    assert "social-media engagement rules" in joined
+    assert "helpful first" in joined
 
 
 def test_engagement_loop_enqueues_follow_ups_and_queue_only_grows(loop_db) -> None:

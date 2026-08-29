@@ -90,6 +90,8 @@ Vendored MIT **marketing-agi** skill at [`skills/marketing-agi/`](skills/marketi
 
 Vendored **OpenSEO concepts** (not the hosted app) at [`skills/open-seo/`](skills/open-seo/). Upstream: [every-app/open-seo](https://github.com/every-app/open-seo) — see `skills/open-seo/SOURCE`. The CRM agent writes review/plan documents; it does not run OpenSEO MCP or spend DataForSEO credits.
 
+Vendored **social-media content factory** (concepts, not the Cowork plugin) at [`skills/social-media/`](skills/social-media/). Upstream: [charlie947/social-media-skills](https://github.com/charlie947/social-media-skills) — see `skills/social-media/SOURCE`. Weekly matrices, post packages, newsletter drafts, niche pulses, and visual briefs as documents. **This stack never posts.** No Apify, no Gemini API, no Claude for Chrome. Engagement drafts pull first-comment / helpful-first rules from this pack. A standing `content-loop` (owned-social packages in Postgres) is not implemented yet.
+
 **Brand context** for Research, Hunter, and dashboard agents:
 
 | File | Brand |
@@ -100,7 +102,7 @@ Vendored **OpenSEO concepts** (not the hosted app) at [`skills/open-seo/`](skill
 | `brand-context.heybuddy.md` | HeyBuddy (not a nonprofit — hunts partner orgs) |
 | `brand-context.tactic-studio.md` | tactic.studio |
 
-Research competitor summaries load bounded slices of `references/competitive.md` (+ positioning) into the Spark summarizer. Ad-placement runs pull short `paid-ads` / `hooks` excerpts for discovery briefs. SEO reviews/plans pull `skills/open-seo/references/site-audit.md` and `seo-plan.md`. Shared rules: never invent proof (`[NEED: x]`), no live ad accounts, no outbound send, **no live SEO deploys**. **tactic.studio outbound remains gated** by Pete (`pete@tactic.studio`) + naming-rights — this stack never sends.
+Research competitor summaries load bounded slices of `references/competitive.md` (+ positioning) into the Spark summarizer. Ad-placement runs pull short `paid-ads` / `hooks` excerpts for discovery briefs. SEO reviews/plans pull `skills/open-seo/references/site-audit.md` and `seo-plan.md`. Engagement comment drafts pull a bounded slice of `skills/social-media/references/post-package.md` plus slop-patterns. Shared rules: never invent proof (`[NEED: x]`), no live ad accounts, no outbound send, **no live SEO deploys**, **no social posting**. **tactic.studio outbound remains gated** by Pete (`pete@tactic.studio`) + naming-rights — this stack never sends.
 
 ---
 

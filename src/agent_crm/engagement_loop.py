@@ -38,6 +38,7 @@ from .hunt_utils import classify_resource_detailed, is_junk_title
 from .llm_client import chat_completions
 from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
 from .marketing_skill import brand_context_snippet
+from .social_skill import engagement_draft_guidance
 from .models import EngagementThread, HuntResource
 from .searxng_client import SearxngError, search
 from .tooling import CRMToolkit
@@ -492,6 +493,9 @@ def _maybe_draft_reply(
         "Be helpful first; mention the product only when it naturally answers the post."
         + UNTRUSTED_DATA_SYSTEM_SUFFIX
     )
+    draft_guidance = engagement_draft_guidance()
+    if draft_guidance:
+        system += f"\n\n--- social-media engagement rules ---\n{draft_guidance}"
     if brand_context:
         system += f"\n\n--- brand context (excerpt) ---\n{brand_context}"
     user = (
