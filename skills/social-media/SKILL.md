@@ -4,7 +4,7 @@ description: Ranch content factory. Weekly post packages, newsletter drafts, con
 license: MIT
 ---
 
-# Social media content for Agent CRM
+# Social media content for The Agency
 
 Document-first content production. The CRM agent searches with SearXNG, scrapes with Firecrawl, and writes **content packages**. It does not post, schedule, comment, or log into LinkedIn / Instagram / TikTok / X / YouTube.
 

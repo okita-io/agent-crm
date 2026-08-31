@@ -1,4 +1,6 @@
-"""Agent CRM+SEO: a local, agent-driven CRM that also writes SEO documents.
+"""The Agency: a local, agent-driven CRM that writes SEO and AEO/GEO documents.
+
+Product name: The Agency. Python package and CLI remain ``agent_crm`` / ``agent-crm``.
 
 The specialized agents build on:
 

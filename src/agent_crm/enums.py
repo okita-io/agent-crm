@@ -233,6 +233,7 @@ class ImprovementSourceAgent(str, enum.Enum):
     RESEARCH_LOOP = "research-loop"
     ENGAGEMENT_LOOP = "engagement-loop"
     SEO_LOOP = "seo-loop"
+    AEO_GEO_LOOP = "aeo-geo-loop"
     QUEUE_REVIEW = "queue-review"
     LEAD_VERIFIER = "lead_verifier"
     SPARK_QUEUE = "spark-queue"
@@ -335,6 +336,7 @@ class SeoQueryKind(str, enum.Enum):
 
     SITE_AUDIT = "site_audit"
     COMPETITOR = "competitor"
+    AEO_GEO = "aeo_geo"
 
 
 class SeoQueryStatus(str, enum.Enum):

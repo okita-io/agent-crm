@@ -249,6 +249,47 @@ def _cmd_engagement_loop(args: argparse.Namespace) -> int:
     return 0 if result.venues_scanned or result.threads_cataloged or not result.errors else 1
 
 
+def _cmd_aeo_geo_loop(args: argparse.Namespace) -> int:
+    from .aeo_geo_loop import run_aeo_geo_loop, run_aeo_geo_loop_watch
+    from .db import init_db
+    from .enums import Brand
+    from .seo_loop import SeoBudget
+
+    init_db()
+    brand = Brand(args.brand) if args.brand else None
+    budget = SeoBudget(
+        max_targets=args.max_targets,
+        max_pages_per_target=args.max_pages_per_target,
+        max_minutes=args.max_minutes,
+    )
+    if args.watch:
+        run_aeo_geo_loop_watch(
+            brand=brand,
+            budget=budget,
+            summarize=not args.no_summarize,
+        )
+        return 0
+    result = run_aeo_geo_loop(
+        brand=brand,
+        budget=budget,
+        summarize=not args.no_summarize,
+    )
+    print(
+        json.dumps(
+            {
+                "targets_processed": result.targets_processed,
+                "reviews_written": result.reviews_written,
+                "plans_written": result.plans_written,
+                "pages_scraped": result.pages_scraped,
+                "stop_reason": result.stop_reason,
+                "errors": result.errors,
+            },
+            indent=2,
+        )
+    )
+    return 0 if result.reviews_written or result.plans_written or not result.errors else 1
+
+
 def _cmd_seo_loop(args: argparse.Namespace) -> int:
     from .db import init_db
     from .enums import Brand
@@ -411,7 +452,10 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="agent-crm", description="Agent CRM+SEO tools")
+    parser = argparse.ArgumentParser(
+        prog="agent-crm",
+        description="The Agency — CRM, SEO, and AEO/GEO document tools (repo: agent-crm)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init-db", help="Create tables directly").set_defaults(
@@ -639,6 +683,45 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip Spark LLM document writing (heuristic markdown only)",
     )
     seo_loop.set_defaults(func=_cmd_seo_loop)
+
+    aeo_geo_loop = sub.add_parser(
+        "aeo-geo-loop",
+        help="Write AEO/GEO review and plan documents for brand sites (never implements)",
+    )
+    aeo_geo_loop.add_argument(
+        "--brand",
+        choices=["midnightsatin", "celestial-nexus", "heybuddy", "tactic-studio"],
+        help="Brand slug; omit to process all brands",
+    )
+    aeo_geo_loop.add_argument(
+        "--max-targets",
+        type=int,
+        default=8,
+        help="Max sites to write documents for this cycle (0 = unlimited)",
+    )
+    aeo_geo_loop.add_argument(
+        "--max-pages-per-target",
+        type=int,
+        default=4,
+        help="Max pages scraped per site",
+    )
+    aeo_geo_loop.add_argument(
+        "--max-minutes",
+        type=int,
+        default=45,
+        help="Wall-clock budget in minutes (0 = unlimited)",
+    )
+    aeo_geo_loop.add_argument(
+        "--watch",
+        action="store_true",
+        help="Stay running: drain due targets, then wait until the next local noon",
+    )
+    aeo_geo_loop.add_argument(
+        "--no-summarize",
+        action="store_true",
+        help="Skip Spark LLM document writing (heuristic markdown only)",
+    )
+    aeo_geo_loop.set_defaults(func=_cmd_aeo_geo_loop)
 
     contacts = sub.add_parser("contacts", help="List contact profiles extracted from scrapes")
     contacts_sub = contacts.add_subparsers(dest="contacts_command", required=True)

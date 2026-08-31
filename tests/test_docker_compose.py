@@ -14,6 +14,7 @@ def test_compose_declares_standing_workers() -> None:
     assert "research-loop" in content
     assert "engagement-loop" in content
     assert "seo-loop" in content
+    assert "aeo-geo-loop" in content
     assert "queue-review" in content
     assert 'command: ["agent-crm", "orchestrate"]' in content
 
@@ -47,6 +48,7 @@ def test_compose_hunt_loop_stays_unbounded() -> None:
         "research-loop",
         "engagement-loop",
         "seo-loop",
+        "aeo-geo-loop",
         "queue-review",
         "orchestrator",
     ):
@@ -141,6 +143,7 @@ def test_workers_wait_for_api_migrations() -> None:
         "research-loop",
         "engagement-loop",
         "seo-loop",
+        "aeo-geo-loop",
         "queue-review",
         "orchestrator",
     ):

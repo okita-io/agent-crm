@@ -1,4 +1,4 @@
-# Local stack for Agent CRM+SEO.
+# Local stack for The Agency (repo: okita-io/agent-crm).
 #
 # Default profile uses Postgres (matches the eventual NAS target) so the whole
 # machine runs the way it will in production. To run against the SQLite file
@@ -216,6 +216,39 @@ services:
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_SEARXNG_URL: http://host.docker.internal:8080
+      CRM_FIRECRAWL_URL: http://host.docker.internal:3002
+      CRM_SEO_MAX_TARGETS_PER_RUN: "0"
+      CRM_SEO_MAX_PAGES_PER_TARGET: "4"
+      CRM_SEO_MAX_MINUTES_DEFAULT: "0"
+      CRM_SEO_REVIEW_HOUR: "12"
+      CRM_SEO_REVIEW_TIMEZONE: "America/Los_Angeles"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+      spark-queue:
+        condition: service_started
+    restart: unless-stopped
+
+  aeo-geo-loop:
+    build: .
+    command:
+      - agent-crm
+      - aeo-geo-loop
+      - --watch
+      - --max-targets
+      - "0"
+      - --max-pages-per-target
+      - "4"
+      - --max-minutes
+      - "0"
+    environment:
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
+      CRM_LLM_BASE_URL: http://spark-queue:8088/v1
+      CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
       CRM_SEO_MAX_TARGETS_PER_RUN: "0"
       CRM_SEO_MAX_PAGES_PER_TARGET: "4"

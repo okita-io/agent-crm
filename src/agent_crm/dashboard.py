@@ -30,6 +30,8 @@ from agent_crm.enums import (
     ContactVerificationStatus,
     HuntResourceKind,
     ResearchFindingKind,
+    SeoPlanKind,
+    SeoReviewKind,
     Stage,
 )
 from agent_crm.heartbeat import list_heartbeats
@@ -946,7 +948,7 @@ def _render_seo_tab() -> None:
         )
 
     st.subheader("Reviews")
-    reviews = list_reviews(brand=brand, limit=200)
+    reviews = [row for row in list_reviews(brand=brand, limit=200) if row.kind != SeoReviewKind.GEO]
     if not reviews:
         st.info("No reviews yet. Run `agent-crm seo-loop` or POST /seo/loop.")
     else:
@@ -980,7 +982,7 @@ def _render_seo_tab() -> None:
             st.markdown(row.body)
 
     st.subheader("Plans (human implementation)")
-    plans = list_plans(brand=brand, limit=200)
+    plans = [row for row in list_plans(brand=brand, limit=200) if row.kind != SeoPlanKind.GEO]
     if not plans:
         st.info(
             "No plans yet. Owned-site audits write a plan after the review. "
@@ -1014,6 +1016,101 @@ def _render_seo_tab() -> None:
             key=f"seo_plan_pick_{brand_filter}",
         )
         with st.expander(f"Plan — {row.domain}", expanded=True):
+            st.caption(row.url)
+            st.markdown(row.body)
+
+
+def _render_aeo_geo_tab() -> None:
+    st.subheader("AEO / GEO documents")
+    st.caption(
+        "Answer-engine (AEO) and generative-engine (GEO) reviews and implementation plans. "
+        "SEO = blue-link rank; AEO = extractable answers; GEO = chat citations and mentions. "
+        "The agent scrapes with Firecrawl and writes markdown at least once a day — "
+        "it never patches live pages or sends outreach."
+    )
+
+    brand_filter = st.selectbox(
+        "Brand filter",
+        options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
+        key="aeo_geo_brand",
+    )
+    brand = None if brand_filter == "all" else Brand(brand_filter)
+
+    geo_reviews = list_reviews(brand=brand, kind=SeoReviewKind.GEO, limit=200)
+    geo_plans = list_plans(brand=brand, kind=SeoPlanKind.GEO, limit=200)
+
+    cols = st.columns(3)
+    cols[0].metric("AEO/GEO reviews", len(geo_reviews))
+    cols[1].metric("AEO/GEO plans", len(geo_plans))
+    cols[2].metric("Targets (shared catalog)", count_targets(brand=brand))
+
+    st.subheader("Reviews")
+    if not geo_reviews:
+        st.info(
+            "No AEO/GEO reviews yet. Run `agent-crm aeo-geo-loop` or POST /aeo-geo/loop."
+        )
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "id": row.id,
+                        "score": row.score,
+                        "status": row.status.value,
+                        "brand": row.brand.value,
+                        "title": row.title,
+                        "one_thing": (row.one_thing or "")[:240],
+                        "url": row.url,
+                        "updated": row.updated_at,
+                    }
+                    for row in geo_reviews
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        row = _pick_seo_document(
+            geo_reviews,
+            label="Which AEO/GEO review to open",
+            key=f"aeo_geo_review_pick_{brand_filter}",
+        )
+        with st.expander(f"AEO/GEO Review — {row.domain}", expanded=True):
+            st.caption(row.url)
+            st.markdown(row.body)
+
+    st.subheader("Plans (human implementation)")
+    if not geo_plans:
+        st.info(
+            "No AEO/GEO plans yet. Owned-site audits write a plan after the review. "
+            "Competitor reviews do not get plans."
+        )
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "id": row.id,
+                        "status": row.status.value,
+                        "brand": row.brand.value,
+                        "title": row.title,
+                        "one_thing": (row.one_thing or "")[:240],
+                        "tasks": len(row.tasks or []),
+                        "url": row.url,
+                        "review_id": row.review_id,
+                        "updated": row.updated_at,
+                    }
+                    for row in geo_plans
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        row = _pick_seo_document(
+            geo_plans,
+            label="Which AEO/GEO plan to open",
+            key=f"aeo_geo_plan_pick_{brand_filter}",
+        )
+        with st.expander(f"AEO/GEO Plan — {row.domain}", expanded=True):
             st.caption(row.url)
             st.markdown(row.body)
 
@@ -1369,7 +1466,7 @@ def _require_dashboard_access() -> bool:
         return True
     if st.session_state.get("dashboard_unlocked") is True:
         return True
-    st.title("Agent CRM+SEO")
+    st.title("The Agency")
     st.caption("This dashboard is password-protected.")
     entered = st.text_input("Password", type="password", key="dashboard_password_input")
     if st.button("Unlock", type="primary"):
@@ -1381,7 +1478,7 @@ def _require_dashboard_access() -> bool:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Agent CRM+SEO", layout="wide")
+    st.set_page_config(page_title="The Agency", layout="wide")
     _disable_stale_fade()
     init_db()
     if not _require_dashboard_access():
@@ -1390,10 +1487,10 @@ def main() -> None:
     live_seconds = _observer_live_refresh_seconds()
     refresh_seconds = _observer_refresh_seconds()
 
-    st.title("Agent CRM+SEO")
-    st.caption(f"Store: {database_kind()}")
+    st.title("The Agency")
+    st.caption(f"Store: {database_kind()} · CRM + SEO + AEO/GEO documents")
 
-    observer_tab, pipeline_tab, hunter_tab, research_tab, engagement_tab, seo_tab, contacts_tab, verifier_tab, improvement_tab = st.tabs(
+    observer_tab, pipeline_tab, hunter_tab, research_tab, engagement_tab, seo_tab, aeo_geo_tab, contacts_tab, verifier_tab, improvement_tab = st.tabs(
         [
             "Live agents",
             "Pipeline & leads",
@@ -1401,6 +1498,7 @@ def main() -> None:
             "Research",
             "Engagement",
             "SEO",
+            "AEO / GEO",
             "Contacts",
             "Verifier",
             "Improvement",
@@ -1424,6 +1522,9 @@ def main() -> None:
 
     with seo_tab:
         _render_seo_tab()
+
+    with aeo_geo_tab:
+        _render_aeo_geo_tab()
 
     with contacts_tab:
         _render_contacts_tab()
