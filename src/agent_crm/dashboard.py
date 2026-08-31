@@ -54,6 +54,7 @@ from agent_crm.seo_export import (
     seo_export_filename,
     zip_seo_documents,
 )
+from agent_crm.seo_query_store import SeoQueryStore
 from agent_crm.seo_store import (
     count_plans,
     count_reviews,
