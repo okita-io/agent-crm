@@ -4,7 +4,7 @@ description: Write SEO review and implementation-plan documents for ranch brand 
 license: MIT
 ---
 
-# OpenSEO concepts for Agent CRM
+# OpenSEO concepts for The Agency
 
 Document-first SEO. The CRM agent scrapes with Firecrawl, searches with SearXNG, and writes **reviews** and **plans**. It does not implement changes on target sites, buy DataForSEO credits, connect Search Console, or post anything.
 

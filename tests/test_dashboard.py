@@ -16,14 +16,19 @@ def test_dashboard_disables_streamlit_stale_fade() -> None:
     fade_at = source.index("_disable_stale_fade()", main_at)
     assert fade_at > config_at
     assert '"SEO"' in source
+    assert '"AEO / GEO"' in source
     assert "_render_seo_tab" in source
+    assert "_render_aeo_geo_tab" in source
     assert "_pick_seo_document" in source
+    assert 'page_title="The Agency"' in source
+    assert 'st.title("The Agency")' in source
 
 
 def test_seo_document_pickers_are_outside_expanders() -> None:
     """Selectboxes inside expanders clip their dropdowns; pickers must stay visible."""
     source = DASHBOARD_PATH.read_text(encoding="utf-8")
-    seo = source.split("def _render_seo_tab")[1].split("def _render_contacts_tab")[0]
+    seo = source.split("def _render_seo_tab")[1].split("def _render_aeo_geo_tab")[0]
+    aeo_geo = source.split("def _render_aeo_geo_tab")[1].split("def _render_contacts_tab")[0]
     assert 'expander("Open a plan document")' not in seo
     assert 'expander("Open a review document")' not in seo
     assert 'label="Which plan to open"' in seo
@@ -34,3 +39,6 @@ def test_seo_document_pickers_are_outside_expanders() -> None:
     review_expand = seo.index("Review —", review_pick)
     assert plan_pick < plan_expand
     assert review_pick < review_expand
+    aeo_review_pick = aeo_geo.index('label="Which AEO/GEO review to open"')
+    aeo_review_expand = aeo_geo.index("AEO/GEO Review —", aeo_review_pick)
+    assert aeo_review_pick < aeo_review_expand

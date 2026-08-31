@@ -115,15 +115,19 @@ from .schemas import (
     VerifyRawRequest,
     VerifyRawResult,
 )
+from .aeo_geo_loop import run_aeo_geo_loop
 from .seo_loop import SeoBudget, run_seo_loop
 from .seo_store import list_plans, list_reviews, list_targets
 from .tooling import CRMToolkit
 from .verifier import list_verifications, verify_batch_unverified, verify_lead, verify_raw
 
 app = FastAPI(
-    title="Agent CRM+SEO",
+    title="The Agency",
     version=__version__,
-    description="Local, agent-driven CRM+SEO. Collection CRM plus SEO review and plan documents (never applied to live sites).",
+    description=(
+        "The Agency — local, agent-driven CRM plus SEO and AEO/GEO document workflows "
+        "(never applied to live sites). Repository: okita-io/agent-crm."
+    ),
     dependencies=[Depends(require_api_token)],
 )
 
@@ -348,6 +352,29 @@ def seo_reviews(
 ) -> list[SeoReviewOut]:
     rows = list_reviews(brand=brand, kind=kind, status=status, limit=limit)
     return [SeoReviewOut.model_validate(row) for row in rows]
+
+
+@app.post("/aeo-geo/loop", response_model=SeoLoopResultOut, tags=["aeo-geo"])
+def aeo_geo_loop(payload: SeoLoopRequest) -> SeoLoopResultOut:
+    """Scrape target sites and write AEO/GEO review/plan documents. Never implements."""
+    budget = SeoBudget(
+        max_targets=payload.max_targets,
+        max_pages_per_target=payload.max_pages_per_target,
+        max_minutes=payload.max_minutes,
+    )
+    result = run_aeo_geo_loop(
+        brand=payload.brand,
+        budget=budget,
+        summarize=payload.summarize,
+    )
+    return SeoLoopResultOut(
+        targets_processed=result.targets_processed,
+        reviews_written=result.reviews_written,
+        plans_written=result.plans_written,
+        pages_scraped=result.pages_scraped,
+        errors=result.errors,
+        stop_reason=result.stop_reason,
+    )
 
 
 @app.get("/seo/plans", response_model=list[SeoPlanOut], tags=["seo"])

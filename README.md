@@ -1,10 +1,14 @@
-# Agent CRM+SEO
+# The Agency
 
-A local, agent-driven **CRM+SEO** for the ranch creative/tech brands **Tactic-Studio**, **MidnightSatin**, **Celestial-Nexus**, and **HeyBuddy**. It captures leads, runs outbound research and hunting, extracts contact profiles from scraped pages, tracks pipeline state, and **writes SEO review and implementation-plan documents** for humans to apply on target sites — all on your own hardware.
+**The Agency** is the product name for this local, agent-driven stack. The GitHub repository remains [`okita-io/agent-crm`](https://github.com/okita-io/agent-crm); the Python package is `agent_crm` and the CLI is `agent-crm`.
+
+The Agency runs **CRM + SEO + AEO/GEO** for the ranch creative/tech brands **Tactic-Studio**, **MidnightSatin**, **Celestial-Nexus**, and **HeyBuddy**. It captures leads, runs outbound research and hunting, extracts contact profiles from scraped pages, tracks pipeline state, and **writes SEO and AEO/GEO review and implementation-plan documents** for humans to apply on target sites — all on your own hardware.
 
 **There is no outreach or sending in this stack.** The lead verifier checks DNS, MX, and HTTP only. tactic.studio outbound (direct mail, DMs) remains gated by Pete (`pete@tactic.studio`) and naming-rights — this repo collects and categorizes only.
 
 **SEO is document-only.** The SEO agent never patches live pages, deploys markup, or logs into a CMS. It scrapes with Firecrawl, searches with SearXNG, and stores markdown reviews and plans. Concepts are adapted from [OpenSEO](https://github.com/every-app/open-seo) (site audits, competitor reviews, keyword focus, how-to-fix issues) without DataForSEO, Search Console, or rank tracking.
+
+**AEO/GEO is document-only too.** AEO = extractable answers (snippets, some AI Overviews). GEO = being cited or mentioned inside generated chat answers (ChatGPT, Gemini, Perplexity, Copilot). The AEO/GEO agent follows the operating order in `skills/aeo-geo/` — access, entity kit, quotable pages, fan-out, corroboration, optional `llms.txt`, and a human-run measurement panel. It never invents citation counts or changes live sites.
 
 ---
 
@@ -30,6 +34,7 @@ docker compose up -d --build
 | `research-loop` | — | Standing research queue drain (20 queries / 60 min / 200 pages per cycle; queue only grows) |
 | `engagement-loop` | — | Standing forum rescan + comment drafts (never posts) |
 | `seo-loop` | — | Standing SEO reviews + implementation plans (never patches sites) |
+| `aeo-geo-loop` | — | Standing AEO/GEO reviews + plans (never patches sites) |
 | `queue-review` | — | Keeps or tosses hunter-added search-queue terms before they run |
 | `orchestrator` | — | Self-learning stack inspector (`agent-crm orchestrate`) — writes improvement notes |
 
@@ -266,6 +271,25 @@ No DataForSEO, no Search Console, no rank tracking, no backlink graph. Missing v
 
 Compose runs `seo-loop --watch` as a standing worker: it drains every due site, then sleeps until the next noon. Seed pack: MidnightSatin (`midnightsatin.app`), Celestial-Nexus, HeyBuddy, tactic.studio, plus named search competitors from brand context.
 
+### AEO / GEO documents
+
+**AEO** (answer-engine optimization) targets extractable answers — featured snippets and some AI Overviews. **GEO** (generative-engine optimization) targets citations and mentions inside chat-engine answers. Vocabulary and crawler notes live in `skills/aeo-geo/SKILL.md`.
+
+| Document | When | What a human does with it |
+|----------|------|---------------------------|
+| **AEO/GEO review** (`seo_reviews`, kind `geo`) | Every due target | Read the one-week action, AEO/GEO scorecards, access notes, and measurement panel seeds |
+| **AEO/GEO plan** (`seo_plans`, kind `geo`) | Owned sites only | Apply entity markup, quotable copy, fan-out pages, and optional `/llms.txt` on the live site |
+
+Competitor URLs get a review only. No live HTTP writes, no outreach email, no invented citation rankings. Missing data is `[NEED: …]`.
+
+| Entry | Command / API |
+|-------|---------------|
+| Loop | `agent-crm aeo-geo-loop [--brand …] [--watch] [--max-targets 8] [--max-pages-per-target 4] [--max-minutes 45]` · `POST /aeo-geo/loop` |
+| Reviews | `GET /seo/reviews?kind=geo` |
+| Plans | `GET /seo/plans?kind=geo` |
+
+Compose runs `aeo-geo-loop --watch` on the same noon schedule as SEO. The dashboard **AEO / GEO** tab lists these documents separately from blue-link SEO.
+
 ---
 
 ## Data model (implemented tables)
@@ -410,6 +434,11 @@ agent-crm engagement-loop \
 
 # SEO documents (never implements on live sites)
 agent-crm seo-loop \
+  [--brand midnightsatin] [--watch] [--max-targets 8] \
+  [--max-pages-per-target 4] [--max-minutes 45] [--no-summarize]
+
+# AEO/GEO documents (never implements on live sites)
+agent-crm aeo-geo-loop \
   [--brand midnightsatin] [--watch] [--max-targets 8] \
   [--max-pages-per-target 4] [--max-minutes 45] [--no-summarize]
 
