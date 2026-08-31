@@ -330,6 +330,32 @@ def _cmd_seo_loop(args: argparse.Namespace) -> int:
     return 0 if result.reviews_written or result.plans_written or not result.errors else 1
 
 
+def _cmd_agents(args: argparse.Namespace) -> int:
+    from .agent_control import list_agent_enabled, set_agent_enabled
+    from .db import init_db
+
+    init_db()
+    command = getattr(args, "agents_command", None)
+    if command == "set":
+        enabled = not args.off
+        set_agent_enabled(args.agent_name, enabled)
+        print(
+            json.dumps(
+                {"agent_name": args.agent_name, "enabled": enabled},
+                indent=2,
+            )
+        )
+        return 0
+
+    toggles = list_agent_enabled()
+    rows = [
+        {"agent_name": agent_name, "enabled": enabled}
+        for agent_name, enabled in sorted(toggles.items())
+    ]
+    print(json.dumps(rows, indent=2))
+    return 0
+
+
 def _cmd_contacts(args: argparse.Namespace) -> int:
     from .contact_store import (
         backfill_contact_enrichment,
@@ -803,6 +829,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Inspection interval in seconds (default from settings)",
     )
     orchestrate.set_defaults(func=_cmd_orchestrate)
+
+    agents = sub.add_parser("agents", help="List or set per-agent on/off toggles")
+    agents_sub = agents.add_subparsers(dest="agents_command", required=True)
+
+    agents_list = agents_sub.add_parser("list", help="List agent enabled state")
+    agents_list.set_defaults(func=_cmd_agents)
+
+    agents_set = agents_sub.add_parser("set", help="Enable or disable one agent")
+    agents_set.add_argument("agent_name", help="Agent actor name (e.g. seo, aeo-geo)")
+    agents_set.add_argument(
+        "--off",
+        action="store_true",
+        help="Disable the agent (default is enable)",
+    )
+    agents_set.set_defaults(func=_cmd_agents)
 
     queue_review = sub.add_parser(
         "queue-review",

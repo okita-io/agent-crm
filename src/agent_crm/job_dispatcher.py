@@ -6,6 +6,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .config import get_settings
 from .contact_people_enrichment import enrich_contact_person
 from .contact_qualification import qualify_comment_person, qualify_contact_profile
@@ -172,6 +173,8 @@ def run_dispatcher_cycle(
     actor: str = ACTOR,
 ) -> JobDispatcherCycle:
     """Claim and execute pending jobs — non-Spark work drains before Spark jobs."""
+    if stop_if_disabled(actor):
+        return JobDispatcherCycle()
     reset_stale_running_jobs()
     cycle = JobDispatcherCycle()
     budget = ContactExtractionBudget.from_settings()
@@ -221,6 +224,7 @@ def run_job_dispatcher(
     record_heartbeat(ACTOR, status=AgentStatus.IDLE, task="job dispatcher starting")
     seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
     while True:
+        wait_while_disabled(ACTOR)
         work_done = False
         while count_pending_jobs() > 0:
             cycle = run_dispatcher_cycle(batch_size=batch)

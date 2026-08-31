@@ -68,6 +68,7 @@ from .hunt_store import HuntStore
 from .improvement_store import list_improvement_notes
 from .outbound_hunter import run_hunt
 from .pipeline import PipelineManager
+from .agent_control import list_agent_enabled, set_agent_enabled
 from .presence import build_observer_rows, fetch_spark_queue_health, spark_slot_summary
 from .research import run_research
 from .research_store import list_findings
@@ -75,6 +76,8 @@ from .schemas import (
     ActivityOut,
     AgentCatalogOut,
     AgentObserverOut,
+    AgentToggleOut,
+    AgentToggleSetIn,
     AgentPageOut,
     AgentSearchOut,
     BatchVerifyRequest,
@@ -638,6 +641,7 @@ def list_agents() -> list[AgentObserverOut]:
             task=row.task,
             resource=row.resource,
             last_heartbeat=row.last_heartbeat,
+            enabled=row.enabled,
             prompt_tokens=row.prompt_tokens,
             completion_tokens=row.completion_tokens,
             saved_usd=row.saved_usd,
@@ -645,6 +649,22 @@ def list_agents() -> list[AgentObserverOut]:
         )
         for row in rows
     ]
+
+
+@app.get("/agents/toggles", response_model=list[AgentToggleOut], tags=["agents"])
+def list_agent_toggles() -> list[AgentToggleOut]:
+    toggles = list_agent_enabled()
+    return [
+        AgentToggleOut(agent_name=agent_name, enabled=enabled)
+        for agent_name, enabled in sorted(toggles.items())
+    ]
+
+
+@app.put("/agents/{agent_name}/enabled", response_model=AgentToggleOut, tags=["agents"])
+def put_agent_enabled(agent_name: str, body: AgentToggleSetIn) -> AgentToggleOut:
+    require_known_agent(agent_name)
+    set_agent_enabled(agent_name, body.enabled)
+    return AgentToggleOut(agent_name=agent_name, enabled=body.enabled)
 
 
 @app.get("/agents/spark", tags=["agents"])

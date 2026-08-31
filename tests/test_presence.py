@@ -76,6 +76,18 @@ def test_build_observer_rows_idle_without_signals() -> None:
     assert len(rows) == len(KNOWN_AGENT_ROSTER)
     assert all(row.status == AgentStatus.IDLE for row in rows)
     assert all(row.task is None for row in rows)
+    assert all(row.enabled is True for row in rows)
+
+
+def test_build_observer_rows_respects_disabled_toggle(db_url) -> None:
+    from agent_crm.agent_control import set_agent_enabled
+
+    set_agent_enabled("seo", False)
+    rows = {
+        row.name: row
+        for row in build_observer_rows([], None, persisted_usage={})
+    }
+    assert rows["seo"].enabled is False
 
 
 def test_build_observer_rows_merges_queue_and_heartbeat() -> None:

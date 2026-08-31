@@ -148,3 +148,29 @@ def test_list_agents_includes_idle_roster(client: TestClient) -> None:
     assert all(row["status"] in {"idle", "thinking", "working", "blocked"} for row in agents)
     assert all("prompt_tokens" in row and "completion_tokens" in row for row in agents)
     assert all("tokens_per_hour" in row for row in agents)
+    assert all("enabled" in row for row in agents)
+
+
+def test_agent_toggle_api_round_trip(client: TestClient) -> None:
+    listed = client.get("/agents/toggles")
+    assert listed.status_code == 200
+    assert any(row["agent_name"] == "seo" for row in listed.json())
+
+    disabled = client.put("/agents/seo/enabled", json={"enabled": False})
+    assert disabled.status_code == 200
+    assert disabled.json() == {"agent_name": "seo", "enabled": False}
+
+    agents = client.get("/agents")
+    seo_row = next(row for row in agents.json() if row["name"] == "seo")
+    assert seo_row["enabled"] is False
+
+    heartbeat = client.post(
+        "/agents/seo/heartbeat",
+        json={"status": "idle", "task": "paused"},
+    )
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()["task"] == "paused"
+
+    enabled = client.put("/agents/seo/enabled", json={"enabled": True})
+    assert enabled.status_code == 200
+    assert enabled.json()["enabled"] is True

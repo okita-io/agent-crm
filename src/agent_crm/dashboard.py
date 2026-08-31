@@ -13,6 +13,7 @@ from agent_crm.comment_people_store import (
     count_comment_people,
     list_comment_people,
 )
+from agent_crm.agent_control import set_agent_enabled
 from agent_crm.config import get_settings
 from agent_crm.contact_store import (
     count_contact_profiles,
@@ -48,6 +49,11 @@ from agent_crm.presence import (
 )
 from agent_crm.research_query_store import ResearchQueryStore
 from agent_crm.research_store import list_findings
+from agent_crm.seo_export import (
+    seo_document_markdown,
+    seo_export_filename,
+    zip_seo_documents,
+)
 from agent_crm.seo_query_store import SeoQueryStore
 from agent_crm.seo_store import (
     count_plans,
@@ -460,6 +466,12 @@ def _render_spark_strip(summary: dict) -> None:
         st.write("Waiting for a slot:", ", ".join(waiters))
 
 
+def _observer_status_label(row) -> str:
+    if not row.enabled:
+        return "paused"
+    return f"{_STATUS_EMOJI.get(row.status, '⚪')} {row.status.value}"
+
+
 def _render_agent_observer(*, live_seconds: int, token_seconds: int) -> None:
     st.subheader("Live agent observer")
     _render_live_refresh_bar(
@@ -479,6 +491,50 @@ def _render_agent_observer(*, live_seconds: int, token_seconds: int) -> None:
         queue_health,
         persisted_usage=token_snapshot,
     )
+
+    if not observer_rows:
+        st.info("No agents in roster.")
+        return
+
+    st.caption(
+        "Flip the switch to pause or resume a standing worker. "
+        "Turning off takes effect between jobs — no Docker or CLI restart."
+    )
+
+    header = st.columns([0.6, 2.2, 1.2, 2.4, 2.0, 1.4, 1.0, 1.2, 1.8])
+    header[0].markdown("**on**")
+    header[1].markdown("**agent**")
+    header[2].markdown("**status**")
+    header[3].markdown("**current task**")
+    header[4].markdown("**resource**")
+    header[5].markdown("**in/out tokens**")
+    header[6].markdown("**tok / hr**")
+    header[7].markdown("**est. savings**")
+    header[8].markdown("**last heartbeat**")
+
+    for row in observer_rows:
+        cols = st.columns([0.6, 2.2, 1.2, 2.4, 2.0, 1.4, 1.0, 1.2, 1.8])
+        toggle_key = f"agent_enabled_{row.name}"
+        desired = cols[0].toggle(
+            "on",
+            value=row.enabled,
+            key=toggle_key,
+            label_visibility="collapsed",
+        )
+        if desired != row.enabled:
+            set_agent_enabled(row.name, desired)
+            st.rerun()
+        cols[1].write(row.display_name)
+        cols[2].write(_observer_status_label(row))
+        cols[3].write(row.task or "—")
+        cols[4].write(row.resource or "—")
+        cols[5].write(
+            _format_in_out_tokens(row.prompt_tokens, row.completion_tokens)
+        )
+        cols[6].write(_format_token_rate(row.tokens_per_hour))
+        cols[7].write(_format_usd(row.saved_usd))
+        cols[8].write(row.last_heartbeat or "—")
+
     rows = [
         {
             "display_name": row.display_name,
@@ -493,30 +549,6 @@ def _render_agent_observer(*, live_seconds: int, token_seconds: int) -> None:
         }
         for row in observer_rows
     ]
-
-    if not rows:
-        st.info("No agents in roster.")
-        return
-
-    table = pd.DataFrame(
-        [
-            {
-                "agent": row.get("display_name") or row.get("name"),
-                "status": f"{_STATUS_EMOJI.get(AgentStatus(row['status']), '⚪')} {row['status']}",
-                "current task": row.get("task") or "—",
-                "resource": row.get("resource") or "—",
-                "in / out tokens": _format_in_out_tokens(
-                    int(row.get("prompt_tokens") or 0),
-                    int(row.get("completion_tokens") or 0),
-                ),
-                "tok / hr": _format_token_rate(float(row.get("tokens_per_hour") or 0.0)),
-                "est. savings": _format_usd(float(row.get("saved_usd") or 0.0)),
-                "last heartbeat": row.get("last_heartbeat") or "—",
-            }
-            for row in rows
-        ]
-    )
-    st.dataframe(table, use_container_width=True, hide_index=True)
 
     totals = _token_totals_from_summary(summary, rows)
     prompt = int(totals["prompt_tokens"])
@@ -878,6 +910,34 @@ def _render_engagement_tab() -> None:
         )
 
 
+def _seo_download_buttons(
+    rows: list,
+    *,
+    open_row,
+    doc: str,
+    key_prefix: str,
+) -> None:
+    """Download the open document as markdown and export all listed rows as a zip."""
+    if not rows:
+        return
+    cols = st.columns(2)
+    if open_row is not None:
+        cols[0].download_button(
+            "Download open document (.md)",
+            data=seo_document_markdown(open_row),
+            file_name=seo_export_filename(open_row, doc=doc),
+            mime="text/markdown",
+            key=f"{key_prefix}_md",
+        )
+    cols[1].download_button(
+        "Export all listed (.zip)",
+        data=zip_seo_documents(rows, doc=doc),
+        file_name=f"{key_prefix}-all.zip",
+        mime="application/zip",
+        key=f"{key_prefix}_zip",
+    )
+
+
 def _seo_document_label(row) -> str:
     brand = row.brand.value if getattr(row, "brand", None) is not None else ""
     domain = getattr(row, "domain", None) or ""
@@ -977,6 +1037,12 @@ def _render_seo_tab() -> None:
             label="Which review to open",
             key=f"seo_review_pick_{brand_filter}",
         )
+        _seo_download_buttons(
+            reviews,
+            open_row=row,
+            doc="review",
+            key_prefix=f"seo_review_{brand_filter}",
+        )
         with st.expander(f"Review — {row.domain}", expanded=True):
             st.caption(row.url)
             st.markdown(row.body)
@@ -1014,6 +1080,12 @@ def _render_seo_tab() -> None:
             plans,
             label="Which plan to open",
             key=f"seo_plan_pick_{brand_filter}",
+        )
+        _seo_download_buttons(
+            plans,
+            open_row=row,
+            doc="plan",
+            key_prefix=f"seo_plan_{brand_filter}",
         )
         with st.expander(f"Plan — {row.domain}", expanded=True):
             st.caption(row.url)
@@ -1074,6 +1146,12 @@ def _render_aeo_geo_tab() -> None:
             label="Which AEO/GEO review to open",
             key=f"aeo_geo_review_pick_{brand_filter}",
         )
+        _seo_download_buttons(
+            geo_reviews,
+            open_row=row,
+            doc="review",
+            key_prefix=f"aeo_geo_review_{brand_filter}",
+        )
         with st.expander(f"AEO/GEO Review — {row.domain}", expanded=True):
             st.caption(row.url)
             st.markdown(row.body)
@@ -1109,6 +1187,12 @@ def _render_aeo_geo_tab() -> None:
             geo_plans,
             label="Which AEO/GEO plan to open",
             key=f"aeo_geo_plan_pick_{brand_filter}",
+        )
+        _seo_download_buttons(
+            geo_plans,
+            open_row=row,
+            doc="plan",
+            key_prefix=f"aeo_geo_plan_{brand_filter}",
         )
         with st.expander(f"AEO/GEO Plan — {row.domain}", expanded=True):
             st.caption(row.url)

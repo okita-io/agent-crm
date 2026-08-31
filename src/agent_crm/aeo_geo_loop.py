@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .aeo_geo import (
     AeoGeoBundle,
     AeoGeoIssue,
@@ -145,6 +146,9 @@ def run_aeo_geo_loop(
     brands = (brand,) if brand is not None else AEO_GEO_LOOP_BRANDS
 
     while True:
+        if stop_if_disabled(ACTOR):
+            result.stop_reason = "paused"
+            break
         if deadline is not None and time.monotonic() >= deadline:
             result.stop_reason = "max_minutes"
             break
@@ -229,6 +233,7 @@ def run_aeo_geo_loop_watch(
 ) -> None:
     """Drain due AEO/GEO reviews, then idle until the next local noon."""
     while True:
+        wait_while_disabled(ACTOR)
         run_aeo_geo_loop(
             brand=brand,
             budget=budget,
