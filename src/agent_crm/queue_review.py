@@ -12,6 +12,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .config import get_settings
 from .engagement_query_store import EngagementQueryStore
 from .enums import AgentStatus, Brand, ImprovementSourceAgent
@@ -219,6 +220,9 @@ def run_queue_review(
     record_heartbeat(ACTOR, status=AgentStatus.THINKING, task="reviewing search queues")
 
     while result.reviewed < budget.max_queries or budget.max_queries <= 0:
+        if stop_if_disabled(ACTOR):
+            result.stop_reason = "paused"
+            break
         if deadline is not None and time.monotonic() >= deadline:
             result.stop_reason = "max_minutes"
             break
@@ -286,6 +290,7 @@ def run_queue_review_watch(*, budget: QueueReviewBudget | None = None) -> None:
     settings = get_settings()
     poll = max(5, settings.queue_review_poll_seconds)
     while True:
+        wait_while_disabled(ACTOR)
         result = run_queue_review(budget=budget)
         if result.reviewed == 0:
             record_heartbeat(

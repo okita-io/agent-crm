@@ -239,6 +239,18 @@ class Activity(Base, TimestampMixin):
     lead: Mapped[Lead | None] = relationship(back_populates="activities")
 
 
+class AgentToggle(Base):
+    """Per-agent on/off switch for standing worker loops."""
+
+    __tablename__ = "agent_toggles"
+
+    agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
 class AgentHeartbeat(Base):
     """Last-known liveness and task state for a CRM agent actor."""
 

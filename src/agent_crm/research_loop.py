@@ -5,9 +5,10 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
+from .agent_control import stop_if_disabled
 from .config import get_settings
 from .enums import Brand
-from .research import run_research
+from .research import ACTOR, run_research
 from .research_query_store import ResearchQueryStore
 from .research_seeds import loop_seed_entries
 from .schemas import ResearchRequest
@@ -96,6 +97,9 @@ def run_research_loop(
     idle_rounds = 0
 
     while True:
+        if stop_if_disabled(ACTOR):
+            result.stop_reason = "paused"
+            break
         if budget.max_queries > 0 and result.queries_run >= budget.max_queries:
             result.stop_reason = "query_budget"
             break

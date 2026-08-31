@@ -58,6 +58,7 @@ class AgentObserverRow:
     task: str | None
     resource: str | None
     last_heartbeat: datetime | None
+    enabled: bool = True
     prompt_tokens: int = 0
     completion_tokens: int = 0
     saved_usd: float = 0.0
@@ -129,10 +130,13 @@ def build_observer_rows(
     persisted_usage: dict[str, Any] | None | object = _LOAD_PERSISTED,
 ) -> list[AgentObserverRow]:
     """Merge roster, heartbeats, Spark queue occupancy, and token totals."""
+    from .agent_control import list_agent_enabled
+
     heartbeat_by_name = {hb.agent_name: hb for hb in heartbeats}
     waiters, in_flight = _queue_actor_lists(queue_health)
     model = (queue_health or {}).get("model")
     usage = _token_usage_block(queue_health, persisted_usage=persisted_usage)
+    enabled_map = list_agent_enabled()
 
     rows: list[AgentObserverRow] = []
     for agent_name, display_name in KNOWN_AGENT_ROSTER.items():
@@ -162,6 +166,7 @@ def build_observer_rows(
                 task=task,
                 resource=resource,
                 last_heartbeat=heartbeat.last_seen_at if heartbeat else None,
+                enabled=enabled_map.get(agent_name, True),
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 saved_usd=saved_usd,
@@ -195,6 +200,7 @@ def build_observer_rows(
                 task=None,
                 resource=resource,
                 last_heartbeat=None,
+                enabled=enabled_map.get(actor, True),
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 saved_usd=saved_usd,

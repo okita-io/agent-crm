@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .comment_people_store import process_scraped_page_comment_people
 from .config import Settings, get_settings
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
@@ -160,6 +161,9 @@ def run_hunt_loop(
     while not _query_budget_exhausted(result.queries_run, budget.max_queries) and (
         deadline is None or time.monotonic() < deadline
     ):
+        if stop_if_disabled(ACTOR):
+            result.stop_reason = "paused"
+            break
         contact_budget = ContactExtractionBudget.from_settings()
         pending = store.claim_next_pending_query(run_id=use_run_id, brand=brand_filter)
         if pending is None:

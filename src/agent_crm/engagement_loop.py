@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .config import get_settings
 from .engagement import (
     extract_engagement_signals,
@@ -138,6 +139,9 @@ def run_engagement_loop(
     brands = (brand,) if brand is not None else ENGAGEMENT_LOOP_BRANDS
 
     while True:
+        if stop_if_disabled(ACTOR):
+            result.stop_reason = "paused"
+            break
         if deadline is not None and time.monotonic() >= deadline:
             result.stop_reason = "max_minutes"
             break

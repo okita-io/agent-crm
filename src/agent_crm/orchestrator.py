@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .config import get_settings
 from .contact_quality import is_placeholder_email, is_role_inbox_email
 from .db import session_scope
@@ -327,6 +328,7 @@ def run_orchestrator(*, poll_seconds: int | None = None) -> None:
     record_heartbeat(ACTOR, status=AgentStatus.IDLE, task="orchestrator starting")
     seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
     while True:
+        wait_while_disabled(ACTOR)
         record_heartbeat(
             ACTOR,
             status=AgentStatus.THINKING,

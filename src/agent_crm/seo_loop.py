@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .config import get_settings
 from .enums import (
     ActivityType,
@@ -170,6 +171,9 @@ def run_seo_loop(
     brands = (brand,) if brand is not None else SEO_LOOP_BRANDS
 
     while True:
+        if stop_if_disabled(ACTOR):
+            result.stop_reason = "paused"
+            break
         if deadline is not None and time.monotonic() >= deadline:
             result.stop_reason = "max_minutes"
             break
@@ -256,6 +260,7 @@ def run_seo_loop_watch(
 ) -> None:
     """Drain due reviews, then idle until the next local noon."""
     while True:
+        wait_while_disabled(ACTOR)
         run_seo_loop(
             brand=brand,
             budget=budget,
@@ -278,6 +283,7 @@ def run_seo_loop_watch(
 
 def _sleep_until(when: datetime) -> None:
     while True:
+        wait_while_disabled(ACTOR)
         remaining = (_as_aware_utc(when) - datetime.now(UTC)).total_seconds()
         if remaining <= 0:
             return

@@ -20,6 +20,13 @@ def test_dashboard_disables_streamlit_stale_fade() -> None:
     assert "_render_seo_tab" in source
     assert "_render_aeo_geo_tab" in source
     assert "_pick_seo_document" in source
+    assert "_seo_download_buttons" in source
+    assert "set_agent_enabled" in source
+    assert "Flip the switch to pause or resume" in source
+    assert ".toggle(" in source
+    assert 'st.dataframe(table, use_container_width=True, hide_index=True)' not in source.split(
+        "def _render_agent_observer"
+    )[1].split("def _render_pipeline_tab")[0]
     assert 'page_title="The Agency"' in source
     assert 'st.title("The Agency")' in source
 
@@ -39,6 +46,8 @@ def test_seo_document_pickers_are_outside_expanders() -> None:
     review_expand = seo.index("Review —", review_pick)
     assert plan_pick < plan_expand
     assert review_pick < review_expand
+    assert "_seo_download_buttons(" in seo
+    assert "_seo_download_buttons(" in aeo_geo
     aeo_review_pick = aeo_geo.index('label="Which AEO/GEO review to open"')
     aeo_review_expand = aeo_geo.index("AEO/GEO Review —", aeo_review_pick)
     assert aeo_review_pick < aeo_review_expand
