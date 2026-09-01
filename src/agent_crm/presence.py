@@ -28,6 +28,7 @@ KNOWN_AGENT_ROSTER: dict[str, str] = {
     "analytics": "Analytics",
     "brand_router": "Brand Router",
     "lead_verifier": "Lead Verifier",
+    "job-dispatcher": "Job Dispatcher",
     "orchestrator": "Orchestrator",
 }
 
@@ -62,6 +63,7 @@ class AgentObserverRow:
     completion_tokens: int = 0
     saved_usd: float = 0.0
     tokens_per_hour: float = 0.0
+    enabled: bool = True
 
 
 def spark_queue_health_url() -> str:
@@ -123,16 +125,30 @@ def _queue_actor_lists(
 _LOAD_PERSISTED = object()
 
 
+def _enabled_lookup(
+    enabled_by_name: dict[str, bool] | object,
+) -> dict[str, bool]:
+    if enabled_by_name is _LOAD_PERSISTED:
+        from .agent_control import list_agent_enabled
+
+        return list_agent_enabled()
+    if isinstance(enabled_by_name, dict):
+        return enabled_by_name
+    return {}
+
+
 def build_observer_rows(
     heartbeats: list[HeartbeatSnapshot],
     queue_health: dict[str, Any] | None,
     persisted_usage: dict[str, Any] | None | object = _LOAD_PERSISTED,
+    enabled_by_name: dict[str, bool] | object = _LOAD_PERSISTED,
 ) -> list[AgentObserverRow]:
     """Merge roster, heartbeats, Spark queue occupancy, and token totals."""
     heartbeat_by_name = {hb.agent_name: hb for hb in heartbeats}
     waiters, in_flight = _queue_actor_lists(queue_health)
     model = (queue_health or {}).get("model")
     usage = _token_usage_block(queue_health, persisted_usage=persisted_usage)
+    enabled_map = _enabled_lookup(enabled_by_name)
 
     rows: list[AgentObserverRow] = []
     for agent_name, display_name in KNOWN_AGENT_ROSTER.items():
@@ -166,6 +182,7 @@ def build_observer_rows(
                 completion_tokens=completion_tokens,
                 saved_usd=saved_usd,
                 tokens_per_hour=hourly,
+                enabled=enabled_map.get(agent_name, True),
             )
         )
 
@@ -199,18 +216,29 @@ def build_observer_rows(
                 completion_tokens=completion_tokens,
                 saved_usd=saved_usd,
                 tokens_per_hour=hourly,
+                enabled=enabled_map.get(actor, True),
             )
         )
 
     return rows
 
 
+def _as_int(value: Any, default: int = 0) -> int:
+    """Coerce health counters; occupancy probes return None until first success."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def external_upstream_slots(queue_health: dict[str, Any] | None) -> int:
     """Hermes / other ranch agents occupying Spark without a CRM identity."""
     if not queue_health:
         return 0
-    observed = int(queue_health.get("observed_upstream_in_flight", 0))
-    local = int(queue_health.get("local_in_flight", 0))
+    observed = _as_int(queue_health.get("observed_upstream_in_flight"))
+    local = _as_int(queue_health.get("local_in_flight"))
     return max(0, observed - local)
 
 
@@ -240,10 +268,12 @@ def spark_slot_summary(
         }
     waiters, in_flight = _queue_actor_lists(queue_health)
     return {
-        "max_concurrency": int(queue_health.get("max_concurrency", 4)),
-        "observed_upstream_in_flight": int(queue_health.get("observed_upstream_in_flight", 0)),
-        "local_in_flight": int(queue_health.get("local_in_flight", 0)),
-        "waiting": int(queue_health.get("waiting", 0)),
+        "max_concurrency": _as_int(queue_health.get("max_concurrency"), 4),
+        "observed_upstream_in_flight": _as_int(
+            queue_health.get("observed_upstream_in_flight")
+        ),
+        "local_in_flight": _as_int(queue_health.get("local_in_flight")),
+        "waiting": _as_int(queue_health.get("waiting")),
         "external_upstream_slots": external_upstream_slots(queue_health),
         "model": queue_health.get("model"),
         "waiters": waiters,

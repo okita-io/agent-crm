@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .config import get_settings
 from .engagement import (
     extract_engagement_signals,
@@ -116,6 +117,9 @@ def run_engagement_loop(
     )
     crm = CRMToolkit(actor=ACTOR)
     result = EngagementLoopResult()
+    if stop_if_disabled(ACTOR):
+        result.stop_reason = "disabled"
+        return result
     deadline = None if budget.max_minutes <= 0 else time.monotonic() + budget.max_minutes * 60
     store = EngagementQueryStore()
     store.reset_stale_running_queries(stale_minutes=0)
@@ -139,6 +143,9 @@ def run_engagement_loop(
     brands = (brand,) if brand is not None else ENGAGEMENT_LOOP_BRANDS
 
     while True:
+        if stop_if_disabled(ACTOR):
+            result.stop_reason = "disabled"
+            break
         if deadline is not None and time.monotonic() >= deadline:
             result.stop_reason = "max_minutes"
             break
@@ -223,6 +230,7 @@ def run_engagement_loop_watch(
     """Drain the engagement queue forever, sleeping when the backlog is empty."""
     store = EngagementQueryStore()
     while True:
+        wait_while_disabled(ACTOR)
         run_engagement_loop(
             brand=brand,
             budget=budget,

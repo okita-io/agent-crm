@@ -19,6 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from . import __version__
+from .agent_control import set_agent_enabled
 from .agent_query import (
     agent_catalog,
     agent_search,
@@ -74,6 +75,7 @@ from .research_store import list_findings
 from .schemas import (
     ActivityOut,
     AgentCatalogOut,
+    AgentEnabledIn,
     AgentObserverOut,
     AgentPageOut,
     AgentSearchOut,
@@ -642,9 +644,16 @@ def list_agents() -> list[AgentObserverOut]:
             completion_tokens=row.completion_tokens,
             saved_usd=row.saved_usd,
             tokens_per_hour=row.tokens_per_hour,
+            enabled=row.enabled,
         )
         for row in rows
     ]
+
+
+@app.put("/agents/{agent_name}/enabled", tags=["agents"])
+def set_agent_enabled_flag(agent_name: str, body: AgentEnabledIn) -> dict:
+    enabled = set_agent_enabled(agent_name, body.enabled)
+    return {"name": agent_name, "enabled": enabled}
 
 
 @app.get("/agents/spark", tags=["agents"])

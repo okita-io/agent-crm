@@ -72,7 +72,7 @@ def test_merge_agent_status_prefers_working_over_idle() -> None:
 
 
 def test_build_observer_rows_idle_without_signals() -> None:
-    rows = build_observer_rows([], None, persisted_usage={})
+    rows = build_observer_rows([], None, persisted_usage={}, enabled_by_name={})
     assert len(rows) == len(KNOWN_AGENT_ROSTER)
     assert all(row.status == AgentStatus.IDLE for row in rows)
     assert all(row.task is None for row in rows)
@@ -89,7 +89,9 @@ def test_build_observer_rows_merges_queue_and_heartbeat() -> None:
     }
     rows = {
         row.name: row
-        for row in build_observer_rows(heartbeats, queue_health, persisted_usage={})
+        for row in build_observer_rows(
+            heartbeats, queue_health, persisted_usage={}, enabled_by_name={}
+        )
     }
 
     assert rows["lead_scoring"].status == AgentStatus.BLOCKED
@@ -103,6 +105,26 @@ def test_build_observer_rows_merges_queue_and_heartbeat() -> None:
 def test_external_upstream_slots() -> None:
     assert external_upstream_slots({"observed_upstream_in_flight": 3, "local_in_flight": 1}) == 2
     assert external_upstream_slots(None) == 0
+    assert external_upstream_slots({"observed_upstream_in_flight": None, "local_in_flight": None}) == 0
+
+
+def test_spark_slot_summary_treats_null_occupancy_as_zero() -> None:
+    summary = spark_slot_summary(
+        {
+            "max_concurrency": None,
+            "observed_upstream_in_flight": None,
+            "local_in_flight": None,
+            "waiting": None,
+            "waiters": [],
+            "in_flight": [],
+        },
+        persisted_usage={},
+    )
+    assert summary["max_concurrency"] == 4
+    assert summary["observed_upstream_in_flight"] == 0
+    assert summary["local_in_flight"] == 0
+    assert summary["waiting"] == 0
+    assert summary["external_upstream_slots"] == 0
 
 
 def test_spark_slot_summary_extracts_actor_names() -> None:
@@ -189,7 +211,12 @@ def test_build_observer_rows_includes_token_savings() -> None:
     }
     rows = {
         row.name: row
-        for row in build_observer_rows(heartbeats, queue_health, persisted_usage=persisted)
+        for row in build_observer_rows(
+            heartbeats,
+            queue_health,
+            persisted_usage=persisted,
+            enabled_by_name={},
+        )
     }
     assert rows["research"].prompt_tokens == 50_000
     assert rows["research"].completion_tokens == 8_000
@@ -200,6 +227,22 @@ def test_build_observer_rows_includes_token_savings() -> None:
     assert "hermes" in rows
     assert rows["hermes"].prompt_tokens == 1_000_000
     assert rows["hermes"].saved_usd == avoided_cloud_usd(1_000_000, 0)
+
+
+def test_build_observer_rows_includes_enabled_switch() -> None:
+    rows = {
+        row.name: row
+        for row in build_observer_rows(
+            [],
+            None,
+            persisted_usage={},
+            enabled_by_name={"research": False, "orchestrator": True},
+        )
+    }
+    assert rows["research"].enabled is False
+    assert rows["orchestrator"].enabled is True
+    assert rows["outbound_hunter"].enabled is True
+    assert "job-dispatcher" in rows
 
 
 def test_spark_slot_summary_computes_total_savings() -> None:

@@ -65,7 +65,7 @@ CRM_LLM_BASE_URL=http://spark-queue:8088/v1
 - Global cap: **4 concurrent Spark sessions** (shared with Hermes; leaves GPU headroom for ComfyUI)
 - **Never point agents at Spark SGLang directly**
 
-The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats, a compact hunt-loop phase strip, and per-agent in/out token counts with an hourly average rate and estimated cloud-cost avoided (default **$2.00 / million input** and **$10.00 / million output**). Token totals persist in the CRM database. Spark slots, work status, current task, and last heartbeat refresh every **5 seconds**; token totals cache for **10 minutes** (use **Refresh now** for an immediate pull). The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
+The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats, a compact hunt-loop phase strip, and per-agent in/out token counts with an hourly average rate and estimated cloud-cost avoided (default **$2.00 / million input** and **$10.00 / million output**). Each row has an on/off switch to the left of the agent name: standing workers (hunter, research, engagement, SEO, AEO/GEO, queue review, job dispatcher, orchestrator) pause between jobs when switched off and resume from this page — no Docker or CLI restart. Token totals persist in the CRM database. Spark slots, work status, current task, and last heartbeat refresh every **5 seconds**; token totals cache for **10 minutes** (use **Refresh now** for an immediate pull). The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
 
 ### Database and migrations
 
@@ -311,6 +311,7 @@ Compose runs `aeo-geo-loop --watch` on the same noon schedule as SEO. The dashbo
 | `agent_jobs` | Background job queue (enrich, verify, decode) |
 | `agent_improvement_notes` | Self-learning gap/performance notes for orchestrator + Cursor |
 | `agent_heartbeats` | Live agent observer state |
+| `agent_toggles` | Live Agents on/off switches |
 | `seo_targets` | Owned / competitor / prospect sites to write SEO documents about |
 | `seo_queries` | Append-only SEO document job queue |
 | `seo_reviews` | Site-audit and competitor review documents (never applied live) |
@@ -366,12 +367,13 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The Live Agents tab r
 
 | Tab | Shows |
 |-----|-------|
-| **Live agents** | Slots / status / task / heartbeat every 5s; persisted tokens / tok/hr / savings every 10 min |
+| **Live agents** | On/off switch per row; slots / status / task / heartbeat every 5s; persisted tokens / tok/hr / savings every 10 min |
 | **Pipeline & leads** | Weekly metrics, stage chart, lead table, activity history, verifications |
 | **Hunter** | Live hunt-loop drain status + query queue + `hunt_resources` table |
 | **Research** | `research_findings` with brand/kind filters |
 | **Engagement** | Catalogued threads + comment drafts (not posted) |
 | **SEO** | Reviews + implementation plans (not applied to live sites) |
+| **AEO / GEO** | Answer-engine and generative-engine documents (not applied to live sites) |
 | **Contacts** | `contact_profiles` — name, email, socials, source pages |
 | **Verifier** | Hunter leads and verification status |
 | **Improvement** | Open orchestrator gap/performance notes |
@@ -387,8 +389,9 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The Live Agents tab r
 | Outbound Hunter | `outbound_hunter` | Hunt + hunt-loop → sites and page leads |
 | Agent Engagement | `engagement` | Rescan forums → threads + comment drafts (never posts) |
 | SEO Documents | `seo` | Site audits + implementation plans (never patches sites) |
+| AEO / GEO Documents | `aeo-geo` | Answer-engine and citation documents (never patches sites) |
 | Lead Verifier | `lead_verifier` | DNS/MX/HTTP checks (auto via `contact-worker`) |
-| Job dispatcher | `job-dispatcher` | Drains `agent_jobs` — verify before Spark enrich |
+| Job dispatcher | `job-dispatcher` | Drains `agent_jobs` — verify before Spark enrich. Toggle on Live agents. |
 | Orchestrator | `orchestrator` | Stack health inspection → improvement notes |
 | CRM / Pipeline | `api`, `dashboard`, … | Stage transitions, reporting |
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .config import get_settings
 from .enums import AgentStatus, Brand
 from .heartbeat import record_heartbeat
@@ -90,6 +91,10 @@ def run_research_loop(
     appended by ``run_research``. Rows are never deleted, so the queue only grows.
     """
     budget = budget or ResearchLoopBudget()
+    if stop_if_disabled(ACTOR):
+        result = ResearchLoopResult()
+        result.stop_reason = "disabled"
+        return result
     store = ResearchQueryStore()
     store.reset_stale_running_queries(stale_minutes=0)
     _seed_research_queue(store)
@@ -100,6 +105,9 @@ def run_research_loop(
     idle_rounds = 0
 
     while True:
+        if stop_if_disabled(ACTOR):
+            result.stop_reason = "disabled"
+            break
         if budget.max_queries > 0 and result.queries_run >= budget.max_queries:
             result.stop_reason = "query_budget"
             break
@@ -173,6 +181,7 @@ def run_research_loop_watch(
     """Drain the research queue forever, sleeping when the backlog is empty."""
     store = ResearchQueryStore()
     while True:
+        wait_while_disabled(ACTOR)
         result = run_research_loop(
             budget=budget,
             summarize=summarize,

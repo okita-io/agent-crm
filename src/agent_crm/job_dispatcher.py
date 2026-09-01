@@ -6,6 +6,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from .agent_control import wait_while_disabled
 from .config import get_settings
 from .contact_people_enrichment import enrich_contact_person
 from .contact_qualification import qualify_comment_person, qualify_contact_profile
@@ -219,8 +220,10 @@ def run_job_dispatcher(
     poll = poll_seconds if poll_seconds is not None else settings.job_dispatcher_poll_seconds
 
     record_heartbeat(ACTOR, status=AgentStatus.IDLE, task="job dispatcher starting")
+    wait_while_disabled(ACTOR)
     seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
     while True:
+        wait_while_disabled(ACTOR)
         work_done = False
         while count_pending_jobs() > 0:
             cycle = run_dispatcher_cycle(batch_size=batch)

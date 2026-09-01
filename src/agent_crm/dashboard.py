@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pandas as pd
 import streamlit as st
 
+from agent_crm.agent_control import set_agent_enabled
 from agent_crm.comment_people_store import (
     count_comment_people,
     list_comment_people,
@@ -48,6 +49,7 @@ from agent_crm.presence import (
 )
 from agent_crm.research_query_store import ResearchQueryStore
 from agent_crm.research_store import list_findings
+from agent_crm.seo_export import seo_document_markdown, seo_export_filename, zip_seo_documents
 from agent_crm.seo_query_store import SeoQueryStore
 from agent_crm.seo_store import (
     count_plans,
@@ -67,6 +69,19 @@ _STATUS_EMOJI = {
     AgentStatus.WORKING: "🟢",
     AgentStatus.BLOCKED: "🔴",
 }
+
+_ROSTER_COL_WEIGHTS = [0.55, 1.7, 1.35, 2.2, 1.7, 1.4, 1.0, 1.1, 1.6]
+_ROSTER_HEADERS = (
+    "on",
+    "agent",
+    "status",
+    "current task",
+    "resource",
+    "in / out tokens",
+    "tok / hr",
+    "est. savings",
+    "last heartbeat",
+)
 
 
 def _lead_rows(
@@ -460,6 +475,72 @@ def _render_spark_strip(summary: dict) -> None:
         st.write("Waiting for a slot:", ", ".join(waiters))
 
 
+def _on_agent_enabled_change(agent_name: str) -> None:
+    key = f"agent_enabled_{agent_name}"
+    set_agent_enabled(agent_name, bool(st.session_state.get(key)))
+
+
+def _status_label(status: str, *, enabled: bool) -> str:
+    if not enabled:
+        return "⚫ paused"
+    try:
+        parsed = AgentStatus(status)
+    except ValueError:
+        parsed = AgentStatus.IDLE
+    return f"{_STATUS_EMOJI.get(parsed, '⚪')} {status}"
+
+
+def _format_heartbeat(value: object) -> str:
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    return str(value)
+
+
+def _render_agent_roster(rows: list[dict]) -> None:
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stToggle"] { min-height: 0; padding-top: 0.15rem; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    header = st.columns(_ROSTER_COL_WEIGHTS)
+    for column, title in zip(header, _ROSTER_HEADERS, strict=True):
+        column.markdown(f"**{title}**")
+
+    for row in rows:
+        name = str(row.get("name") or "")
+        enabled = bool(row.get("enabled", True))
+        key = f"agent_enabled_{name}"
+        if key not in st.session_state:
+            st.session_state[key] = enabled
+        cols = st.columns(_ROSTER_COL_WEIGHTS)
+        cols[0].toggle(
+            f"Enable {row.get('display_name') or name}",
+            key=key,
+            label_visibility="collapsed",
+            help=f"Pause or resume {row.get('display_name') or name}",
+            on_change=_on_agent_enabled_change,
+            args=(name,),
+        )
+        cols[1].write(row.get("display_name") or name)
+        cols[2].write(_status_label(str(row.get("status") or "idle"), enabled=enabled))
+        cols[3].write(row.get("task") or "—")
+        cols[4].write(row.get("resource") or "—")
+        cols[5].write(
+            _format_in_out_tokens(
+                int(row.get("prompt_tokens") or 0),
+                int(row.get("completion_tokens") or 0),
+            )
+        )
+        cols[6].write(_format_token_rate(float(row.get("tokens_per_hour") or 0.0)))
+        cols[7].write(_format_usd(float(row.get("saved_usd") or 0.0)))
+        cols[8].write(_format_heartbeat(row.get("last_heartbeat")))
+
+
 def _render_agent_observer(*, live_seconds: int, token_seconds: int) -> None:
     st.subheader("Live agent observer")
     _render_live_refresh_bar(
@@ -481,7 +562,9 @@ def _render_agent_observer(*, live_seconds: int, token_seconds: int) -> None:
     )
     rows = [
         {
+            "name": row.name,
             "display_name": row.display_name,
+            "enabled": row.enabled,
             "status": row.status.value,
             "task": row.task,
             "resource": row.resource,
@@ -498,25 +581,11 @@ def _render_agent_observer(*, live_seconds: int, token_seconds: int) -> None:
         st.info("No agents in roster.")
         return
 
-    table = pd.DataFrame(
-        [
-            {
-                "agent": row.get("display_name") or row.get("name"),
-                "status": f"{_STATUS_EMOJI.get(AgentStatus(row['status']), '⚪')} {row['status']}",
-                "current task": row.get("task") or "—",
-                "resource": row.get("resource") or "—",
-                "in / out tokens": _format_in_out_tokens(
-                    int(row.get("prompt_tokens") or 0),
-                    int(row.get("completion_tokens") or 0),
-                ),
-                "tok / hr": _format_token_rate(float(row.get("tokens_per_hour") or 0.0)),
-                "est. savings": _format_usd(float(row.get("saved_usd") or 0.0)),
-                "last heartbeat": row.get("last_heartbeat") or "—",
-            }
-            for row in rows
-        ]
+    _render_agent_roster(rows)
+    st.caption(
+        "Flip the switch to pause or resume a standing worker from this page. "
+        "Off takes effect between jobs — no Docker or CLI restart needed."
     )
-    st.dataframe(table, use_container_width=True, hide_index=True)
 
     totals = _token_totals_from_summary(summary, rows)
     prompt = int(totals["prompt_tokens"])
@@ -885,6 +954,35 @@ def _seo_document_label(row) -> str:
     return f"{brand} · {domain} · {title}"
 
 
+def _seo_download_buttons(
+    row, *, rows: list, doc: str, brand_filter: str, prefix: str = "seo"
+) -> None:
+    """Download the open file, plus a zip of every file in the current list."""
+    single, bulk = st.columns([1, 1])
+    if doc == "review":
+        single_label = "Download review"
+        bulk_label = "Export all reviews (.zip)"
+    else:
+        single_label = "Download plan"
+        bulk_label = "Export all plans (.zip)"
+    single.download_button(
+        single_label,
+        data=seo_document_markdown(row),
+        file_name=seo_export_filename(row, doc=doc),
+        mime="text/markdown",
+        key=f"{prefix}_{doc}_dl_{row.id}_{brand_filter}",
+        use_container_width=True,
+    )
+    bulk.download_button(
+        bulk_label,
+        data=zip_seo_documents(rows, doc=doc),
+        file_name=f"{prefix}-{doc}s-{brand_filter}.zip",
+        mime="application/zip",
+        key=f"{prefix}_{doc}s_zip_{brand_filter}",
+        use_container_width=True,
+    )
+
+
 def _pick_seo_document(rows: list, *, label: str, key: str):
     """Pick a review/plan by id. Keep this outside expanders — dropdowns clip inside them."""
     labels = {row.id: _seo_document_label(row) for row in rows}
@@ -901,9 +999,11 @@ def _render_seo_tab() -> None:
     st.subheader("SEO documents")
     st.caption(
         "Reviews and implementation plans for ranch brand sites and named competitors. "
+        "AEO/GEO documents live on their own tab. "
         "The agent scrapes with Firecrawl and writes markdown documents at least once a day "
         "(next pass at local noon). "
-        "It never patches live pages — humans apply the plan on the target site."
+        "It never patches live pages — humans apply the plan on the target site. "
+        "Download the open file as markdown, or export every file in the list as a zip."
     )
 
     queue = SeoQueryStore().queue_status()
@@ -977,6 +1077,12 @@ def _render_seo_tab() -> None:
             label="Which review to open",
             key=f"seo_review_pick_{brand_filter}",
         )
+        _seo_download_buttons(
+            row,
+            rows=reviews,
+            doc="review",
+            brand_filter=brand_filter,
+        )
         with st.expander(f"Review — {row.domain}", expanded=True):
             st.caption(row.url)
             st.markdown(row.body)
@@ -1015,6 +1121,12 @@ def _render_seo_tab() -> None:
             label="Which plan to open",
             key=f"seo_plan_pick_{brand_filter}",
         )
+        _seo_download_buttons(
+            row,
+            rows=plans,
+            doc="plan",
+            brand_filter=brand_filter,
+        )
         with st.expander(f"Plan — {row.domain}", expanded=True):
             st.caption(row.url)
             st.markdown(row.body)
@@ -1026,7 +1138,8 @@ def _render_aeo_geo_tab() -> None:
         "Answer-engine (AEO) and generative-engine (GEO) reviews and implementation plans. "
         "SEO = blue-link rank; AEO = extractable answers; GEO = chat citations and mentions. "
         "The agent scrapes with Firecrawl and writes markdown at least once a day — "
-        "it never patches live pages or sends outreach."
+        "it never patches live pages or sends outreach. "
+        "Download the open file as markdown, or export every file in the list as a zip."
     )
 
     brand_filter = st.selectbox(
@@ -1074,6 +1187,13 @@ def _render_aeo_geo_tab() -> None:
             label="Which AEO/GEO review to open",
             key=f"aeo_geo_review_pick_{brand_filter}",
         )
+        _seo_download_buttons(
+            row,
+            rows=geo_reviews,
+            doc="review",
+            brand_filter=brand_filter,
+            prefix="aeo_geo",
+        )
         with st.expander(f"AEO/GEO Review — {row.domain}", expanded=True):
             st.caption(row.url)
             st.markdown(row.body)
@@ -1109,6 +1229,13 @@ def _render_aeo_geo_tab() -> None:
             geo_plans,
             label="Which AEO/GEO plan to open",
             key=f"aeo_geo_plan_pick_{brand_filter}",
+        )
+        _seo_download_buttons(
+            row,
+            rows=geo_plans,
+            doc="plan",
+            brand_filter=brand_filter,
+            prefix="aeo_geo",
         )
         with st.expander(f"AEO/GEO Plan — {row.domain}", expanded=True):
             st.caption(row.url)

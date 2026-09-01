@@ -539,6 +539,11 @@ class AgentObserverOut(BaseModel):
     completion_tokens: int = 0
     saved_usd: float = 0.0
     tokens_per_hour: float = 0.0
+    enabled: bool = True
+
+
+class AgentEnabledIn(BaseModel):
+    enabled: bool
 
 
 class ContactProfileOut(ORMModel):

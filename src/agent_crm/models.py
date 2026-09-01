@@ -256,6 +256,18 @@ class AgentHeartbeat(Base):
     )
 
 
+class AgentToggle(Base):
+    """Dashboard switch that pauses or resumes a standing agent worker."""
+
+    __tablename__ = "agent_toggles"
+
+    agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
 class LlmTokenUsage(Base):
     """Lifetime LLM token totals per spark-queue actor (survives restarts)."""
 

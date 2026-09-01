@@ -122,11 +122,14 @@ def _cmd_hunt(args: argparse.Namespace) -> int:
 
 
 def _cmd_hunt_loop(args: argparse.Namespace) -> int:
+    from .agent_control import wait_while_disabled
     from .db import init_db
     from .enums import Brand
+    from .hunt_loop import ACTOR as HUNT_ACTOR
     from .hunt_loop import HuntBudget, run_hunt_loop
 
     init_db()
+    wait_while_disabled(HUNT_ACTOR)
     brand = Brand(args.brand) if args.brand else Brand.UNASSIGNED
     budget = HuntBudget(
         max_queries=args.max_queries,
@@ -184,10 +187,13 @@ def _cmd_research(args: argparse.Namespace) -> int:
 
 
 def _cmd_research_loop(args: argparse.Namespace) -> int:
+    from .agent_control import wait_while_disabled
     from .db import init_db
+    from .research_loop import ACTOR as RESEARCH_ACTOR
     from .research_loop import ResearchLoopBudget, run_research_loop, run_research_loop_watch
 
     init_db()
+    wait_while_disabled(RESEARCH_ACTOR)
     budget = ResearchLoopBudget(
         max_queries=args.max_queries,
         max_pages=args.max_pages,
@@ -223,7 +229,9 @@ def _cmd_research_loop(args: argparse.Namespace) -> int:
 
 
 def _cmd_engagement_loop(args: argparse.Namespace) -> int:
+    from .agent_control import wait_while_disabled
     from .db import init_db
+    from .engagement_loop import ACTOR as ENGAGEMENT_ACTOR
     from .engagement_loop import (
         EngagementBudget,
         run_engagement_loop,
@@ -232,6 +240,7 @@ def _cmd_engagement_loop(args: argparse.Namespace) -> int:
     from .enums import Brand
 
     init_db()
+    wait_while_disabled(ENGAGEMENT_ACTOR)
     brand = Brand(args.brand) if args.brand else None
     budget = EngagementBudget(
         max_venues=args.max_venues,
@@ -268,12 +277,15 @@ def _cmd_engagement_loop(args: argparse.Namespace) -> int:
 
 
 def _cmd_aeo_geo_loop(args: argparse.Namespace) -> int:
+    from .aeo_geo_loop import ACTOR as AEO_GEO_ACTOR
     from .aeo_geo_loop import run_aeo_geo_loop, run_aeo_geo_loop_watch
+    from .agent_control import wait_while_disabled
     from .db import init_db
     from .enums import Brand
     from .seo_loop import SeoBudget
 
     init_db()
+    wait_while_disabled(AEO_GEO_ACTOR)
     brand = Brand(args.brand) if args.brand else None
     budget = SeoBudget(
         max_targets=args.max_targets,
@@ -309,11 +321,14 @@ def _cmd_aeo_geo_loop(args: argparse.Namespace) -> int:
 
 
 def _cmd_seo_loop(args: argparse.Namespace) -> int:
+    from .agent_control import wait_while_disabled
     from .db import init_db
     from .enums import Brand
+    from .seo_loop import ACTOR as SEO_ACTOR
     from .seo_loop import SeoBudget, run_seo_loop, run_seo_loop_watch
 
     init_db()
+    wait_while_disabled(SEO_ACTOR)
     brand = Brand(args.brand) if args.brand else None
     budget = SeoBudget(
         max_targets=args.max_targets,
@@ -399,11 +414,14 @@ def _cmd_orchestrate(args: argparse.Namespace) -> int:
 
 
 def _cmd_queue_review(args: argparse.Namespace) -> int:
+    from .agent_control import wait_while_disabled
     from .config import get_settings
     from .db import init_db
+    from .queue_review import ACTOR as QUEUE_REVIEW_ACTOR
     from .queue_review import QueueReviewBudget, run_queue_review, run_queue_review_watch
 
     init_db()
+    wait_while_disabled(QUEUE_REVIEW_ACTOR)
     settings = get_settings()
     budget = QueueReviewBudget(
         max_queries=args.max_queries

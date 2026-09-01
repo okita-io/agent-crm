@@ -148,3 +148,18 @@ def test_list_agents_includes_idle_roster(client: TestClient) -> None:
     assert all(row["status"] in {"idle", "thinking", "working", "blocked"} for row in agents)
     assert all("prompt_tokens" in row and "completion_tokens" in row for row in agents)
     assert all("tokens_per_hour" in row for row in agents)
+    assert all(row["enabled"] is True for row in agents)
+
+
+def test_agent_enabled_api_round_trip(client: TestClient) -> None:
+    off = client.put("/agents/outbound_hunter/enabled", json={"enabled": False})
+    assert off.status_code == 200
+    assert off.json() == {"name": "outbound_hunter", "enabled": False}
+
+    listed = {row["name"]: row for row in client.get("/agents").json()}
+    assert listed["outbound_hunter"]["enabled"] is False
+    assert listed["outbound_hunter"]["task"] == "paused"
+
+    on = client.put("/agents/outbound_hunter/enabled", json={"enabled": True})
+    assert on.status_code == 200
+    assert on.json()["enabled"] is True
