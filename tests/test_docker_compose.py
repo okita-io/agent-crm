@@ -24,6 +24,7 @@ def test_compose_research_loop_is_bounded() -> None:
     start = content.index("  research-loop:")
     end = content.index("\n\n", start)
     block = content[start:end]
+    assert "--watch" in block
     assert 'CRM_RESEARCH_MAX_QUERIES_DEFAULT: "20"' in block
     assert 'CRM_RESEARCH_MAX_PAGES_PER_RUN: "200"' in block
     assert 'CRM_RESEARCH_MAX_MINUTES_DEFAULT: "60"' in block
@@ -64,6 +65,7 @@ def test_compose_engagement_loop_is_bounded() -> None:
     start = content.index("  engagement-loop:")
     end = content.index("\n\n", start)
     block = content[start:end]
+    assert "--watch" in block
     assert 'CRM_ENGAGEMENT_MAX_VENUES_PER_RUN: "10"' in block
     assert 'CRM_ENGAGEMENT_MAX_PAGES_PER_VENUE: "15"' in block
     assert 'CRM_ENGAGEMENT_MAX_MINUTES_DEFAULT: "45"' in block

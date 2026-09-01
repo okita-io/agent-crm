@@ -9,7 +9,12 @@ import pytest
 
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
-from agent_crm.engagement_loop import EngagementBudget, run_engagement_loop
+from agent_crm.engagement_loop import (
+    EngagementBudget,
+    EngagementLoopResult,
+    run_engagement_loop,
+    run_engagement_loop_watch,
+)
 from agent_crm.engagement_store import list_drafts, list_threads
 from agent_crm.enums import Brand, HuntResourceKind
 from agent_crm.hunt_store import HuntStore
@@ -32,6 +37,69 @@ def test_engagement_loop_empty_queue(loop_db) -> None:
     assert result.venues_scanned == 0
     assert result.stop_reason == "queue_empty"
     assert result.drafts_written == 0
+
+
+def test_engagement_loop_watch_idles_on_empty_queue(loop_db, monkeypatch) -> None:
+    from agent_crm import engagement_loop as engagement_loop_mod
+
+    runs = {"n": 0}
+
+    def fake_run(**kwargs):
+        runs["n"] += 1
+        return EngagementLoopResult(stop_reason="queue_empty")
+
+    def boom(seconds):
+        raise KeyboardInterrupt(str(seconds))
+
+    monkeypatch.setattr(engagement_loop_mod, "run_engagement_loop", fake_run)
+    monkeypatch.setattr(engagement_loop_mod, "WATCH_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(engagement_loop_mod.time, "sleep", boom)
+    with pytest.raises(KeyboardInterrupt):
+        run_engagement_loop_watch(
+            brand=Brand.MIDNIGHTSATIN,
+            budget=EngagementBudget(max_venues=1, max_pages_per_venue=1, max_minutes=1),
+            summarize=False,
+        )
+    assert runs["n"] == 1
+
+
+def test_engagement_loop_watch_continues_when_backlog_remains(loop_db, monkeypatch) -> None:
+    from agent_crm import engagement_loop as engagement_loop_mod
+    from agent_crm.engagement_query_store import EngagementQueryStore
+
+    store = EngagementQueryStore()
+    store.enqueue_query(
+        query="site:reddit.com/r/RomanceBooks popular threads",
+        brand=Brand.MIDNIGHTSATIN,
+        origin="venue:reddit.com",
+    )
+    runs = {"n": 0}
+    sleeps: list[float] = []
+
+    def fake_run(**kwargs):
+        runs["n"] += 1
+        if runs["n"] == 1:
+            return EngagementLoopResult(
+                venues_scanned=1,
+                stop_reason="max_venues",
+            )
+        raise KeyboardInterrupt("done")
+
+    def track_sleep(seconds):
+        sleeps.append(seconds)
+        if runs["n"] >= 2:
+            raise KeyboardInterrupt("done")
+
+    monkeypatch.setattr(engagement_loop_mod, "run_engagement_loop", fake_run)
+    monkeypatch.setattr(engagement_loop_mod.time, "sleep", track_sleep)
+    with pytest.raises(KeyboardInterrupt):
+        run_engagement_loop_watch(
+            brand=Brand.MIDNIGHTSATIN,
+            budget=EngagementBudget(max_venues=1, max_pages_per_venue=1, max_minutes=1),
+            summarize=False,
+        )
+    assert runs["n"] == 2
+    assert sleeps and sleeps[0] == 1.0
 
 
 def test_engagement_loop_catalogs_hot_thread_and_drafts(loop_db) -> None:
