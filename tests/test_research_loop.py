@@ -9,7 +9,12 @@ import pytest
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, ResearchFindingKind
-from agent_crm.research_loop import ResearchLoopBudget, run_research_loop
+from agent_crm.research_loop import (
+    ResearchLoopBudget,
+    ResearchLoopResult,
+    run_research_loop,
+    run_research_loop_watch,
+)
 from agent_crm.schemas import ResearchResult
 
 
@@ -122,4 +127,70 @@ def test_research_loop_stops_on_query_budget(tmp_path, monkeypatch) -> None:
     assert result.queries_run == 2
     assert result.stop_reason == "query_budget"
     assert mock_run.call_count == 2
+    _teardown_db()
+
+
+def test_research_loop_watch_idles_on_empty_queue(tmp_path, monkeypatch) -> None:
+    from agent_crm import research_loop as research_loop_mod
+
+    _setup_db(tmp_path, monkeypatch, "research-loop-watch.db")
+    runs = {"n": 0}
+
+    def fake_run(**kwargs):
+        runs["n"] += 1
+        return ResearchLoopResult(stop_reason="queue_empty")
+
+    def boom(seconds):
+        raise KeyboardInterrupt(str(seconds))
+
+    monkeypatch.setattr(research_loop_mod, "run_research_loop", fake_run)
+    monkeypatch.setattr(research_loop_mod, "WATCH_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(research_loop_mod.time, "sleep", boom)
+    with pytest.raises(KeyboardInterrupt):
+        run_research_loop_watch(
+            budget=ResearchLoopBudget(max_queries=1, max_pages=1, max_minutes=1),
+            summarize=False,
+            write_accounts=False,
+        )
+    assert runs["n"] == 1
+    _teardown_db()
+
+
+def test_research_loop_watch_continues_when_backlog_remains(tmp_path, monkeypatch) -> None:
+    from agent_crm import research_loop as research_loop_mod
+    from agent_crm.enums import ResearchFindingKind
+    from agent_crm.research_query_store import ResearchQueryStore
+
+    _setup_db(tmp_path, monkeypatch, "research-loop-watch-backlog.db")
+    store = ResearchQueryStore()
+    store.enqueue_query(
+        query="ad placement romance newsletters",
+        brand=Brand.MIDNIGHTSATIN,
+        kind=ResearchFindingKind.AD_PLACEMENT,
+        origin="seed_pack",
+    )
+    runs = {"n": 0}
+    sleeps: list[float] = []
+
+    def fake_run(**kwargs):
+        runs["n"] += 1
+        if runs["n"] == 1:
+            return ResearchLoopResult(queries_run=1, stop_reason="query_budget")
+        raise KeyboardInterrupt("done")
+
+    def track_sleep(seconds):
+        sleeps.append(seconds)
+        if runs["n"] >= 2:
+            raise KeyboardInterrupt("done")
+
+    monkeypatch.setattr(research_loop_mod, "run_research_loop", fake_run)
+    monkeypatch.setattr(research_loop_mod.time, "sleep", track_sleep)
+    with pytest.raises(KeyboardInterrupt):
+        run_research_loop_watch(
+            budget=ResearchLoopBudget(max_queries=1, max_pages=1, max_minutes=1),
+            summarize=False,
+            write_accounts=False,
+        )
+    assert runs["n"] == 2
+    assert sleeps and sleeps[0] == 1.0
     _teardown_db()

@@ -45,6 +45,7 @@ from .tooling import CRMToolkit
 from .url_safety import is_public_http_url
 
 ACTOR = "engagement"
+WATCH_POLL_SECONDS = 60.0
 
 ENGAGEMENT_LOOP_BRANDS: tuple[Brand, ...] = (
     Brand.CELESTIAL_NEXUS,
@@ -209,6 +210,36 @@ def run_engagement_loop(
     if result.stop_reason == "queue_empty" and (result.venues_scanned or queries_run):
         result.stop_reason = "complete"
     return result
+
+
+def run_engagement_loop_watch(
+    *,
+    brand: Brand | None = None,
+    budget: EngagementBudget | None = None,
+    summarize: bool = True,
+    searx_client: httpx.Client | None = None,
+    firecrawl_client: httpx.Client | None = None,
+) -> None:
+    """Drain the engagement queue forever, sleeping when the backlog is empty."""
+    store = EngagementQueryStore()
+    while True:
+        run_engagement_loop(
+            brand=brand,
+            budget=budget,
+            summarize=summarize,
+            searx_client=searx_client,
+            firecrawl_client=firecrawl_client,
+        )
+        pending = store.count_pending(brand=brand)
+        if pending > 0:
+            time.sleep(1.0)
+            continue
+        record_heartbeat(
+            ACTOR,
+            status=AgentStatus.IDLE,
+            task="engagement queue empty; waiting for new queries",
+        )
+        time.sleep(WATCH_POLL_SECONDS)
 
 
 def _load_venue(resource_id: int | None) -> HuntResource | None:

@@ -141,6 +141,7 @@ services:
     command:
       - agent-crm
       - research-loop
+      - --watch
       - --max-queries
       - "20"
       - --max-pages
@@ -172,6 +173,7 @@ services:
     command:
       - agent-crm
       - engagement-loop
+      - --watch
       - --max-venues
       - "10"
       - --max-pages-per-venue

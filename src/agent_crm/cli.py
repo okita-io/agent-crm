@@ -185,7 +185,7 @@ def _cmd_research(args: argparse.Namespace) -> int:
 
 def _cmd_research_loop(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .research_loop import ResearchLoopBudget, run_research_loop
+    from .research_loop import ResearchLoopBudget, run_research_loop, run_research_loop_watch
 
     init_db()
     budget = ResearchLoopBudget(
@@ -194,6 +194,13 @@ def _cmd_research_loop(args: argparse.Namespace) -> int:
         max_minutes=args.max_minutes,
         search_limit=args.search_limit,
     )
+    if args.watch:
+        run_research_loop_watch(
+            budget=budget,
+            summarize=not args.no_summarize,
+            write_accounts=not args.no_accounts,
+        )
+        return 0
     result = run_research_loop(
         budget=budget,
         summarize=not args.no_summarize,
@@ -217,7 +224,11 @@ def _cmd_research_loop(args: argparse.Namespace) -> int:
 
 def _cmd_engagement_loop(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .engagement_loop import EngagementBudget, run_engagement_loop
+    from .engagement_loop import (
+        EngagementBudget,
+        run_engagement_loop,
+        run_engagement_loop_watch,
+    )
     from .enums import Brand
 
     init_db()
@@ -227,6 +238,13 @@ def _cmd_engagement_loop(args: argparse.Namespace) -> int:
         max_pages_per_venue=args.max_pages_per_venue,
         max_minutes=args.max_minutes,
     )
+    if args.watch:
+        run_engagement_loop_watch(
+            brand=brand,
+            budget=budget,
+            summarize=not args.no_summarize,
+        )
+        return 0
     result = run_engagement_loop(
         brand=brand,
         budget=budget,
@@ -594,6 +612,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Wall-clock budget in minutes (0 = unlimited)",
     )
     research_loop.add_argument(
+        "--watch",
+        action="store_true",
+        help="Stay running: drain due queries, then wait when the queue is empty",
+    )
+    research_loop.add_argument(
         "--search-limit",
         type=int,
         default=50,
@@ -637,6 +660,11 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=45,
         help="Wall-clock budget in minutes (0 = unlimited)",
+    )
+    engagement_loop.add_argument(
+        "--watch",
+        action="store_true",
+        help="Stay running: drain due queries, then wait when the queue is empty",
     )
     engagement_loop.add_argument(
         "--no-summarize",

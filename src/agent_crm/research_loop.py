@@ -6,11 +6,15 @@ import time
 from dataclasses import dataclass, field
 
 from .config import get_settings
-from .enums import Brand
+from .enums import AgentStatus, Brand
+from .heartbeat import record_heartbeat
 from .research import run_research
 from .research_query_store import ResearchQueryStore
 from .research_seeds import loop_seed_entries
 from .schemas import ResearchRequest
+
+ACTOR = "research"
+WATCH_POLL_SECONDS = 60.0
 
 RESEARCH_LOOP_BRANDS: tuple[Brand, ...] = (
     Brand.CELESTIAL_NEXUS,
@@ -158,3 +162,33 @@ def run_research_loop(
         store.mark_query_completed(query_id)
 
     return result
+
+
+def run_research_loop_watch(
+    *,
+    budget: ResearchLoopBudget | None = None,
+    summarize: bool = True,
+    write_accounts: bool = True,
+) -> None:
+    """Drain the research queue forever, sleeping when the backlog is empty."""
+    store = ResearchQueryStore()
+    while True:
+        result = run_research_loop(
+            budget=budget,
+            summarize=summarize,
+            write_accounts=write_accounts,
+        )
+        pending = store.count_pending()
+        if pending > 0:
+            time.sleep(1.0)
+            continue
+        record_heartbeat(
+            ACTOR,
+            status=AgentStatus.IDLE,
+            task=(
+                "research queue empty; waiting for new queries"
+                if result.stop_reason == "queue_empty"
+                else f"research idle after {result.stop_reason}"
+            ),
+        )
+        time.sleep(WATCH_POLL_SECONDS)
