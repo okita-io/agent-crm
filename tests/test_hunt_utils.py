@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from agent_crm.enums import ContactAudience, HuntResourceKind
-from agent_crm.hunt_feedback import (
+from agent_crm.hunt.feedback import (
     community_search_terms,
     company_people_search_terms,
     is_valid_hunt_person_name,
     person_search_terms,
 )
-from agent_crm.hunt_utils import (
+from agent_crm.hunt.utils import (
     canonical_url,
     classify_resource,
     classify_resource_detailed,

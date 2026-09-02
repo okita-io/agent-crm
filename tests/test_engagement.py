@@ -8,17 +8,17 @@ import pytest
 
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
-from agent_crm.engagement import (
+from agent_crm.engagement.runner import (
     extract_engagement_signals,
     is_engagement_venue,
     is_thread_url,
     venue_scan_queries,
 )
-from agent_crm.engagement_store import list_threads, upsert_draft, upsert_thread
+from agent_crm.engagement.store import list_threads, upsert_draft, upsert_thread
 from agent_crm.enums import Brand, HuntResourceKind
-from agent_crm.hunt_feedback import HuntFeedbackBudget, enqueue_engagement_terms
-from agent_crm.hunt_store import HuntStore
-from agent_crm.hunt_utils import classify_resource_detailed, format_resource_notes
+from agent_crm.hunt.feedback import HuntFeedbackBudget, enqueue_engagement_terms
+from agent_crm.hunt.store import HuntStore
+from agent_crm.hunt.utils import classify_resource_detailed, format_resource_notes
 
 
 @pytest.fixture()
@@ -127,7 +127,7 @@ def test_enqueue_engagement_terms(eng_db) -> None:
 
 
 def test_upsert_thread_and_draft(eng_db) -> None:
-    from agent_crm.engagement import extract_engagement_signals
+    from agent_crm.engagement.runner import extract_engagement_signals
 
     signals = extract_engagement_signals(
         "Weekly recommendation megathread — 800 comments",

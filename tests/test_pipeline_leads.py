@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import select
 
-from agent_crm.contact_store import upsert_contact_profile
+from agent_crm.contacts.store import upsert_contact_profile
 from agent_crm.db import session_scope
 from agent_crm.enums import (
     Brand,
@@ -18,16 +18,16 @@ from agent_crm.enums import (
     LeadStatus,
     TopicalRelevanceVerdict,
 )
-from agent_crm.hunt_relevance import RelevanceAssessment
+from agent_crm.hunt.relevance import RelevanceAssessment
 from agent_crm.models import ContactVerification, Lead
-from agent_crm.pipeline_leads import (
+from agent_crm.contacts.pipeline_leads import (
     PIPELINE_LEAD_CSV_FIELDS,
     list_pipeline_leads,
     pipeline_leads_csv,
     pipeline_leads_export_filename,
 )
 from agent_crm.topic_relevance_store import upsert_url_topic_relevance
-from agent_crm.verifier import record_immediate_invalid_email
+from agent_crm.contacts.verifier import record_immediate_invalid_email
 
 pytestmark = pytest.mark.usefixtures("db_url")
 

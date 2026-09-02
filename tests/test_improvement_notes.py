@@ -18,7 +18,7 @@ from agent_crm.improvement_store import (
     make_fingerprint,
     record_improvement_note,
 )
-from agent_crm.orchestrator import note_job_failure, run_orchestrator_cycle
+from agent_crm.agency.orchestrator import note_job_failure, run_orchestrator_cycle
 
 pytestmark = pytest.mark.usefixtures("db_url")
 

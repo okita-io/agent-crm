@@ -9,7 +9,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from agent_crm.contact_store import upsert_contact_profile
+from agent_crm.contacts.store import upsert_contact_profile
 from agent_crm.db import session_scope
 from agent_crm.enums import (
     AgentJobKind,
@@ -20,12 +20,12 @@ from agent_crm.enums import (
     LeadStatus,
     TopicalRelevanceVerdict,
 )
-from agent_crm.hunt_relevance import RelevanceAssessment
-from agent_crm.idle_backlog import seed_idle_backlog_jobs
-from agent_crm.job_dispatcher import execute_job
-from agent_crm.job_store import count_pending_jobs, enqueue_topical_relevance_job
+from agent_crm.hunt.relevance import RelevanceAssessment
+from agent_crm.jobs.idle_backlog import seed_idle_backlog_jobs
+from agent_crm.jobs.dispatcher import execute_job
+from agent_crm.jobs.store import count_pending_jobs, enqueue_topical_relevance_job
 from agent_crm.models import AgentJob, ContactVerification, Lead, UrlTopicRelevance
-from agent_crm.pipeline_leads import list_pipeline_leads
+from agent_crm.contacts.pipeline_leads import list_pipeline_leads
 from agent_crm.topic_relevance_store import (
     check_topical_relevance_job,
     seed_topical_relevance_jobs,
@@ -137,9 +137,9 @@ def test_idle_tick_seeds_topical_relevance_job() -> None:
         for row in session.scalars(select(AgentJob)):
             session.delete(row)
 
-    with patch("agent_crm.idle_backlog.count_unverified_email_leads", return_value=0), patch(
-        "agent_crm.idle_backlog.count_unenriched_person_profiles", return_value=0
-    ), patch("agent_crm.idle_backlog.count_unqualified_contacts", return_value=0):
+    with patch("agent_crm.jobs.idle_backlog.count_unverified_email_leads", return_value=0), patch(
+        "agent_crm.jobs.idle_backlog.count_unenriched_person_profiles", return_value=0
+    ), patch("agent_crm.jobs.idle_backlog.count_unqualified_contacts", return_value=0):
         result = seed_idle_backlog_jobs(limit=5)
 
     assert result["topical"] >= 1

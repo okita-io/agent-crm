@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from agent_crm.contact_store import ContactExtractionBudget, process_scraped_page_contacts
+from agent_crm.contacts.store import ContactExtractionBudget, process_scraped_page_contacts
 from agent_crm.db import session_scope
 from agent_crm.enums import AgentJobKind, Brand, TopicalRelevanceVerdict
-from agent_crm.hunt_loop import _filter_relevant_hunt_results
-from agent_crm.job_dispatcher import execute_job
-from agent_crm.job_store import enqueue_decode_email_job
+from agent_crm.hunt.loop import _filter_relevant_hunt_results
+from agent_crm.jobs.dispatcher import execute_job
+from agent_crm.jobs.store import enqueue_decode_email_job
 from agent_crm.models import Account, AgentJob
-from agent_crm.research import _maybe_write_account_note
+from agent_crm.research.runner import _maybe_write_account_note
 from agent_crm.searxng_client import SearchResult
 from agent_crm.tooling import CRMToolkit
 from sqlalchemy import func, select
@@ -58,10 +58,10 @@ def test_uncertain_hunt_results_are_not_kept_for_scrape(db_url) -> None:
     assessment.verdict = TopicalRelevanceVerdict.UNCERTAIN
     assessment.reason = "unclear"
     with patch(
-        "agent_crm.hunt_loop.assess_topical_relevance",
+        "agent_crm.hunt.loop.assess_topical_relevance",
         return_value=assessment,
-    ), patch("agent_crm.hunt_loop.upsert_url_topic_relevance") as upsert, patch(
-        "agent_crm.hunt_loop.enqueue_topical_relevance_job",
+    ), patch("agent_crm.hunt.loop.upsert_url_topic_relevance") as upsert, patch(
+        "agent_crm.hunt.loop.enqueue_topical_relevance_job",
         return_value=True,
     ) as enqueue:
         kept = _filter_relevant_hunt_results(
@@ -86,7 +86,7 @@ def test_decode_email_job_upserts_decoded_contact(db_url) -> None:
         payload = dict(job.payload or {})
 
     with patch(
-        "agent_crm.contact_extractor.decode_obfuscated_emails_spark",
+        "agent_crm.contacts.extractor.decode_obfuscated_emails_spark",
         return_value=[("jane@novastudio.com", "Jane")],
     ):
         execute_job(job_id, AgentJobKind.DECODE_EMAIL, payload)

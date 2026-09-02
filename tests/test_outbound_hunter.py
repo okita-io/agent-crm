@@ -14,7 +14,7 @@ from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import AgentStatus, Brand, LeadSource, Stage, TopicalRelevanceVerdict
 from agent_crm.firecrawl_client import FirecrawlError, scrape
 from agent_crm.heartbeat import list_heartbeats
-from agent_crm.outbound_hunter import run_hunt
+from agent_crm.hunt.outbound import run_hunt
 from agent_crm.schemas import HuntRequest
 from agent_crm.searxng_client import SearxngError, search
 from agent_crm.tooling import CRMToolkit
@@ -165,8 +165,8 @@ def test_run_hunt_creates_leads_and_records_errors(tmp_path, monkeypatch) -> Non
     init_db()
 
     http = _hunt_http_client()
-    with patch("agent_crm.outbound_hunter.chat_completions") as mock_llm, patch(
-        "agent_crm.outbound_hunter.assess_topical_relevance",
+    with patch("agent_crm.hunt.outbound.chat_completions") as mock_llm, patch(
+        "agent_crm.hunt.outbound.assess_topical_relevance",
         return_value=_on_topic_assessment(),
     ):
         mock_llm.return_value = {
@@ -259,7 +259,7 @@ def test_run_hunt_skips_llm_when_disabled(tmp_path, monkeypatch) -> None:
     init_db()
 
     http = _hunt_http_client()
-    with patch("agent_crm.outbound_hunter.chat_completions") as mock_llm:
+    with patch("agent_crm.hunt.outbound.chat_completions") as mock_llm:
         result = run_hunt(
             HuntRequest(query="studio", summarize=False, max_pages=1),
             searx_client=http,

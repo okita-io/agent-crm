@@ -12,7 +12,7 @@ from agent_crm.marketing_skill import (
     marketing_skill_root,
     skill_file_exists,
 )
-from agent_crm.research import _maybe_summarize
+from agent_crm.research.runner import _maybe_summarize
 from agent_crm.firecrawl_client import ScrapeResult
 from agent_crm.searxng_client import SearchResult
 
@@ -53,7 +53,7 @@ def test_maybe_summarize_competitor_includes_competitive_guidance() -> None:
     )
     errors: list[str] = []
 
-    with patch("agent_crm.research.chat_completions") as mock_llm:
+    with patch("agent_crm.research.runner.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [{"message": {"content": '{"summary": "Competitor note."}'}}]
         }

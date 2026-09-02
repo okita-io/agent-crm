@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from agent_crm.contact_store import upsert_contact_profile
+from agent_crm.contacts.store import upsert_contact_profile
 from agent_crm.db import session_scope
 from agent_crm.enums import AgentJobKind, Brand
-from agent_crm.job_store import count_pending_jobs
+from agent_crm.jobs.store import count_pending_jobs
 from agent_crm.models import AgentJob, Lead
-from agent_crm.verifier import seed_verify_jobs_for_unverified
+from agent_crm.contacts.verifier import seed_verify_jobs_for_unverified
 
 pytestmark = pytest.mark.usefixtures("db_url")
 

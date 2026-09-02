@@ -15,9 +15,9 @@ from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine, session_scope
 from agent_crm.enums import Brand, SeoPlanKind, SeoReviewKind, SeoTargetRole
 from agent_crm.models import SeoTarget
-from agent_crm.seo_loop import SeoBudget, SeoLoopResult, run_seo_loop, run_seo_loop_watch
-from agent_crm.seo_query_store import SeoQueryStore
-from agent_crm.seo_store import list_plans, list_reviews, list_targets, next_noon_at
+from agent_crm.seo.loop import SeoBudget, SeoLoopResult, run_seo_loop, run_seo_loop_watch
+from agent_crm.seo.query_store import SeoQueryStore
+from agent_crm.seo.store import list_plans, list_reviews, list_targets, next_noon_at
 
 
 @pytest.fixture()
@@ -85,7 +85,7 @@ def _handler(request: httpx.Request) -> httpx.Response:
 
 def test_seo_loop_writes_owned_review_and_plan(seo_db) -> None:
     http = httpx.Client(transport=httpx.MockTransport(_handler))
-    with patch("agent_crm.seo_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.seo.loop.chat_completions") as mock_llm:
         result = run_seo_loop(
             brand=Brand.MIDNIGHTSATIN,
             budget=SeoBudget(max_targets=1, max_pages_per_target=2, max_minutes=5),
@@ -207,7 +207,7 @@ def test_seo_loop_schedules_next_pass_at_local_noon(seo_db) -> None:
 
 
 def test_watch_idles_until_next_noon(seo_db, monkeypatch) -> None:
-    from agent_crm import seo_loop as seo_loop_mod
+    from agent_crm.seo import loop as seo_loop_mod
 
     runs = {"n": 0}
 

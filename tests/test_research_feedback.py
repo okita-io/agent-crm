@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agent_crm.enums import Brand, ResearchFindingKind
-from agent_crm.research_feedback import extract_research_follow_up_terms
+from agent_crm.research.feedback import extract_research_follow_up_terms
 
 
 def test_extract_follow_ups_from_serp_and_page_for_each_brand() -> None:

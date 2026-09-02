@@ -10,9 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_crm.api import app
-from agent_crm.contact_extractor import extract_contacts, is_skipped_email
-from agent_crm.contact_social_lookup import build_social_queries, lookup_social_profiles
-from agent_crm.contact_store import (
+from agent_crm.contacts.extractor import extract_contacts, is_skipped_email
+from agent_crm.contacts.social_lookup import build_social_queries, lookup_social_profiles
+from agent_crm.contacts.store import (
     ContactExtractionBudget,
     count_contact_profiles,
     count_contact_profiles_by_brand,
@@ -172,7 +172,7 @@ def test_social_lookup_mocked_searxng(db_url) -> None:
 
 
 def test_matches_contact_rejects_short_local_substring() -> None:
-    from agent_crm.contact_social_lookup import _matches_contact
+    from agent_crm.contacts.social_lookup import _matches_contact
 
     assert not _matches_contact(
         email="art@studio.com",
@@ -198,7 +198,7 @@ def test_matches_contact_rejects_short_local_substring() -> None:
 
 
 def test_matches_contact_accepts_word_boundary_local() -> None:
-    from agent_crm.contact_social_lookup import _matches_contact
+    from agent_crm.contacts.social_lookup import _matches_contact
 
     assert _matches_contact(
         email="janedoe@studio.com",
@@ -227,7 +227,7 @@ def test_build_social_queries_respects_cap(monkeypatch) -> None:
 
 
 def test_social_lookup_budget_skips_after_cap(db_url) -> None:
-    with patch("agent_crm.contact_store.lookup_social_profiles") as mock_lookup:
+    with patch("agent_crm.contacts.store.lookup_social_profiles") as mock_lookup:
         mock_lookup.return_value = ({"x": "https://x.com/found"}, 1)
         budget = ContactExtractionBudget(
             social_lookups_remaining=1,

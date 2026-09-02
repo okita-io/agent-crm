@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from agent_crm.seo import (
+from agent_crm.seo.runner import (
     detect_issues,
     extract_page_signals,
     pick_one_thing,
     related_paths_to_fetch,
     score_issues,
 )
-from agent_crm.seo_skill import open_seo_skill_root, skill_file_exists
+from agent_crm.seo.skill import open_seo_skill_root, skill_file_exists
 
 
 def test_open_seo_skill_files_exist() -> None:

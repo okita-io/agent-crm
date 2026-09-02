@@ -5,8 +5,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from agent_crm.engagement_query_store import EngagementQueryStore
-from agent_crm.engagement_store import count_drafts, count_threads, list_drafts, list_threads
+from agent_crm.engagement.query_store import EngagementQueryStore
+from agent_crm.engagement.store import count_drafts, count_threads, list_drafts, list_threads
 from agent_crm.enums import AgencyRequestStatus, AgentStatus, Brand, ContactAudience, ContactVerificationStatus, HuntResourceKind, LeadSource, ResearchFindingKind, SeoPlanKind, SeoReviewKind, Stage
 
 from agent_crm.dashboard_ui.common import (

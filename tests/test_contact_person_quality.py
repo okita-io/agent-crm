@@ -8,20 +8,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_crm.api import app
-from agent_crm.contact_extractor import (
+from agent_crm.contacts.extractor import (
     decode_obfuscated_email_deterministic,
     decode_obfuscated_emails_spark,
     extract_contacts,
 )
-from agent_crm.contact_store import ContactExtractionBudget
-from agent_crm.contact_quality import (
+from agent_crm.contacts.store import ContactExtractionBudget
+from agent_crm.contacts.quality import (
     is_filename_as_email,
     is_person_email,
     is_placeholder_email,
     is_role_inbox_email,
     local_part_has_person_signals,
 )
-from agent_crm.contact_store import (
+from agent_crm.contacts.store import (
     count_contact_profiles,
     count_contact_profiles_by_quality,
     list_contact_profiles,
@@ -133,7 +133,7 @@ def test_role_vs_person_classification() -> None:
 
 
 def test_prepare_rejects_role_and_placeholder() -> None:
-    from agent_crm.contact_quality import prepare_contact_for_ingest
+    from agent_crm.contacts.quality import prepare_contact_for_ingest
 
     assert prepare_contact_for_ingest("ceo@studio.com", None) is None
     assert prepare_contact_for_ingest("billing@agency.com", None) is None

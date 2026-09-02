@@ -7,9 +7,9 @@ import streamlit as st
 
 from agent_crm.enums import AgencyRequestStatus, AgentStatus, Brand, ContactAudience, ContactVerificationStatus, HuntResourceKind, LeadSource, ResearchFindingKind, SeoPlanKind, SeoReviewKind, Stage
 from agent_crm.pipeline import PipelineManager
-from agent_crm.pipeline_leads import pipeline_lead_records, pipeline_leads_export_filename
+from agent_crm.contacts.pipeline_leads import pipeline_lead_records, pipeline_leads_export_filename
 from agent_crm.tooling import CRMToolkit
-from agent_crm.verifier import list_verifications
+from agent_crm.contacts.verifier import list_verifications
 
 from agent_crm.dashboard_ui.common import (
     _render_full_csv_export,

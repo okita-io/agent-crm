@@ -36,9 +36,9 @@ from .agent_query import (
     query_websites,
 )
 from .auth import require_api_token, require_known_agent
-from .comment_people_store import count_comment_people, list_comment_people
+from agent_crm.contacts.comment_people_store import count_comment_people, list_comment_people
 from .config import get_settings
-from .contact_store import (
+from agent_crm.contacts.store import (
     backfill_contact_enrichment,
     backfill_contact_quality,
     count_contact_profiles,
@@ -46,8 +46,8 @@ from .contact_store import (
     list_contact_profiles,
 )
 from .db import database_kind, init_db
-from .engagement_loop import EngagementBudget, run_engagement_loop
-from .engagement_store import list_drafts, list_threads
+from agent_crm.engagement.loop import EngagementBudget, run_engagement_loop
+from agent_crm.engagement.store import list_drafts, list_threads
 from .enums import (
     Brand,
     ContactAudience,
@@ -61,22 +61,22 @@ from .enums import (
     SeoTargetRole,
     Stage,
 )
-from .agency_request_store import create_agency_request, list_agency_requests
+from agent_crm.agency.request_store import create_agency_request, list_agency_requests
 from .runtime_settings_store import (
     list_runtime_settings_meta,
     probe_spark_upstream,
     update_runtime_settings,
 )
 from .heartbeat import list_heartbeats, record_heartbeat
-from .hunt_loop import HuntBudget, run_hunt_loop
-from .hunt_status import build_hunt_status
-from .hunt_store import HuntStore
+from agent_crm.hunt.loop import HuntBudget, run_hunt_loop
+from agent_crm.hunt.status import build_hunt_status
+from agent_crm.hunt.store import HuntStore
 from .improvement_store import list_improvement_notes
-from .outbound_hunter import run_hunt
+from agent_crm.hunt.outbound import run_hunt
 from .pipeline import PipelineManager
 from .presence import build_observer_rows, fetch_spark_queue_health, spark_slot_summary
-from .research import run_research
-from .research_store import list_findings
+from agent_crm.research.runner import run_research
+from agent_crm.research.store import list_findings
 from .schemas import (
     ActivityOut,
     AgentCatalogOut,
@@ -132,11 +132,11 @@ from .schemas import (
     VerifyRawRequest,
     VerifyRawResult,
 )
-from .aeo_geo_loop import run_aeo_geo_loop
-from .seo_loop import SeoBudget, run_seo_loop
-from .seo_store import list_plans, list_reviews, list_targets
+from agent_crm.aeo_geo.loop import run_aeo_geo_loop
+from agent_crm.seo.loop import SeoBudget, run_seo_loop
+from agent_crm.seo.store import list_plans, list_reviews, list_targets
 from .tooling import CRMToolkit
-from .verifier import list_verifications, verify_batch_unverified, verify_lead, verify_raw
+from agent_crm.contacts.verifier import list_verifications, verify_batch_unverified, verify_lead, verify_raw
 
 app = FastAPI(
     title="The Agency",
@@ -305,8 +305,8 @@ def _treg_tool_out(row) -> TregToolOut:
 
 @app.get("/treg/status", response_model=TregStatusOut, tags=["treg"])
 def treg_status() -> TregStatusOut:
-    from .treg_client import TregClient, TregError, treg_configured
-    from .treg_store import treg_counts
+    from agent_crm.treg.client import TregClient, TregError, treg_configured
+    from agent_crm.treg.store import treg_counts
 
     counts = treg_counts()
     settings = get_settings()
@@ -339,9 +339,9 @@ def treg_status() -> TregStatusOut:
 
 @app.post("/treg/catalog/sync", response_model=TregSyncResultOut, tags=["treg"])
 def treg_catalog_sync(enqueue_free: bool = True) -> TregSyncResultOut:
-    from .treg_client import TregError
-    from .treg_queue import enqueue_free_treg_tools
-    from .treg_store import sync_treg_catalog
+    from agent_crm.treg.client import TregError
+    from agent_crm.treg.queue import enqueue_free_treg_tools
+    from agent_crm.treg.store import sync_treg_catalog
 
     try:
         result = sync_treg_catalog()
@@ -372,7 +372,7 @@ def treg_tools(
     allowed: bool | None = None,
     queue_as: str | None = None,
 ) -> list[TregToolOut]:
-    from .treg_store import list_treg_tools
+    from agent_crm.treg.store import list_treg_tools
 
     rows = list_treg_tools(
         paid=paid,
@@ -385,7 +385,7 @@ def treg_tools(
 
 @app.post("/treg/tools/allow", response_model=TregAllowResultOut, tags=["treg"])
 def treg_tools_allow(body: TregAllowIn) -> TregAllowResultOut:
-    from .treg_queue import allow_treg_tools
+    from agent_crm.treg.queue import allow_treg_tools
 
     result = allow_treg_tools(body.endpoint_ids)
     return TregAllowResultOut(
@@ -537,7 +537,7 @@ def list_contacts(
     limit: int = Query(50, ge=1, le=200),
 ) -> list[ContactProfileOut]:
     """List contact profiles keyed by email."""
-    from .contact_quality import EmailQualityFilter
+    from agent_crm.contacts.quality import EmailQualityFilter
 
     resolved_quality: EmailQualityFilter = "person" if person_only else "all"
     if quality in ("person", "role", "all"):
@@ -567,7 +567,7 @@ def contacts_summary(
     person_only: bool = False,
 ) -> ContactProfilesSummaryOut:
     """Return total and per-brand counts for contact profile filters."""
-    from .contact_quality import EmailQualityFilter
+    from agent_crm.contacts.quality import EmailQualityFilter
 
     resolved_quality: EmailQualityFilter = "person" if person_only else "all"
     if quality in ("person", "role", "all"):
@@ -623,7 +623,7 @@ def list_comment_people_endpoint(
 @app.get("/jobs/status", tags=["jobs"])
 def jobs_status() -> dict:
     """Return pending/running agent job counts by kind."""
-    from .job_dispatcher import build_job_status
+    from agent_crm.jobs.dispatcher import build_job_status
 
     return build_job_status()
 

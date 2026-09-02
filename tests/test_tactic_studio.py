@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from agent_crm.contact_store import process_scraped_page_contacts, upsert_contact_profile
+from agent_crm.contacts.store import process_scraped_page_contacts, upsert_contact_profile
 from agent_crm.db import init_db, reset_engine, session_scope
 from agent_crm.enums import Brand, ContactAudience
-from agent_crm.hunt_seeds import seed_query_entries, seeds_for_brand
+from agent_crm.hunt.seeds import seed_query_entries, seeds_for_brand
 from agent_crm.models import ContactProfile, Lead
 from sqlalchemy import select
 
@@ -83,7 +83,7 @@ def test_list_contacts_by_audience(db_url) -> None:
         audience=ContactAudience.INFLUENCER,
     )
 
-    from agent_crm.contact_store import list_contact_profiles
+    from agent_crm.contacts.store import list_contact_profiles
 
     marketing_only = list_contact_profiles(
         brand=Brand.TACTIC_STUDIO,

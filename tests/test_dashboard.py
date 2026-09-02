@@ -120,7 +120,7 @@ def test_pipeline_and_research_selectboxes_have_keys() -> None:
 def test_seo_export_filename_includes_kind_and_domain() -> None:
     from types import SimpleNamespace
 
-    from agent_crm.seo_export import seo_document_markdown, seo_export_filename, zip_seo_documents
+    from agent_crm.seo.export import seo_document_markdown, seo_export_filename, zip_seo_documents
 
     row = SimpleNamespace(
         id=12,

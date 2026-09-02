@@ -120,9 +120,9 @@ def _format_treg_cost(usd: float | None, cost_type: str) -> str:
 
 
 def _render_treg_settings() -> None:
-    from agent_crm.treg_client import TregClient, TregError, treg_configured
-    from agent_crm.treg_queue import allow_treg_tools, enqueue_free_treg_tools
-    from agent_crm.treg_store import list_treg_tools, sync_treg_catalog, treg_counts
+    from agent_crm.treg.client import TregClient, TregError, treg_configured
+    from agent_crm.treg.queue import allow_treg_tools, enqueue_free_treg_tools
+    from agent_crm.treg.store import list_treg_tools, sync_treg_catalog, treg_counts
 
     st.subheader("treg paid tools")
     st.caption(

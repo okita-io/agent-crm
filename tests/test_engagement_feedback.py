@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_crm.engagement_feedback import extract_engagement_follow_up_terms
+from agent_crm.engagement.feedback import extract_engagement_follow_up_terms
 from agent_crm.enums import Brand
 
 

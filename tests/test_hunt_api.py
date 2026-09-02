@@ -10,7 +10,7 @@ from agent_crm.api import app
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand
-from agent_crm.hunt_store import HuntStore
+from agent_crm.hunt.store import HuntStore
 
 
 def test_hunt_loop_endpoint(tmp_path, monkeypatch):
@@ -22,7 +22,7 @@ def test_hunt_loop_endpoint(tmp_path, monkeypatch):
 
     client = TestClient(app)
     with patch("agent_crm.api.run_hunt_loop") as mock_run:
-        from agent_crm.hunt_loop import HuntLoopResult
+        from agent_crm.hunt.loop import HuntLoopResult
 
         mock_run.return_value = HuntLoopResult(
             run_id="abc",

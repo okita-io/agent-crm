@@ -6,8 +6,8 @@ import json
 import pandas as pd
 import streamlit as st
 
-from agent_crm.comment_people_store import count_comment_people, list_comment_people
-from agent_crm.contact_store import count_contact_profiles, count_contact_profiles_by_brand, count_contact_profiles_by_quality, list_contact_profiles
+from agent_crm.contacts.comment_people_store import count_comment_people, list_comment_people
+from agent_crm.contacts.store import count_contact_profiles, count_contact_profiles_by_brand, count_contact_profiles_by_quality, list_contact_profiles
 from agent_crm.enums import AgencyRequestStatus, AgentStatus, Brand, ContactAudience, ContactVerificationStatus, HuntResourceKind, LeadSource, ResearchFindingKind, SeoPlanKind, SeoReviewKind, Stage
 
 from agent_crm.dashboard_ui.common import (

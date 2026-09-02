@@ -7,10 +7,10 @@ import pytest
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, HuntQueryStatus, ResearchFindingKind
-from agent_crm.hunt_store import HuntStore
-from agent_crm.hunt_utils import origin_needs_review, query_enqueue_status
+from agent_crm.hunt.store import HuntStore
+from agent_crm.hunt.utils import origin_needs_review, query_enqueue_status
 from agent_crm.queue_review import QueueReviewBudget, assess_search_query, run_queue_review
-from agent_crm.research_query_store import ResearchQueryStore
+from agent_crm.research.query_store import ResearchQueryStore
 
 
 @pytest.fixture()

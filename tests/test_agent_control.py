@@ -14,7 +14,7 @@ from agent_crm.agent_control import (
 )
 from agent_crm.enums import AgentStatus
 from agent_crm.heartbeat import list_heartbeats
-from agent_crm.hunt_loop import HuntBudget, run_hunt_loop
+from agent_crm.hunt.loop import HuntBudget, run_hunt_loop
 
 
 def test_missing_toggle_defaults_to_enabled(db_url) -> None:

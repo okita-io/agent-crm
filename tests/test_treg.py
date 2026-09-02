@@ -9,17 +9,17 @@ import pytest
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, HuntQueryStatus, ResearchFindingKind, ResearchQueryStatus
-from agent_crm.hunt_store import HuntStore
-from agent_crm.research_query_store import ResearchQueryStore
-from agent_crm.treg_catalog import (
+from agent_crm.hunt.store import HuntStore
+from agent_crm.research.query_store import ResearchQueryStore
+from agent_crm.treg.catalog import (
     catalog_tool_from_row,
     classify_queue_as,
     collect_catalog_tools,
     is_free_cost,
 )
-from agent_crm.treg_client import TregError
-from agent_crm.treg_queue import allow_treg_tools, endpoint_accepts_search_query
-from agent_crm.treg_search import (
+from agent_crm.treg.client import TregError
+from agent_crm.treg.queue import allow_treg_tools, endpoint_accepts_search_query
+from agent_crm.treg.search import (
     build_treg_request,
     collect_search_results,
     extract_search_hits,
@@ -27,7 +27,7 @@ from agent_crm.treg_search import (
     treg_endpoint_from,
     treg_origin,
 )
-from agent_crm.treg_store import (
+from agent_crm.treg.store import (
     get_treg_tool,
     list_treg_tools,
     sync_treg_catalog,
@@ -298,7 +298,7 @@ def test_collect_search_results_uses_treg_when_queued(treg_db, monkeypatch) -> N
 
         return [SearchResult(url="https://example.com/hit", title=query, snippet="ok")]
 
-    monkeypatch.setattr("agent_crm.treg_search.search_treg", fake_search_treg)
+    monkeypatch.setattr("agent_crm.treg.search.search_treg", fake_search_treg)
     hits = collect_search_results(
         "natal chart app",
         limit=10,

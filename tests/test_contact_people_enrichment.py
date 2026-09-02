@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_crm.api import app
-from agent_crm.contact_people_enrichment import (
+from agent_crm.contacts.people_enrichment import (
     collect_page_evidence,
     enrich_contact_person,
     is_login_walled_url,
@@ -18,8 +18,8 @@ from agent_crm.contact_people_enrichment import (
     PeopleEnrichmentResult,
     SerpEvidence,
 )
-from agent_crm.contact_quality import is_role_inbox_email
-from agent_crm.contact_store import (
+from agent_crm.contacts.quality import is_role_inbox_email
+from agent_crm.contacts.store import (
     ContactExtractionBudget,
     backfill_contact_enrichment,
     process_scraped_page_contacts,
@@ -28,7 +28,7 @@ from agent_crm.contact_store import (
 )
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import AgentJobKind, Brand
-from agent_crm.job_store import count_pending_jobs
+from agent_crm.jobs.store import count_pending_jobs
 
 
 @pytest.fixture()
@@ -71,7 +71,7 @@ def test_is_login_walled_url_blocks_social_hosts() -> None:
 
 
 def test_collect_page_evidence_skips_login_walled_scrape() -> None:
-    with patch("agent_crm.contact_people_enrichment.scrape") as mock_scrape:
+    with patch("agent_crm.contacts.people_enrichment.scrape") as mock_scrape:
         evidence, _ = collect_page_evidence(
             email="jane@acme.com",
             name="Jane Doe",
@@ -210,7 +210,7 @@ def test_backfill_contact_enrichment_cli_shape(db_url) -> None:
         source_url="https://helpy.io",
     )
 
-    with patch("agent_crm.contact_store.enrich_contact_person") as mock_enrich:
+    with patch("agent_crm.contacts.store.enrich_contact_person") as mock_enrich:
         mock_enrich.return_value = PeopleEnrichmentResult(
             fields=PeopleEnrichmentFields(title="CEO", organization="Example Inc"),
             spark_used=True,
@@ -228,7 +228,7 @@ def test_contacts_enrich_api(api_client, db_url) -> None:
         brand=Brand.UNASSIGNED,
         source_url="https://helpy.io",
     )
-    with patch("agent_crm.contact_store.enrich_contact_person") as mock_enrich:
+    with patch("agent_crm.contacts.store.enrich_contact_person") as mock_enrich:
         mock_enrich.return_value = PeopleEnrichmentResult(
             fields=PeopleEnrichmentFields(organization="Example Co"),
         )

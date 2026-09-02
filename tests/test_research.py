@@ -15,8 +15,8 @@ from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import AgentStatus, Brand, ResearchFindingKind
 from agent_crm.heartbeat import list_heartbeats
-from agent_crm.research import _heuristic_extra, run_research
-from agent_crm.research_seeds import (
+from agent_crm.research.runner import _heuristic_extra, run_research
+from agent_crm.research.seeds import (
     AD_PLACEMENT_QUERIES,
     COMPETITOR_QUERIES,
     TARGET_COMPANY_QUERIES,
@@ -24,8 +24,8 @@ from agent_crm.research_seeds import (
     loop_kinds_for_brand,
     seed_queries,
 )
-from agent_crm.research_store import list_findings
-from agent_crm.research_utils import canonical_url, is_junk_finding
+from agent_crm.research.store import list_findings
+from agent_crm.research.utils import canonical_url, is_junk_finding
 from agent_crm.schemas import ResearchFindingOut, ResearchRequest, ResearchResult
 
 
@@ -287,7 +287,7 @@ def test_run_research_ad_placement_writes_structured_extra(tmp_path, monkeypatch
         )
     )
 
-    with patch("agent_crm.research.chat_completions") as mock_llm:
+    with patch("agent_crm.research.runner.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [
                 {
@@ -334,7 +334,7 @@ def test_run_research_target_company_enqueues_hunter_people_queries(
     tmp_path, monkeypatch
 ) -> None:
     _setup_db(tmp_path, monkeypatch, "research-target-company.db")
-    from agent_crm.hunt_store import HuntStore
+    from agent_crm.hunt.store import HuntStore
 
     payload = {
         "results": [
@@ -370,7 +370,7 @@ def test_run_research_target_company_enqueues_hunter_people_queries(
         )
     )
 
-    with patch("agent_crm.research.chat_completions") as mock_llm:
+    with patch("agent_crm.research.runner.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [
                 {
@@ -491,7 +491,7 @@ def test_run_research_competitor_writes_celestial_nexus_findings(
     _setup_db(tmp_path, monkeypatch, "research-competitor.db")
 
     http = _research_http_client()
-    with patch("agent_crm.research.chat_completions") as mock_llm:
+    with patch("agent_crm.research.runner.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [
                 {
@@ -548,7 +548,7 @@ def test_run_research_competitor_writes_midnightsatin_findings(
         ]
     }
     http = _research_http_client(searx_payload=payload)
-    with patch("agent_crm.research.chat_completions") as mock_llm:
+    with patch("agent_crm.research.runner.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [
                 {
@@ -587,7 +587,7 @@ def test_run_research_nonprofit_writes_heybuddy_without_invented_ein(
     _setup_db(tmp_path, monkeypatch, "research-nonprofit.db")
 
     http = _nonprofit_http_client()
-    with patch("agent_crm.research.chat_completions") as mock_llm:
+    with patch("agent_crm.research.runner.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [
                 {
@@ -631,7 +631,7 @@ def test_run_research_skips_junk_and_respects_page_budget(
     _setup_db(tmp_path, monkeypatch, "research-junk.db")
 
     http = _research_http_client(include_junk=True)
-    with patch("agent_crm.research.chat_completions") as mock_llm:
+    with patch("agent_crm.research.runner.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [{"message": {"content": '{"summary": "ok"}'}}]
         }
@@ -694,7 +694,7 @@ def test_run_research_stops_on_query_budget(tmp_path, monkeypatch) -> None:
         )
     )
 
-    with patch("agent_crm.research.chat_completions"):
+    with patch("agent_crm.research.runner.chat_completions"):
         result = run_research(
             ResearchRequest(
                 brand=Brand.CELESTIAL_NEXUS,
@@ -755,7 +755,7 @@ def test_run_research_scrapes_beyond_legacy_four_page_run_cap(
         )
     )
 
-    with patch("agent_crm.research.chat_completions"):
+    with patch("agent_crm.research.runner.chat_completions"):
         result = run_research(
             ResearchRequest(
                 brand=Brand.HEYBUDDY,
@@ -824,7 +824,7 @@ def test_run_research_enqueues_follow_ups_and_queue_only_grows(
     tmp_path, monkeypatch
 ) -> None:
     _setup_db(tmp_path, monkeypatch, "research-queue-grow.db")
-    from agent_crm.research_query_store import ResearchQueryStore
+    from agent_crm.research.query_store import ResearchQueryStore
 
     payload = {
         "results": [
@@ -891,7 +891,7 @@ def test_run_research_follow_ups_cover_midnight_satin_heybuddy_and_tactic(
     tmp_path, monkeypatch
 ) -> None:
     _setup_db(tmp_path, monkeypatch, "research-queue-brands.db")
-    from agent_crm.research_query_store import ResearchQueryStore
+    from agent_crm.research.query_store import ResearchQueryStore
 
     cases = [
         (

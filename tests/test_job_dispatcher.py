@@ -9,7 +9,7 @@ import pytest
 
 from agent_crm.db import session_scope
 from agent_crm.enums import AgentJobKind, AgentJobStatus
-from agent_crm.job_store import (
+from agent_crm.jobs.store import (
     claim_jobs,
     claim_non_spark_jobs,
     claim_spark_jobs,
@@ -53,8 +53,8 @@ def test_claim_prefers_enrich_when_enrich_backlog_is_larger() -> None:
             base + timedelta(seconds=index),
         )
 
-    with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True):
-        from agent_crm.job_store import claim_spark_jobs
+    with patch("agent_crm.jobs.store.spark_queue_has_capacity", return_value=True):
+        from agent_crm.jobs.store import claim_spark_jobs
 
         claimed = claim_spark_jobs(max_claim=1)
     assert len(claimed) == 1
@@ -70,7 +70,7 @@ def test_claim_verify_when_enrich_queue_empty() -> None:
             base + timedelta(seconds=index),
         )
 
-    with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True):
+    with patch("agent_crm.jobs.store.spark_queue_has_capacity", return_value=True):
         claimed = claim_jobs(max_claim=3)
     assert len(claimed) == 3
     assert all(job.kind == AgentJobKind.VERIFY_LEAD for job in claimed)
@@ -91,12 +91,12 @@ def test_claim_switches_to_verify_when_verify_lag_is_worse() -> None:
             base + timedelta(hours=1, seconds=index),
         )
 
-    with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True):
+    with patch("agent_crm.jobs.store.spark_queue_has_capacity", return_value=True):
         first_batch = claim_jobs(max_claim=3)
     assert len(first_batch) == 3
     assert all(job.kind == AgentJobKind.VERIFY_LEAD for job in first_batch)
 
-    with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True):
+    with patch("agent_crm.jobs.store.spark_queue_has_capacity", return_value=True):
         next_claim = claim_jobs(max_claim=1)
     assert len(next_claim) == 1
     assert next_claim[0].kind == AgentJobKind.VERIFY_LEAD
@@ -117,7 +117,7 @@ def test_verify_claimed_when_spark_full_and_enrich_pending() -> None:
             base + timedelta(seconds=index),
         )
 
-    with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=False):
+    with patch("agent_crm.jobs.store.spark_queue_has_capacity", return_value=False):
         claimed = claim_jobs(max_claim=2)
     assert len(claimed) == 2
     assert all(job.kind == AgentJobKind.VERIFY_LEAD for job in claimed)
@@ -158,7 +158,7 @@ def test_claim_jobs_prioritizes_non_spark_before_spark() -> None:
             base + timedelta(seconds=index),
         )
 
-    with patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True):
+    with patch("agent_crm.jobs.store.spark_queue_has_capacity", return_value=True):
         claimed = claim_jobs(max_claim=5)
     assert len(claimed) == 5
     assert claimed[0].kind == AgentJobKind.VERIFY_LEAD
@@ -188,8 +188,8 @@ def test_spark_claim_stops_at_four_running() -> None:
         )
 
     with (
-        patch("agent_crm.job_store.spark_queue_has_capacity", return_value=True),
-        patch("agent_crm.job_store.count_running_jobs", return_value=4),
+        patch("agent_crm.jobs.store.spark_queue_has_capacity", return_value=True),
+        patch("agent_crm.jobs.store.count_running_jobs", return_value=4),
     ):
         claimed = claim_jobs(max_claim=5)
     assert claimed == []

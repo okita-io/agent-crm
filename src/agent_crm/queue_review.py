@@ -14,12 +14,12 @@ from dataclasses import dataclass, field
 
 from .agent_control import stop_if_disabled, wait_while_disabled
 from .config import get_settings
-from .engagement_query_store import EngagementQueryStore
+from agent_crm.engagement.query_store import EngagementQueryStore
 from .enums import AgentStatus, Brand, ImprovementSourceAgent
 from .heartbeat import record_heartbeat
-from .hunt_relevance import BRAND_ON_TOPIC_KEYWORDS, BRAND_TOPIC_SUMMARIES
-from .hunt_store import HuntStore
-from .hunt_utils import (
+from agent_crm.hunt.relevance import BRAND_ON_TOPIC_KEYWORDS, BRAND_TOPIC_SUMMARIES
+from agent_crm.hunt.store import HuntStore
+from agent_crm.hunt.utils import (
     ASTROLOGY_OUTLET_HOSTS,
     ROMANCE_OUTLET_HOSTS,
     normalize_query,
@@ -27,7 +27,7 @@ from .hunt_utils import (
 )
 from .llm_client import chat_completions
 from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
-from .research_query_store import ResearchQueryStore
+from agent_crm.research.query_store import ResearchQueryStore
 
 logger = logging.getLogger(__name__)
 
@@ -253,7 +253,7 @@ def run_queue_review(
                 allow_spark=allow_spark,
             )
         except Exception as exc:  # noqa: BLE001
-            from .orchestrator import note_worker_failure
+            from agent_crm.agency.orchestrator import note_worker_failure
 
             note_worker_failure(
                 source_agent=ImprovementSourceAgent.QUEUE_REVIEW,

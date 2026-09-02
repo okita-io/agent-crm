@@ -9,16 +9,16 @@ from fastapi.testclient import TestClient
 
 from agent_crm.api import app
 from agent_crm.config import get_settings
-from agent_crm.contact_store import upsert_contact_profile
+from agent_crm.contacts.store import upsert_contact_profile
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, ContactAudience, HuntQueryStatus
-from agent_crm.hunt_status import (
+from agent_crm.hunt.status import (
     STALE_RUNNING_MINUTES,
     build_hunt_status,
     infer_hunt_phase,
     is_fresh_running,
 )
-from agent_crm.hunt_store import HuntStore
+from agent_crm.hunt.store import HuntStore
 from agent_crm.models import HuntQuery
 from agent_crm.db import session_scope
 from sqlalchemy import select

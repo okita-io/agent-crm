@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from agent_crm.contact_extractor import (
+from agent_crm.contacts.extractor import (
     decode_obfuscated_email_deterministic,
     extract_contacts,
     is_skipped_email,
 )
-from agent_crm.contact_quality import is_filename_as_email, prepare_contact_for_ingest
-from agent_crm.contact_store import process_scraped_page_contacts, upsert_contact_profile
+from agent_crm.contacts.quality import is_filename_as_email, prepare_contact_for_ingest
+from agent_crm.contacts.store import process_scraped_page_contacts, upsert_contact_profile
 from agent_crm.db import init_db, reset_engine, session_scope
 from agent_crm.enums import Brand
 from agent_crm.models import ContactProfile, Lead

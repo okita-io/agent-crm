@@ -7,23 +7,23 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import select
 
-from agent_crm.contact_quality import (
+from agent_crm.contacts.quality import (
     is_junk_person_name,
     is_obviously_junk_email,
     prepare_contact_for_ingest,
 )
-from agent_crm.contact_store import (
+from agent_crm.contacts.store import (
     process_scraped_page_contacts,
     upsert_contact_profile,
 )
 from agent_crm.db import init_db, reset_engine, session_scope
 from agent_crm.enums import AgentJobKind, Brand, ContactVerificationStatus, LeadStatus
-from agent_crm.idle_backlog import seed_idle_backlog_jobs
-from agent_crm.job_dispatcher import run_job_dispatcher
-from agent_crm.job_store import count_pending_jobs
+from agent_crm.jobs.idle_backlog import seed_idle_backlog_jobs
+from agent_crm.jobs.dispatcher import run_job_dispatcher
+from agent_crm.jobs.store import count_pending_jobs
 from agent_crm.models import ContactProfile, ContactVerification, Lead
-from agent_crm.orchestrator import run_orchestrator_cycle
-from agent_crm.verifier import check_email
+from agent_crm.agency.orchestrator import run_orchestrator_cycle
+from agent_crm.contacts.verifier import check_email
 
 pytestmark = pytest.mark.usefixtures("db_url")
 
@@ -113,8 +113,8 @@ def test_job_dispatcher_idle_seeds_and_drains_without_cli() -> None:
             raise StopIteration
 
     with (
-        patch("agent_crm.job_dispatcher.verify_lead", side_effect=_fake_verify),
-        patch("agent_crm.job_dispatcher.time.sleep", side_effect=_stop_after_work),
+        patch("agent_crm.jobs.dispatcher.verify_lead", side_effect=_fake_verify),
+        patch("agent_crm.jobs.dispatcher.time.sleep", side_effect=_stop_after_work),
     ):
         with pytest.raises(StopIteration):
             run_job_dispatcher(batch_size=5, poll_seconds=60)
@@ -194,7 +194,7 @@ def test_role_inbox_rejected_at_ingest() -> None:
 
 
 def test_orchestrator_idle_seed_runs_on_every_cycle() -> None:
-    with patch("agent_crm.orchestrator.seed_idle_backlog_jobs") as mock_seed:
+    with patch("agent_crm.agency.orchestrator.seed_idle_backlog_jobs") as mock_seed:
         mock_seed.return_value = {"verify": 0, "enrich": 0}
         run_orchestrator_cycle()
     mock_seed.assert_called_once()

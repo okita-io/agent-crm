@@ -1,0 +1,746 @@
+"""Bounded branching hunt loop: queue, param rotation, resource collection."""
+
+from __future__ import annotations
+
+import logging
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
+
+import httpx
+
+from agent_crm.agent_control import stop_if_disabled, wait_while_disabled
+from agent_crm.contacts.comment_people_store import process_scraped_page_comment_people
+from agent_crm.config import Settings, get_settings
+from agent_crm.contacts.store import ContactExtractionBudget, process_scraped_page_contacts
+from agent_crm.engagement.runner import (
+    extract_engagement_signals,
+    is_thread_url,
+    venue_url_from_thread,
+)
+from agent_crm.engagement.store import upsert_thread
+from agent_crm.enums import AgentStatus, Brand, ContactAudience, TopicalRelevanceVerdict
+from agent_crm.firecrawl_client import FirecrawlError, scrape
+from agent_crm.heartbeat import record_heartbeat
+from .feedback import (
+    HuntFeedbackBudget,
+    enqueue_community_terms,
+    enqueue_engagement_terms,
+    enqueue_handle_terms,
+    enqueue_person_terms,
+)
+from .relevance import assess_topical_relevance, is_obvious_off_topic_url
+from .seeds import audience_from_origin, loop_seed_entries, seed_query_entries
+from .store import HuntStore
+from .utils import (
+    ResourceClassification,
+    extract_heuristic_terms,
+    is_junk_title,
+)
+from agent_crm.jobs.store import enqueue_topical_relevance_job
+from agent_crm.llm_client import chat_completions
+from agent_crm.llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
+from agent_crm.searxng_client import SearchResult
+from agent_crm.topic_relevance_store import upsert_url_topic_relevance
+from agent_crm.treg.client import treg_base_url
+from agent_crm.treg.search import collect_search_results, treg_endpoint_from
+
+ACTOR = "outbound_hunter"
+WATCH_POLL_SECONDS = 60.0
+
+logger = logging.getLogger(__name__)
+
+CONSUMER_PARAM_PALETTES: list[dict | None] = [
+    None,
+    {"categories": "general", "pageno": 1},
+    {"categories": "social media"},
+]
+
+# tactic.studio may still want trade-press and XR/IT sources.
+PARAM_PALETTES: list[dict | None] = [
+    *CONSUMER_PARAM_PALETTES,
+    {"categories": "news", "time_range": "year"},
+    {"categories": "it"},
+]
+
+_CONSUMER_BRANDS = frozenset(
+    {Brand.MIDNIGHTSATIN, Brand.CELESTIAL_NEXUS, Brand.HEYBUDDY}
+)
+
+
+def param_palettes_for_brand(brand: Brand) -> list[dict | None]:
+    """SearXNG category rotation. Consumer brands skip IT/news aggregators."""
+    if brand in _CONSUMER_BRANDS:
+        return CONSUMER_PARAM_PALETTES
+    return PARAM_PALETTES
+
+
+@dataclass
+class HuntBudget:
+    max_queries: int = 0
+    max_minutes: int | None = 0
+    max_pages_per_query: int = 50
+
+    def __post_init__(self) -> None:
+        settings = get_settings()
+        self.max_pages_per_query = min(self.max_pages_per_query, settings.hunter_max_pages_per_run)
+
+
+@dataclass
+class HuntLoopResult:
+    run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
+    queries_run: int = 0
+    resources_found: int = 0
+    branch_terms_enqueued: int = 0
+    community_terms_enqueued: int = 0
+    person_terms_enqueued: int = 0
+    handle_terms_enqueued: int = 0
+    engagement_terms_enqueued: int = 0
+    stop_reason: str = "queue_empty"
+
+
+def _wall_clock_deadline(max_minutes: int | None) -> float | None:
+    """Return a monotonic deadline when max_minutes > 0; None means unlimited."""
+    if max_minutes is None or max_minutes <= 0:
+        return None
+    return time.monotonic() + max_minutes * 60
+
+
+def _query_budget_exhausted(queries_run: int, max_queries: int | None) -> bool:
+    """Return True when the query budget is exhausted; 0/None means unlimited."""
+    if max_queries is None or max_queries <= 0:
+        return False
+    return queries_run >= max_queries
+
+
+def _seed_hunt_queue(
+    store: HuntStore, brand: Brand, *, run_id: str | None = None
+) -> None:
+    """Insert missing seed-pack queries for one brand, or all brands when global."""
+    if brand == Brand.UNASSIGNED:
+        for seed_brand, seed_query, seed_origin in loop_seed_entries():
+            store.enqueue_query(
+                query=seed_query,
+                brand=seed_brand,
+                origin=seed_origin,
+                run_id=run_id,
+            )
+        return
+    for seed_query, seed_origin in seed_query_entries(brand):
+        store.enqueue_query(
+            query=seed_query,
+            brand=brand,
+            origin=seed_origin,
+            run_id=run_id,
+        )
+
+
+def run_hunt_loop(
+    *,
+    query: str | None = None,
+    brand: Brand = Brand.UNASSIGNED,
+    budget: HuntBudget | None = None,
+    resume: bool = True,
+    summarize_branches: bool = True,
+    searx_client: httpx.Client | None = None,
+    firecrawl_client: httpx.Client | None = None,
+) -> HuntLoopResult:
+    """Run a bounded branching loop that grows the resource collection."""
+    settings = get_settings()
+    budget = budget or HuntBudget(
+        max_queries=settings.hunter_max_queries_default,
+        max_minutes=settings.hunter_max_minutes_default,
+        max_pages_per_query=settings.hunter_max_pages_per_run,
+    )
+    store = HuntStore()
+    result = HuntLoopResult()
+    if stop_if_disabled(ACTOR):
+        result.stop_reason = "disabled"
+        return result
+    deadline = _wall_clock_deadline(budget.max_minutes)
+    # This process is the only hunt-loop worker; reclaim rows left RUNNING
+    # by a previous container restart instead of waiting 30 minutes.
+    store.reset_stale_running_queries(stale_minutes=0)
+
+    if query:
+        store.enqueue_query(query=query, brand=brand, origin="seed", run_id=result.run_id)
+
+    _seed_hunt_queue(store, brand, run_id=result.run_id)
+
+    pending_existing = store.count_pending(brand if brand != Brand.UNASSIGNED else None)
+    if not query and pending_existing == 0:
+        result.stop_reason = "no_seed"
+        record_heartbeat(ACTOR, status=AgentStatus.IDLE)
+        return result
+
+    use_run_id = None if resume else result.run_id
+    brand_filter = brand if brand != Brand.UNASSIGNED else None
+    palette_index = 0
+    feedback_budget = HuntFeedbackBudget.from_settings()
+
+    while not _query_budget_exhausted(result.queries_run, budget.max_queries) and (
+        deadline is None or time.monotonic() < deadline
+    ):
+        if stop_if_disabled(ACTOR):
+            result.stop_reason = "disabled"
+            break
+        contact_budget = ContactExtractionBudget.from_settings()
+        pending = store.claim_next_pending_query(run_id=use_run_id, brand=brand_filter)
+        if pending is None:
+            result.stop_reason = "queue_empty"
+            break
+
+        palettes = param_palettes_for_brand(pending.brand)
+        params = (
+            pending.params
+            if pending.params is not None
+            else palettes[palette_index % len(palettes)] or {}
+        )
+        palette_index += 1
+
+        query_progress = (
+            f"query {result.queries_run + 1}/{budget.max_queries}"
+            if budget.max_queries > 0
+            else f"query {result.queries_run + 1}"
+        )
+        treg_id = treg_endpoint_from(pending.origin, params if isinstance(params, dict) else None)
+        store.set_heartbeat(
+            AgentStatus.THINKING,
+            f"{query_progress}: {pending.query}",
+            resource=treg_base_url() if treg_id else settings.searxng_url,
+        )
+
+        try:
+            query_audience = audience_from_origin(pending.origin)
+            stats = _run_queued_query(
+                pending.query,
+                brand=pending.brand,
+                params=params,
+                max_pages=budget.max_pages_per_query,
+                origin=pending.origin,
+                run_id=pending.run_id or result.run_id,
+                store=store,
+                settings=settings,
+                summarize_branches=summarize_branches,
+                searx_client=searx_client,
+                firecrawl_client=firecrawl_client,
+                contact_budget=contact_budget,
+                feedback_budget=feedback_budget,
+                audience=query_audience,
+            )
+        except Exception as exc:  # noqa: BLE001
+            from agent_crm.enums import ImprovementSourceAgent
+            from agent_crm.agency.orchestrator import note_worker_failure
+
+            note_worker_failure(
+                source_agent=ImprovementSourceAgent.HUNT_LOOP,
+                error_text=str(exc),
+                context=f"hunt query {pending.id}",
+            )
+            store.mark_query_failed(pending.id, str(exc))
+            continue
+
+        result.queries_run += 1
+        result.resources_found += stats["resources_collected"]
+        result.branch_terms_enqueued += stats["branch_terms_enqueued"]
+        result.community_terms_enqueued += stats["community_terms_enqueued"]
+        result.person_terms_enqueued += stats["person_terms_enqueued"]
+        result.handle_terms_enqueued += stats["handle_terms_enqueued"]
+        result.engagement_terms_enqueued += stats["engagement_terms_enqueued"]
+        store.mark_query_completed(pending.id)
+
+        if deadline is not None and time.monotonic() >= deadline:
+            result.stop_reason = "max_minutes"
+            break
+        if _query_budget_exhausted(result.queries_run, budget.max_queries):
+            result.stop_reason = "max_queries"
+            break
+
+    if (
+        result.stop_reason == "queue_empty"
+        and budget.max_queries > 0
+        and _query_budget_exhausted(result.queries_run, budget.max_queries)
+    ):
+        result.stop_reason = "max_queries"
+
+    store.set_heartbeat(
+        AgentStatus.IDLE,
+        f"loop stopped ({result.stop_reason}): {result.queries_run} queries, "
+        f"{result.resources_found} resources",
+    )
+    return result
+
+
+def run_hunt_loop_watch(
+    *,
+    query: str | None = None,
+    brand: Brand = Brand.UNASSIGNED,
+    budget: HuntBudget | None = None,
+    resume: bool = True,
+    summarize_branches: bool = True,
+    searx_client: httpx.Client | None = None,
+    firecrawl_client: httpx.Client | None = None,
+) -> None:
+    """Drain the hunt queue forever, sleeping when the backlog is empty."""
+    store = HuntStore()
+    brand_filter = brand if brand != Brand.UNASSIGNED else None
+    while True:
+        wait_while_disabled(ACTOR)
+        result = run_hunt_loop(
+            query=query,
+            brand=brand,
+            budget=budget,
+            resume=resume,
+            summarize_branches=summarize_branches,
+            searx_client=searx_client,
+            firecrawl_client=firecrawl_client,
+        )
+        pending = store.count_pending(brand_filter)
+        if pending > 0:
+            time.sleep(1.0)
+            continue
+        record_heartbeat(
+            ACTOR,
+            status=AgentStatus.IDLE,
+            task=(
+                "hunt queue empty; waiting for new queries"
+                if result.stop_reason in {"queue_empty", "no_seed"}
+                else f"hunt idle after {result.stop_reason}"
+            ),
+        )
+        time.sleep(WATCH_POLL_SECONDS)
+
+
+def _run_queued_query(
+    query: str,
+    *,
+    brand: Brand,
+    params: dict[str, Any],
+    max_pages: int,
+    origin: str,
+    run_id: str | None,
+    store: HuntStore,
+    settings: Settings,
+    summarize_branches: bool,
+    searx_client: httpx.Client | None,
+    firecrawl_client: httpx.Client | None,
+    contact_budget: ContactExtractionBudget | None = None,
+    feedback_budget: HuntFeedbackBudget | None = None,
+    audience: ContactAudience | None = None,
+) -> dict[str, int]:
+    search_kwargs = dict(params) if isinstance(params, dict) else {}
+    results = collect_search_results(
+        query,
+        limit=settings.hunter_search_result_limit,
+        origin=origin,
+        params=search_kwargs,
+        searx_client=searx_client,
+    )
+    results = _filter_relevant_hunt_results(
+        results,
+        brand=brand,
+        query=query,
+    )
+    result_dicts = [
+        {"title": hit.title, "url": hit.url, "content": hit.snippet} for hit in results
+    ]
+
+    feedback_budget = feedback_budget or HuntFeedbackBudget.from_settings()
+    contact_budget = contact_budget or ContactExtractionBudget.from_settings()
+    resources, community_terms, person_terms, engagement_terms = _collect_from_results(
+        store,
+        query,
+        brand,
+        results,
+        run_id=run_id,
+        feedback_budget=feedback_budget,
+        audience=audience,
+    )
+
+    pages_scraped = 0
+    handle_terms = 0
+    if results and max_pages > 0:
+        store.set_heartbeat(
+            AgentStatus.WORKING,
+            f"scraping for: {query}",
+            resource=settings.firecrawl_url,
+        )
+        for hit in results:
+            if pages_scraped >= max_pages:
+                break
+            if not _is_scrapable_url(hit.url):
+                continue
+            try:
+                page = scrape(hit.url, client=firecrawl_client)
+            except FirecrawlError:
+                continue
+            title = page.title or hit.title
+            if is_junk_title(title):
+                continue
+            upsert = store.upsert_resource(
+                url=hit.url,
+                brand=brand,
+                title=title,
+                found_via_query=query,
+                snippet=(page.markdown or hit.snippet or "")[:500] or None,
+            )
+            if upsert.resource is not None:
+                pages_scraped += 1
+                if upsert.is_new and upsert.classification is not None:
+                    community_terms += enqueue_community_terms(
+                        store,
+                        classification=upsert.classification,
+                        title=title,
+                        brand=brand,
+                        run_id=run_id,
+                        budget=feedback_budget,
+                        audience=audience,
+                    )
+                    engagement_terms += enqueue_engagement_terms(
+                        store,
+                        classification=upsert.classification,
+                        url=hit.url,
+                        brand=brand,
+                        run_id=run_id,
+                        budget=feedback_budget,
+                        audience=audience,
+                    )
+                if upsert.classification is not None:
+                    _catalog_thread(
+                        url=hit.url,
+                        brand=brand,
+                        title=title,
+                        snippet=page.markdown or hit.snippet,
+                        classification=upsert.classification,
+                        hunt_resource_id=upsert.resource.id,
+                        found_via_query=query,
+                    )
+                try:
+                    profiles = process_scraped_page_contacts(
+                        markdown=page.markdown,
+                        source_url=hit.url,
+                        brand=brand,
+                        searx_client=searx_client,
+                        budget=contact_budget,
+                        audience=audience,
+                    )
+                    for profile in profiles:
+                        person_terms += enqueue_person_terms(
+                            store,
+                            name=profile.name or "",
+                            brand=brand,
+                            run_id=run_id,
+                            budget=feedback_budget,
+                            audience=audience,
+                        )
+                    comment_people = process_scraped_page_comment_people(
+                        markdown=page.markdown,
+                        html=getattr(page, "html", None),
+                        source_url=hit.url,
+                        brand=brand,
+                        budget=contact_budget,
+                        audience=audience,
+                    )
+                    for person in comment_people:
+                        handle_terms += enqueue_handle_terms(
+                            store,
+                            platform=person.platform,
+                            handle=person.handle,
+                            display_name=person.display_name,
+                            brand=brand,
+                            run_id=run_id,
+                            budget=feedback_budget,
+                            audience=audience,
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
+        resources += pages_scraped
+
+    branch_terms = _extract_branch_terms(
+        query,
+        result_dicts,
+        max_terms=settings.hunter_max_branch_terms,
+        summarize=summarize_branches,
+        brand=brand,
+        audience=audience,
+    )
+    enqueued = 0
+    for term in branch_terms:
+        if store.enqueue_query(
+            query=term,
+            brand=brand,
+            origin=f"branch:{origin}",
+            params=None,
+            run_id=run_id,
+        ):
+            enqueued += 1
+
+    return {
+        "resources_collected": resources,
+        "branch_terms_enqueued": enqueued,
+        "community_terms_enqueued": community_terms,
+        "person_terms_enqueued": person_terms,
+        "handle_terms_enqueued": handle_terms,
+        "engagement_terms_enqueued": engagement_terms,
+    }
+
+
+def _collect_from_results(
+    store: HuntStore,
+    query: str,
+    brand: Brand,
+    results: list[SearchResult],
+    *,
+    run_id: str | None = None,
+    feedback_budget: HuntFeedbackBudget | None = None,
+    audience: ContactAudience | None = None,
+) -> tuple[int, int, int, int]:
+    feedback_budget = feedback_budget or HuntFeedbackBudget.from_settings()
+    count = 0
+    community_terms = 0
+    person_terms = 0
+    engagement_terms = 0
+    for hit in results:
+        upsert = store.upsert_resource(
+            url=hit.url,
+            brand=brand,
+            title=hit.title,
+            found_via_query=query,
+            snippet=(hit.snippet or "")[:500] or None,
+        )
+        if upsert.resource is not None:
+            count += 1
+            if upsert.is_new and upsert.classification is not None:
+                community_terms += enqueue_community_terms(
+                    store,
+                    classification=upsert.classification,
+                    title=hit.title,
+                    brand=brand,
+                    run_id=run_id,
+                    budget=feedback_budget,
+                    audience=audience,
+                )
+                engagement_terms += enqueue_engagement_terms(
+                    store,
+                    classification=upsert.classification,
+                    url=hit.url,
+                    brand=brand,
+                    run_id=run_id,
+                    budget=feedback_budget,
+                    audience=audience,
+                )
+            if upsert.classification is not None:
+                _catalog_thread(
+                    url=hit.url,
+                    brand=brand,
+                    title=hit.title,
+                    snippet=hit.snippet,
+                    classification=upsert.classification,
+                    hunt_resource_id=upsert.resource.id,
+                    found_via_query=query,
+                )
+    return count, community_terms, person_terms, engagement_terms
+
+
+def _catalog_thread(
+    *,
+    url: str,
+    brand: Brand,
+    title: str | None,
+    snippet: str | None,
+    classification: ResourceClassification,
+    hunt_resource_id: int | None,
+    found_via_query: str,
+) -> None:
+    if not is_thread_url(url):
+        return
+    signals = extract_engagement_signals(
+        title, snippet, kind=classification.kind
+    )
+    upsert_thread(
+        url=url,
+        brand=brand,
+        title=title,
+        signals=signals,
+        hunt_resource_id=hunt_resource_id,
+        platform=classification.platform,
+        venue_url=venue_url_from_thread(url, classification),
+        excerpt=(snippet or "")[:800] or None,
+        found_via_query=found_via_query,
+    )
+
+
+def _extract_branch_terms(
+    query: str,
+    results: list[dict[str, Any]],
+    *,
+    max_terms: int,
+    summarize: bool,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+) -> list[str]:
+    heuristic = extract_heuristic_terms(results, max_terms=max_terms)
+    if not summarize:
+        return heuristic
+
+    llm_terms = _llm_branch_terms(
+        query,
+        results,
+        max_terms=max_terms,
+        brand=brand,
+        audience=audience,
+    )
+    merged: list[str] = []
+    seen: set[str] = set()
+    for term in heuristic + llm_terms:
+        key = HuntStore.normalize_term(term)
+        if key in seen or key == HuntStore.normalize_term(query):
+            continue
+        seen.add(key)
+        merged.append(term)
+        if len(merged) >= max_terms:
+            break
+    return merged
+
+
+def _llm_branch_terms(
+    query: str,
+    results: list[dict[str, Any]],
+    *,
+    max_terms: int,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+) -> list[str]:
+    lines = []
+    for idx, item in enumerate(results[:12], start=1):
+        lines.append(
+            wrap_untrusted(
+                f"hit_{idx}",
+                f"{item.get('title', '')} | {item.get('url', '')} | "
+                f"{(item.get('content') or '')[:200]}",
+                max_chars=280,
+            )
+        )
+    if brand == Brand.TACTIC_STUDIO and audience == ContactAudience.MARKETING:
+        prompt = (
+            "You help an outbound researcher find named marketing leaders at "
+            "large retail and food & beverage companies (more than $10 million "
+            "annual revenue).\n"
+            f"Original query: {wrap_untrusted('query', query, max_chars=300)}\n"
+            "Search results:\n"
+            + "\n".join(lines)
+            + "\n\n"
+            f"Suggest up to {max_terms} NEW search queries for VP of marketing, "
+            "brand managers, marketing managers, and brand-management leadership "
+            "directories, team pages, and press bios at those companies. "
+            "Prefer company about/leadership pages over XR communities. "
+            "Do NOT invent emails or person names.\n"
+            'Respond with JSON only: {"terms": ["query one", "query two"]}'
+        )
+    else:
+        prompt = (
+            "You help an outbound researcher find online communities, directories, "
+            "newsletters, forums, and listicles where potential users gather.\n"
+            f"Original query: {wrap_untrusted('query', query, max_chars=300)}\n"
+            "Search results:\n"
+            + "\n".join(lines)
+            + "\n\n"
+            f"Suggest up to {max_terms} NEW search queries to find more such resources. "
+            "Focus on communities, directories, newsletters, forums — not individual people. "
+            "Do NOT invent emails or person names.\n"
+            'Respond with JSON only: {"terms": ["query one", "query two"]}'
+        )
+    try:
+        response = chat_completions(
+            {
+                "model": "crm",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You output JSON only." + UNTRUSTED_DATA_SYSTEM_SUFFIX,
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.2,
+            },
+            timeout=120.0,
+            actor=ACTOR,
+            task=f"branch terms for {query[:40]}",
+        )
+        content = response["choices"][0]["message"]["content"]
+    except Exception:  # noqa: BLE001
+        return []
+
+    payload = extract_json_object(content)
+    if not payload:
+        return []
+    terms = payload.get("terms") or payload.get("queries") or []
+    cleaned: list[str] = []
+    for term in terms:
+        if isinstance(term, str) and term.strip():
+            cleaned.append(term.strip())
+        if len(cleaned) >= max_terms:
+            break
+    return cleaned
+
+
+def _filter_relevant_hunt_results(
+    results: list[SearchResult],
+    *,
+    brand: Brand,
+    query: str,
+) -> list[SearchResult]:
+    if brand == Brand.UNASSIGNED:
+        return results
+    kept: list[SearchResult] = []
+    for hit in results:
+        assessment = assess_topical_relevance(
+            brand=brand,
+            url=hit.url,
+            title=hit.title,
+            snippet=hit.snippet,
+            query=query,
+            allow_spark=is_obvious_off_topic_url(hit.url) is None,
+        )
+        if assessment.verdict == TopicalRelevanceVerdict.OFF_TOPIC:
+            upsert_url_topic_relevance(
+                url=hit.url,
+                brand=brand,
+                assessment=assessment,
+                source_kind="hunt_serp",
+            )
+            continue
+        if assessment.verdict == TopicalRelevanceVerdict.UNCERTAIN:
+            upsert_url_topic_relevance(
+                url=hit.url,
+                brand=brand,
+                assessment=assessment,
+                source_kind="hunt_serp",
+            )
+            # Defer scrape until a deeper topical job confirms on-topic.
+            enqueue_topical_relevance_job(
+                url=hit.url,
+                brand=brand,
+                source_kind="hunt_serp_uncertain",
+                query=query,
+            )
+            continue
+        if assessment.verdict == TopicalRelevanceVerdict.ON_TOPIC:
+            upsert_url_topic_relevance(
+                url=hit.url,
+                brand=brand,
+                assessment=assessment,
+                source_kind="hunt_serp",
+            )
+            kept.append(hit)
+    return kept
+
+
+def _is_scrapable_url(url: str) -> bool:
+    from .relevance import is_obvious_off_topic_url
+    from agent_crm.url_safety import is_public_http_url
+
+    if is_obvious_off_topic_url(url):
+        return False
+    return is_public_http_url(url, resolve_dns=False)

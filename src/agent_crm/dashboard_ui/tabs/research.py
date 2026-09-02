@@ -7,8 +7,8 @@ import pandas as pd
 import streamlit as st
 
 from agent_crm.enums import AgencyRequestStatus, AgentStatus, Brand, ContactAudience, ContactVerificationStatus, HuntResourceKind, LeadSource, ResearchFindingKind, SeoPlanKind, SeoReviewKind, Stage
-from agent_crm.research_query_store import ResearchQueryStore
-from agent_crm.research_store import list_findings
+from agent_crm.research.query_store import ResearchQueryStore
+from agent_crm.research.store import list_findings
 
 from agent_crm.dashboard_ui.common import (
     _clip,

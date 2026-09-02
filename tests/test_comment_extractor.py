@@ -6,22 +6,22 @@ from unittest.mock import patch
 
 import pytest
 
-from agent_crm.comment_extractor import extract_comment_people, is_valid_comment_handle
-from agent_crm.comment_people_store import (
+from agent_crm.contacts.comment_extractor import extract_comment_people, is_valid_comment_handle
+from agent_crm.contacts.comment_people_store import (
     count_comment_people,
     list_comment_people,
     process_scraped_page_comment_people,
     upsert_comment_person,
 )
-from agent_crm.contact_extractor import extract_contacts
+from agent_crm.contacts.extractor import extract_contacts
 from agent_crm.db import init_db, reset_engine, session_scope
 from agent_crm.enums import Brand, ContactAudience
-from agent_crm.hunt_feedback import (
+from agent_crm.hunt.feedback import (
     HuntFeedbackBudget,
     enqueue_handle_terms,
     handle_search_terms,
 )
-from agent_crm.hunt_store import HuntStore
+from agent_crm.hunt.store import HuntStore
 from agent_crm.models import CommentPerson
 from sqlalchemy import select
 
@@ -227,7 +227,7 @@ def test_list_comment_people_api(db_url) -> None:
 
 
 def test_spark_comment_extraction_uses_budget_when_few_handles() -> None:
-    from agent_crm.contact_store import ContactExtractionBudget
+    from agent_crm.contacts.store import ContactExtractionBudget
 
     markdown = "## Comments\n\nSome thread with obfuscated author mentions."
     budget = ContactExtractionBudget(

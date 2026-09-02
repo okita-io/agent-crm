@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from agent_crm.aeo_geo import (
+from agent_crm.aeo_geo.runner import (
     detect_aeo_geo_issues,
     extract_extractability_signals,
     pick_one_aeo_geo_thing,
     score_aeo_geo_issues,
 )
-from agent_crm.aeo_geo_skill import aeo_geo_skill_root, review_writer_guidance, skill_file_exists
+from agent_crm.aeo_geo.skill import aeo_geo_skill_root, review_writer_guidance, skill_file_exists
 
 
 def test_aeo_geo_skill_files_exist() -> None:

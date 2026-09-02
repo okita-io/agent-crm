@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from .contact_quality import is_share_link_social_url
+from agent_crm.contacts.quality import is_share_link_social_url
 from .db import session_scope
 from .enums import ContactEmailKind
-from .hunt_relevance import is_obvious_off_topic_url
+from agent_crm.hunt.relevance import is_obvious_off_topic_url
 from .models import ContactProfile, HuntResource
 
 

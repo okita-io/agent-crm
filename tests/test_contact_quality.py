@@ -8,8 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_crm.api import app
-from agent_crm.contact_extractor import extract_contacts
-from agent_crm.contact_quality import (
+from agent_crm.contacts.extractor import extract_contacts
+from agent_crm.contacts.quality import (
     clean_contact_data,
     filter_socials,
     is_generic_support_email,
@@ -19,7 +19,7 @@ from agent_crm.contact_quality import (
     scrub_notes_value,
     scrub_tracking_pixel_urls,
 )
-from agent_crm.contact_store import backfill_contact_quality, upsert_contact_profile
+from agent_crm.contacts.store import backfill_contact_quality, upsert_contact_profile
 from agent_crm.db import init_db, reset_engine, session_scope
 from agent_crm.enums import Brand, HuntResourceKind, LeadSource, LeadStatus
 from agent_crm.models import ContactProfile, HuntResource, Lead

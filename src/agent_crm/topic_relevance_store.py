@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from .db import session_scope
 from .enums import Brand, LeadStatus, TopicalRelevanceVerdict
-from .hunt_relevance import (
+from agent_crm.hunt.relevance import (
     RelevanceAssessment,
     assess_topical_relevance,
     fetch_public_page_excerpt,
@@ -265,7 +265,7 @@ def count_urls_needing_topical_check() -> int:
 
 
 def seed_topical_relevance_jobs(*, limit: int = 50) -> int:
-    from .job_store import enqueue_topical_relevance_job
+    from agent_crm.jobs.store import enqueue_topical_relevance_job
 
     enqueued = 0
     for candidate in iter_stored_url_candidates(limit=limit * 3):

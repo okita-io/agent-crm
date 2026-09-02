@@ -7,12 +7,12 @@ from fastapi.testclient import TestClient
 
 from agent_crm.api import app
 from agent_crm.config import get_settings
-from agent_crm.contact_store import upsert_contact_profile
+from agent_crm.contacts.store import upsert_contact_profile
 from agent_crm.db import init_db, reset_engine, session_scope
 from agent_crm.enums import Brand, ContactAudience, HuntResourceKind, ResearchFindingKind
-from agent_crm.hunt_store import HuntStore
+from agent_crm.hunt.store import HuntStore
 from agent_crm.models import CommentPerson, ResearchFinding
-from agent_crm.research_utils import canonical_url, extract_domain
+from agent_crm.research.utils import canonical_url, extract_domain
 
 
 @pytest.fixture()

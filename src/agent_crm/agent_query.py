@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from sqlalchemy import func, or_, select
 
-from .comment_people_store import count_comment_people, list_comment_people
-from .contact_quality import EmailQualityFilter
-from .contact_store import count_contact_profiles, list_contact_profiles
+from agent_crm.contacts.comment_people_store import count_comment_people, list_comment_people
+from agent_crm.contacts.quality import EmailQualityFilter
+from agent_crm.contacts.store import count_contact_profiles, list_contact_profiles
 from .db import session_scope
 from .enums import (
     Brand,
@@ -29,7 +29,7 @@ from .models import (
     SeoPlan,
     SeoReview,
 )
-from .pipeline_leads import list_pipeline_leads
+from agent_crm.contacts.pipeline_leads import list_pipeline_leads
 from .schemas import (
     AgentCatalogOut,
     AgentPageOut,

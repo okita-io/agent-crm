@@ -10,8 +10,8 @@ import pytest
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, ContactAudience, HuntResourceKind, TopicalRelevanceVerdict
-from agent_crm.hunt_loop import HuntBudget, _llm_branch_terms, run_hunt_loop, run_hunt_loop_watch
-from agent_crm.hunt_store import HuntStore
+from agent_crm.hunt.loop import HuntBudget, _llm_branch_terms, run_hunt_loop, run_hunt_loop_watch
+from agent_crm.hunt.store import HuntStore
 from agent_crm.searxng_client import SearchResult
 
 
@@ -137,7 +137,7 @@ def test_queue_branching_and_dedupe(loop_db):
 def test_loop_stops_at_max_queries(loop_db, mock_pages):
     calls: list[dict] = []
     http = httpx.Client(transport=_searx_transport(mock_pages, calls))
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.hunt.loop.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [{"message": {"content": '{"terms": ["best booktok communities"]}'}}]
         }
@@ -154,7 +154,7 @@ def test_loop_stops_at_max_queries(loop_db, mock_pages):
 
 
 def test_loop_unlimited_max_queries_drains_queue(loop_db):
-    from agent_crm.hunt_seeds import seeds_for_brand
+    from agent_crm.hunt.seeds import seeds_for_brand
 
     store = HuntStore()
     for i in range(5):
@@ -180,8 +180,8 @@ def test_loop_unlimited_max_minutes_does_not_stop_for_time(loop_db, mock_pages):
     http = httpx.Client(transport=_searx_transport(mock_pages, calls))
     times = iter([0.0, 0.0, 61.0, 61.0, 61.0])
 
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm, patch(
-        "agent_crm.hunt_loop.time.monotonic", side_effect=lambda: next(times)
+    with patch("agent_crm.hunt.loop.chat_completions") as mock_llm, patch(
+        "agent_crm.hunt.loop.time.monotonic", side_effect=lambda: next(times)
     ):
         mock_llm.return_value = {
             "choices": [{"message": {"content": '{"terms": ["best booktok communities"]}'}}]
@@ -201,7 +201,7 @@ def test_loop_unlimited_max_minutes_does_not_stop_for_time(loop_db, mock_pages):
 def test_param_variation_hits_searxng(loop_db, mock_pages):
     calls: list[dict] = []
     http = httpx.Client(transport=_searx_transport(mock_pages, calls))
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.hunt.loop.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [{"message": {"content": '{"terms": ["best booktok communities"]}'}}]
         }
@@ -261,8 +261,8 @@ def test_loop_scrapes_beyond_legacy_eight_page_cap(loop_db):
     on_topic = MagicMock()
     on_topic.verdict = TopicalRelevanceVerdict.ON_TOPIC
     on_topic.reason = "test"
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm, patch(
-        "agent_crm.hunt_loop.assess_topical_relevance",
+    with patch("agent_crm.hunt.loop.chat_completions") as mock_llm, patch(
+        "agent_crm.hunt.loop.assess_topical_relevance",
         return_value=on_topic,
     ):
         mock_llm.return_value = {"choices": [{"message": {"content": '{"terms": []}'}}]}
@@ -282,7 +282,7 @@ def test_loop_scrapes_beyond_legacy_eight_page_cap(loop_db):
 def test_completed_query_not_searched_again(loop_db, mock_pages):
     calls: list[dict] = []
     http = httpx.Client(transport=_searx_transport(mock_pages, calls))
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.hunt.loop.chat_completions") as mock_llm:
         mock_llm.return_value = {"choices": [{"message": {"content": '{"terms": []}'}}]}
         run_hunt_loop(
             query="seed query",
@@ -293,7 +293,7 @@ def test_completed_query_not_searched_again(loop_db, mock_pages):
             firecrawl_client=http,
         )
     count_before = len([c for c in calls if c.get("q") == "seed query"])
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.hunt.loop.chat_completions") as mock_llm:
         mock_llm.return_value = {"choices": [{"message": {"content": '{"terms": []}'}}]}
         run_hunt_loop(
             query="seed query",
@@ -350,7 +350,7 @@ def test_community_and_person_feedback_enqueue(loop_db, monkeypatch):
         return httpx.Response(404)
 
     http = httpx.Client(transport=httpx.MockTransport(transport))
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.hunt.loop.chat_completions") as mock_llm:
         mock_llm.return_value = {"choices": [{"message": {"content": '{"terms": []}'}}]}
         result = run_hunt_loop(
             query="romance reader communities",
@@ -403,7 +403,7 @@ def test_resume_with_pending_still_enqueues_missing_seed_pack(loop_db) -> None:
         origin="seed_pack",
     )
 
-    with patch("agent_crm.hunt_loop.collect_search_results", return_value=[]):
+    with patch("agent_crm.hunt.loop.collect_search_results", return_value=[]):
         run_hunt_loop(
             brand=Brand.MIDNIGHTSATIN,
             budget=HuntBudget(max_queries=0, max_minutes=0, max_pages_per_query=0),
@@ -485,7 +485,7 @@ def test_reset_stale_running_queries_zero_minutes_clears_all(loop_db) -> None:
 
 
 def test_tactic_marketing_branch_prompt_targets_retail_fnb_leaders() -> None:
-    with patch("agent_crm.hunt_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.hunt.loop.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [{"message": {"content": '{"terms": []}'}}]
         }
@@ -511,9 +511,9 @@ def test_tactic_marketing_branch_prompt_targets_retail_fnb_leaders() -> None:
 
 
 def test_unassigned_loop_seeds_all_brands_when_queue_empty(loop_db) -> None:
-    from agent_crm.hunt_seeds import HUNT_LOOP_BRANDS
+    from agent_crm.hunt.seeds import HUNT_LOOP_BRANDS
 
-    with patch("agent_crm.hunt_loop.collect_search_results", return_value=[]):
+    with patch("agent_crm.hunt.loop.collect_search_results", return_value=[]):
         result = run_hunt_loop(
             budget=HuntBudget(max_queries=1, max_minutes=0, max_pages_per_query=0),
             resume=True,
@@ -527,7 +527,7 @@ def test_unassigned_loop_seeds_all_brands_when_queue_empty(loop_db) -> None:
 
 def test_unassigned_loop_no_seed_when_packs_already_completed(loop_db) -> None:
     from agent_crm.enums import HuntQueryStatus
-    from agent_crm.hunt_seeds import loop_seed_entries
+    from agent_crm.hunt.seeds import loop_seed_entries
 
     store = HuntStore()
     for brand, query, origin in loop_seed_entries():
@@ -552,8 +552,8 @@ def test_unassigned_loop_no_seed_when_packs_already_completed(loop_db) -> None:
 
 
 def test_hunt_loop_watch_idles_on_empty_queue(loop_db, monkeypatch) -> None:
-    from agent_crm import hunt_loop as hunt_loop_mod
-    from agent_crm.hunt_loop import HuntLoopResult
+    from agent_crm.hunt import loop as hunt_loop_mod
+    from agent_crm.hunt.loop import HuntLoopResult
 
     runs = {"n": 0}
 
@@ -575,8 +575,8 @@ def test_hunt_loop_watch_idles_on_empty_queue(loop_db, monkeypatch) -> None:
 
 
 def test_hunt_loop_watch_continues_when_backlog_remains(loop_db, monkeypatch) -> None:
-    from agent_crm import hunt_loop as hunt_loop_mod
-    from agent_crm.hunt_loop import HuntLoopResult
+    from agent_crm.hunt import loop as hunt_loop_mod
+    from agent_crm.hunt.loop import HuntLoopResult
 
     store = HuntStore()
     store.enqueue_query(

@@ -8,12 +8,12 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from agent_crm.aeo_geo_loop import AeoGeoLoopResult, run_aeo_geo_loop
+from agent_crm.aeo_geo.loop import AeoGeoLoopResult, run_aeo_geo_loop
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, SeoPlanKind, SeoReviewKind, SeoTargetRole
-from agent_crm.seo_loop import SeoBudget
-from agent_crm.seo_store import list_plans, list_reviews, list_targets
+from agent_crm.seo.loop import SeoBudget
+from agent_crm.seo.store import list_plans, list_reviews, list_targets
 
 
 @pytest.fixture()
@@ -67,7 +67,7 @@ def _handler(request: httpx.Request) -> httpx.Response:
 
 def test_aeo_geo_loop_writes_owned_geo_review_and_plan(aeo_geo_db) -> None:
     http = httpx.Client(transport=httpx.MockTransport(_handler))
-    with patch("agent_crm.aeo_geo_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.aeo_geo.loop.chat_completions") as mock_llm:
         result = run_aeo_geo_loop(
             brand=Brand.MIDNIGHTSATIN,
             budget=SeoBudget(max_targets=1, max_pages_per_target=2, max_minutes=5),

@@ -6,8 +6,8 @@ import pytest
 
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, ContactAudience
-from agent_crm.hunt_priority import hunt_query_priority
-from agent_crm.hunt_store import HuntStore
+from agent_crm.hunt.priority import hunt_query_priority
+from agent_crm.hunt.store import HuntStore
 
 
 @pytest.fixture()

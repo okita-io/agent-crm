@@ -6,17 +6,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_crm.api import app
-from agent_crm.contact_extractor import extract_contacts, is_skipped_email, normalize_email
-from agent_crm.contact_quality import (
+from agent_crm.contacts.extractor import extract_contacts, is_skipped_email, normalize_email
+from agent_crm.contacts.quality import (
     is_dummy_documentation_email,
     is_person_email,
     is_placeholder_email,
 )
-from agent_crm.contact_store import backfill_contact_quality, upsert_contact_profile
+from agent_crm.contacts.store import backfill_contact_quality, upsert_contact_profile
 from agent_crm.db import init_db, reset_engine, session_scope
 from agent_crm.enums import Brand, ContactEmailKind, ContactVerificationStatus, LeadSource, LeadStatus
 from agent_crm.models import ContactProfile, Lead
-from agent_crm.verifier import check_email
+from agent_crm.contacts.verifier import check_email
 from sqlalchemy import select
 
 

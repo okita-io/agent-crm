@@ -7,17 +7,17 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import select
 
-from agent_crm.comment_extractor import extract_comment_people
-from agent_crm.contact_qualification import (
+from agent_crm.contacts.comment_extractor import extract_comment_people
+from agent_crm.contacts.qualification import (
     infer_audience_from_ingest,
     is_weakly_qualified,
     seed_qualify_jobs_for_unqualified,
 )
-from agent_crm.contact_store import process_scraped_page_contacts, upsert_contact_profile
+from agent_crm.contacts.store import process_scraped_page_contacts, upsert_contact_profile
 from agent_crm.db import session_scope
 from agent_crm.enums import AgentJobKind, Brand, ContactAudience
-from agent_crm.idle_backlog import seed_idle_backlog_jobs
-from agent_crm.job_store import count_pending_jobs
+from agent_crm.jobs.idle_backlog import seed_idle_backlog_jobs
+from agent_crm.jobs.store import count_pending_jobs
 from agent_crm.models import AgentJob, Lead
 
 pytestmark = pytest.mark.usefixtures("db_url")
@@ -111,16 +111,16 @@ def test_idle_backlog_seeds_qualify_jobs() -> None:
         for row in session.scalars(select(AgentJob)):
             session.delete(row)
 
-    with patch("agent_crm.idle_backlog.count_unverified_email_leads", return_value=0), patch(
-        "agent_crm.idle_backlog.count_unenriched_person_profiles", return_value=0
-    ), patch("agent_crm.idle_backlog.count_urls_needing_topical_check", return_value=0):
+    with patch("agent_crm.jobs.idle_backlog.count_unverified_email_leads", return_value=0), patch(
+        "agent_crm.jobs.idle_backlog.count_unenriched_person_profiles", return_value=0
+    ), patch("agent_crm.jobs.idle_backlog.count_urls_needing_topical_check", return_value=0):
         result = seed_idle_backlog_jobs(limit=5)
 
     assert result["qualify"] >= 1
 
 
 def test_spark_qualify_promo_media() -> None:
-    from agent_crm.contact_qualification import qualify_contact_profile
+    from agent_crm.contacts.qualification import qualify_contact_profile
 
     profile = upsert_contact_profile(
         email="jane.smith@brandstudio.com",
@@ -129,8 +129,8 @@ def test_spark_qualify_promo_media() -> None:
         source_url="https://brandstudio.com/press-kit",
         audience=ContactAudience.END_USER,
     )
-    with patch("agent_crm.contact_qualification.search", return_value=[]), patch(
-        "agent_crm.contact_qualification.chat_completions"
+    with patch("agent_crm.contacts.qualification.search", return_value=[]), patch(
+        "agent_crm.contacts.qualification.chat_completions"
     ) as mock_llm:
         mock_llm.return_value = {
             "choices": [
@@ -158,7 +158,7 @@ def test_spark_qualify_promo_media() -> None:
 
 
 def test_spark_discovered_email_rejects_role_and_placeholder() -> None:
-    from agent_crm.contact_qualification import (
+    from agent_crm.contacts.qualification import (
         QualificationResult,
         _persist_qualification_on_profile,
         _spark_qualification,
@@ -177,7 +177,7 @@ def test_spark_discovered_email_rejects_role_and_placeholder() -> None:
         lead.email = None
         session.flush()
 
-    with patch("agent_crm.contact_qualification.chat_completions") as mock_llm:
+    with patch("agent_crm.contacts.qualification.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [
                 {
@@ -200,7 +200,7 @@ def test_spark_discovered_email_rejects_role_and_placeholder() -> None:
     assert spark_result is not None
     assert spark_result.discovered_email is None
 
-    with patch("agent_crm.contact_qualification.chat_completions") as mock_llm:
+    with patch("agent_crm.contacts.qualification.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [
                 {

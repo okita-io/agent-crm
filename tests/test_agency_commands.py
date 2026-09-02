@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import httpx
 
-from agent_crm.agency_commands import execute_action, execute_actions
+from agent_crm.agency.commands import execute_action, execute_actions
 from agent_crm.agent_control import is_agent_enabled, set_agent_enabled
 from agent_crm.enums import Brand
-from agent_crm.hunt_store import HuntStore
+from agent_crm.hunt.store import HuntStore
 
 
 def test_execute_set_agent_enabled(db_url) -> None:
@@ -57,7 +57,7 @@ def test_execute_actions_batch(db_url) -> None:
 
 
 def test_try_rule_based_toggle_pause_research(db_url) -> None:
-    from agent_crm.agency_commands import try_rule_based_toggle
+    from agent_crm.agency.commands import try_rule_based_toggle
 
     result = try_rule_based_toggle("please pause research")
     assert result is not None
@@ -69,7 +69,7 @@ def test_try_rule_based_toggle_pause_research(db_url) -> None:
 
 
 def test_try_rule_based_toggle_hunter_alias(db_url) -> None:
-    from agent_crm.agency_commands import try_rule_based_toggle
+    from agent_crm.agency.commands import try_rule_based_toggle
 
     result = try_rule_based_toggle("turn on the hunter")
     assert result is not None
@@ -80,7 +80,7 @@ def test_try_rule_based_toggle_hunter_alias(db_url) -> None:
 
 
 def test_format_llm_error_upstream(db_url) -> None:
-    from agent_crm.agency_commands import format_llm_error
+    from agent_crm.agency.commands import format_llm_error
 
     request = httpx.Request("POST", "http://spark-queue:8088/v1/chat/completions")
     response = httpx.Response(503, request=request)
@@ -125,7 +125,7 @@ def test_execute_actions_enables_then_enqueues(db_url) -> None:
 
 
 def test_prompt_focuses_on_enabled_agents(db_url) -> None:
-    from agent_crm.agency_commands import _build_system_prompt, _operator_context
+    from agent_crm.agency.commands import _build_system_prompt, _operator_context
     from agent_crm.agent_control import WORK_AGENTS
 
     for name in WORK_AGENTS:

@@ -9,15 +9,15 @@ import pytest
 
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
-from agent_crm.engagement_loop import (
+from agent_crm.engagement.loop import (
     EngagementBudget,
     EngagementLoopResult,
     run_engagement_loop,
     run_engagement_loop_watch,
 )
-from agent_crm.engagement_store import list_drafts, list_threads
+from agent_crm.engagement.store import list_drafts, list_threads
 from agent_crm.enums import Brand, HuntResourceKind
-from agent_crm.hunt_store import HuntStore
+from agent_crm.hunt.store import HuntStore
 
 
 @pytest.fixture()
@@ -40,7 +40,7 @@ def test_engagement_loop_empty_queue(loop_db) -> None:
 
 
 def test_engagement_loop_watch_idles_on_empty_queue(loop_db, monkeypatch) -> None:
-    from agent_crm import engagement_loop as engagement_loop_mod
+    from agent_crm.engagement import loop as engagement_loop_mod
 
     runs = {"n": 0}
 
@@ -64,8 +64,8 @@ def test_engagement_loop_watch_idles_on_empty_queue(loop_db, monkeypatch) -> Non
 
 
 def test_engagement_loop_watch_continues_when_backlog_remains(loop_db, monkeypatch) -> None:
-    from agent_crm import engagement_loop as engagement_loop_mod
-    from agent_crm.engagement_query_store import EngagementQueryStore
+    from agent_crm.engagement import loop as engagement_loop_mod
+    from agent_crm.engagement.query_store import EngagementQueryStore
 
     store = EngagementQueryStore()
     store.enqueue_query(
@@ -143,7 +143,7 @@ def test_engagement_loop_catalogs_hot_thread_and_drafts(loop_db) -> None:
         return httpx.Response(404)
 
     http = httpx.Client(transport=httpx.MockTransport(handler))
-    with patch("agent_crm.engagement_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.engagement.loop.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [
                 {
@@ -185,7 +185,7 @@ def test_engagement_loop_catalogs_hot_thread_and_drafts(loop_db) -> None:
 
 
 def test_engagement_loop_enqueues_follow_ups_and_queue_only_grows(loop_db) -> None:
-    from agent_crm.engagement_query_store import EngagementQueryStore
+    from agent_crm.engagement.query_store import EngagementQueryStore
 
     store_hunt = HuntStore()
     store_hunt.upsert_resource(
@@ -232,7 +232,7 @@ def test_engagement_loop_enqueues_follow_ups_and_queue_only_grows(loop_db) -> No
     http = httpx.Client(transport=httpx.MockTransport(handler))
     queue = EngagementQueryStore()
     before = queue.count_all()
-    with patch("agent_crm.engagement_loop.chat_completions") as mock_llm:
+    with patch("agent_crm.engagement.loop.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [{"message": {"content": '{"should_skip": true}'}}]
         }

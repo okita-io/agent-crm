@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from agent_crm.enums import Brand, TopicalRelevanceVerdict
-from agent_crm.hunt_relevance import assess_topical_relevance, is_obvious_off_topic_url
+from agent_crm.hunt.relevance import assess_topical_relevance, is_obvious_off_topic_url
 
 
 @pytest.mark.parametrize(
@@ -113,7 +113,7 @@ def test_docker_and_aggregator_hosts_are_denied() -> None:
 
 
 def test_spark_used_for_ambiguous_page() -> None:
-    with patch("agent_crm.hunt_relevance.chat_completions") as mock_llm:
+    with patch("agent_crm.hunt.relevance.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [
                 {

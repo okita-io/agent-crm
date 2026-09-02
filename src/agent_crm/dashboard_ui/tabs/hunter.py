@@ -7,8 +7,8 @@ import pandas as pd
 import streamlit as st
 
 from agent_crm.enums import AgencyRequestStatus, AgentStatus, Brand, ContactAudience, ContactVerificationStatus, HuntResourceKind, LeadSource, ResearchFindingKind, SeoPlanKind, SeoReviewKind, Stage
-from agent_crm.hunt_feedback import parse_community_notes
-from agent_crm.hunt_store import HuntStore
+from agent_crm.hunt.feedback import parse_community_notes
+from agent_crm.hunt.store import HuntStore
 
 from agent_crm.dashboard_ui.common import (
     _export_filename,

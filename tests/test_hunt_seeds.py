@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agent_crm.enums import Brand
-from agent_crm.hunt_seeds import HUNT_LOOP_BRANDS, loop_seed_entries, seeds_for_brand
+from agent_crm.hunt.seeds import HUNT_LOOP_BRANDS, loop_seed_entries, seeds_for_brand
 
 
 def test_midnightsatin_seed_pack_includes_ai_generated_and_influencer_terms() -> None:

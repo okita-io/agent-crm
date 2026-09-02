@@ -9,7 +9,7 @@ import pytest
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, ResearchFindingKind
-from agent_crm.research_loop import (
+from agent_crm.research.loop import (
     ResearchLoopBudget,
     ResearchLoopResult,
     run_research_loop,
@@ -46,7 +46,7 @@ def test_research_loop_cycles_brands_on_ad_placement(tmp_path, monkeypatch) -> N
             errors=[],
         )
 
-    with patch("agent_crm.research_loop.run_research", side_effect=fake_run_research):
+    with patch("agent_crm.research.loop.run_research", side_effect=fake_run_research):
         result = run_research_loop(
             budget=ResearchLoopBudget(max_queries=4, max_pages=4, max_minutes=5),
             summarize=False,
@@ -69,11 +69,11 @@ def test_research_loop_cycles_brands_on_ad_placement(tmp_path, monkeypatch) -> N
 
 def test_research_loop_keeps_queue_after_drain(tmp_path, monkeypatch) -> None:
     _setup_db(tmp_path, monkeypatch, "research-loop-grow.db")
-    from agent_crm.research_query_store import ResearchQueryStore
-    from agent_crm.research_seeds import loop_seed_entries
+    from agent_crm.research.query_store import ResearchQueryStore
+    from agent_crm.research.seeds import loop_seed_entries
 
     def fake_run_research(request):
-        from agent_crm.research_query_store import ResearchQueryStore as Store
+        from agent_crm.research.query_store import ResearchQueryStore as Store
 
         Store().enqueue_query(
             query=f"follow-up from {request.query}",
@@ -92,7 +92,7 @@ def test_research_loop_keeps_queue_after_drain(tmp_path, monkeypatch) -> None:
         )
 
     seed_count = len(loop_seed_entries())
-    with patch("agent_crm.research_loop.run_research", side_effect=fake_run_research):
+    with patch("agent_crm.research.loop.run_research", side_effect=fake_run_research):
         result = run_research_loop(
             budget=ResearchLoopBudget(max_queries=4, max_pages=4, max_minutes=5),
             summarize=False,
@@ -109,7 +109,7 @@ def test_research_loop_keeps_queue_after_drain(tmp_path, monkeypatch) -> None:
 def test_research_loop_stops_on_query_budget(tmp_path, monkeypatch) -> None:
     _setup_db(tmp_path, monkeypatch, "research-loop-budget.db")
 
-    with patch("agent_crm.research_loop.run_research") as mock_run:
+    with patch("agent_crm.research.loop.run_research") as mock_run:
         mock_run.return_value = ResearchResult(
             brand=Brand.CELESTIAL_NEXUS,
             kind=ResearchFindingKind.AD_PLACEMENT,
@@ -131,7 +131,7 @@ def test_research_loop_stops_on_query_budget(tmp_path, monkeypatch) -> None:
 
 
 def test_research_loop_watch_idles_on_empty_queue(tmp_path, monkeypatch) -> None:
-    from agent_crm import research_loop as research_loop_mod
+    from agent_crm.research import loop as research_loop_mod
 
     _setup_db(tmp_path, monkeypatch, "research-loop-watch.db")
     runs = {"n": 0}
@@ -157,9 +157,9 @@ def test_research_loop_watch_idles_on_empty_queue(tmp_path, monkeypatch) -> None
 
 
 def test_research_loop_watch_continues_when_backlog_remains(tmp_path, monkeypatch) -> None:
-    from agent_crm import research_loop as research_loop_mod
+    from agent_crm.research import loop as research_loop_mod
     from agent_crm.enums import ResearchFindingKind
-    from agent_crm.research_query_store import ResearchQueryStore
+    from agent_crm.research.query_store import ResearchQueryStore
 
     _setup_db(tmp_path, monkeypatch, "research-loop-watch-backlog.db")
     store = ResearchQueryStore()

@@ -21,7 +21,7 @@ from agent_crm.enums import (
 from agent_crm.models import Lead
 from agent_crm.schemas import LeadCreate
 from agent_crm.tooling import CRMToolkit
-from agent_crm.verifier import (
+from agent_crm.contacts.verifier import (
     check_email,
     check_url,
     extract_contacts,
@@ -261,9 +261,9 @@ def test_verify_lead_persists_and_notes(db_url) -> None:
         )
     )
 
-    with patch("agent_crm.verifier._default_dns_resolver", return_value=_valid_mx_resolver()):
-        with patch("agent_crm.verifier.check_url") as mock_url:
-            from agent_crm.verifier import UrlCheckResult
+    with patch("agent_crm.contacts.verifier._default_dns_resolver", return_value=_valid_mx_resolver()):
+        with patch("agent_crm.contacts.verifier.check_url") as mock_url:
+            from agent_crm.contacts.verifier import UrlCheckResult
 
             mock_url.return_value = UrlCheckResult(
                 status=ContactVerificationStatus.VALID,
@@ -301,7 +301,7 @@ def test_verify_batch_unverified(db_url) -> None:
     )
     crm.create_lead(LeadCreate(email="other@form.example", source=LeadSource.FORM))
 
-    with patch("agent_crm.verifier.verify_lead") as mock_verify:
+    with patch("agent_crm.contacts.verifier.verify_lead") as mock_verify:
         from agent_crm.schemas import ContactVerificationOut
         from datetime import UTC, datetime
 
@@ -406,7 +406,7 @@ def test_get_verifications_api(tmp_path, monkeypatch) -> None:
         LeadCreate(email="jane@acme.com", source=LeadSource.HUNTER)
     )
 
-    with patch("agent_crm.verifier._default_dns_resolver", return_value=_valid_mx_resolver()):
+    with patch("agent_crm.contacts.verifier._default_dns_resolver", return_value=_valid_mx_resolver()):
         verify_lead(lead.id, resolver=_valid_mx_resolver())
 
     client = TestClient(app)

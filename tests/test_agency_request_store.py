@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_crm.agency_request_store import (
+from agent_crm.agency.request_store import (
     claim_next_pending_agency_request,
     create_agency_request,
     list_agency_requests,

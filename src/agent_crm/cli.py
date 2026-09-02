@@ -103,7 +103,7 @@ def _cmd_report(_args: argparse.Namespace) -> int:
 def _cmd_hunt(args: argparse.Namespace) -> int:
     from .db import init_db
     from .enums import Brand
-    from .outbound_hunter import run_hunt
+    from agent_crm.hunt.outbound import run_hunt
     from .schemas import HuntRequest
 
     init_db()
@@ -125,8 +125,8 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
     from .agent_control import wait_while_disabled
     from .db import init_db
     from .enums import Brand
-    from .hunt_loop import ACTOR as HUNT_ACTOR
-    from .hunt_loop import HuntBudget, run_hunt_loop, run_hunt_loop_watch
+    from agent_crm.hunt.loop import ACTOR as HUNT_ACTOR
+    from agent_crm.hunt.loop import HuntBudget, run_hunt_loop, run_hunt_loop_watch
 
     init_db()
     wait_while_disabled(HUNT_ACTOR)
@@ -173,7 +173,7 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
 def _cmd_research(args: argparse.Namespace) -> int:
     from .db import init_db
     from .enums import Brand, ResearchFindingKind
-    from .research import run_research
+    from agent_crm.research.runner import run_research
     from .schemas import ResearchRequest
 
     init_db()
@@ -198,8 +198,8 @@ def _cmd_research(args: argparse.Namespace) -> int:
 def _cmd_research_loop(args: argparse.Namespace) -> int:
     from .agent_control import wait_while_disabled
     from .db import init_db
-    from .research_loop import ACTOR as RESEARCH_ACTOR
-    from .research_loop import ResearchLoopBudget, run_research_loop, run_research_loop_watch
+    from agent_crm.research.loop import ACTOR as RESEARCH_ACTOR
+    from agent_crm.research.loop import ResearchLoopBudget, run_research_loop, run_research_loop_watch
 
     init_db()
     wait_while_disabled(RESEARCH_ACTOR)
@@ -240,8 +240,8 @@ def _cmd_research_loop(args: argparse.Namespace) -> int:
 def _cmd_engagement_loop(args: argparse.Namespace) -> int:
     from .agent_control import wait_while_disabled
     from .db import init_db
-    from .engagement_loop import ACTOR as ENGAGEMENT_ACTOR
-    from .engagement_loop import (
+    from agent_crm.engagement.loop import ACTOR as ENGAGEMENT_ACTOR
+    from agent_crm.engagement.loop import (
         EngagementBudget,
         run_engagement_loop,
         run_engagement_loop_watch,
@@ -286,12 +286,12 @@ def _cmd_engagement_loop(args: argparse.Namespace) -> int:
 
 
 def _cmd_aeo_geo_loop(args: argparse.Namespace) -> int:
-    from .aeo_geo_loop import ACTOR as AEO_GEO_ACTOR
-    from .aeo_geo_loop import run_aeo_geo_loop, run_aeo_geo_loop_watch
+    from agent_crm.aeo_geo.loop import ACTOR as AEO_GEO_ACTOR
+    from agent_crm.aeo_geo.loop import run_aeo_geo_loop, run_aeo_geo_loop_watch
     from .agent_control import wait_while_disabled
     from .db import init_db
     from .enums import Brand
-    from .seo_loop import SeoBudget
+    from agent_crm.seo.loop import SeoBudget
 
     init_db()
     wait_while_disabled(AEO_GEO_ACTOR)
@@ -333,8 +333,8 @@ def _cmd_seo_loop(args: argparse.Namespace) -> int:
     from .agent_control import wait_while_disabled
     from .db import init_db
     from .enums import Brand
-    from .seo_loop import ACTOR as SEO_ACTOR
-    from .seo_loop import SeoBudget, run_seo_loop, run_seo_loop_watch
+    from agent_crm.seo.loop import ACTOR as SEO_ACTOR
+    from agent_crm.seo.loop import SeoBudget, run_seo_loop, run_seo_loop_watch
 
     init_db()
     wait_while_disabled(SEO_ACTOR)
@@ -373,7 +373,7 @@ def _cmd_seo_loop(args: argparse.Namespace) -> int:
 
 
 def _cmd_contacts(args: argparse.Namespace) -> int:
-    from .contact_store import (
+    from agent_crm.contacts.store import (
         backfill_contact_enrichment,
         backfill_contact_quality,
         list_contact_profiles,
@@ -403,7 +403,7 @@ def _cmd_contacts(args: argparse.Namespace) -> int:
 
 def _cmd_jobs(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .job_dispatcher import run_job_dispatcher
+    from agent_crm.jobs.dispatcher import run_job_dispatcher
 
     init_db()
     run_job_dispatcher(
@@ -415,7 +415,7 @@ def _cmd_jobs(args: argparse.Namespace) -> int:
 
 def _cmd_orchestrate(args: argparse.Namespace) -> int:
     from .db import init_db
-    from .orchestrator import run_orchestrator
+    from agent_crm.agency.orchestrator import run_orchestrator
 
     init_db()
     run_orchestrator(poll_seconds=args.poll_seconds)
@@ -423,9 +423,9 @@ def _cmd_orchestrate(args: argparse.Namespace) -> int:
 
 
 def _cmd_treg(args: argparse.Namespace) -> int:
-    from .treg_client import TregClient, TregError, treg_configured
-    from .treg_queue import allow_treg_tools, enqueue_free_treg_tools
-    from .treg_store import list_treg_tools, sync_treg_catalog, treg_counts
+    from agent_crm.treg.client import TregClient, TregError, treg_configured
+    from agent_crm.treg.queue import allow_treg_tools, enqueue_free_treg_tools
+    from agent_crm.treg.store import list_treg_tools, sync_treg_catalog, treg_counts
 
     action = args.treg_command
     if action == "status":
@@ -555,7 +555,7 @@ def _cmd_purge_noise(args: argparse.Namespace) -> int:
 def _cmd_verify(args: argparse.Namespace) -> int:
     from .db import init_db
     from .schemas import VerifyRawRequest
-    from .verifier import verify_batch_unverified, verify_lead, verify_raw
+    from agent_crm.contacts.verifier import verify_batch_unverified, verify_lead, verify_raw
 
     init_db()
 

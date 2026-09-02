@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from agent_crm.enums import AgencyRequestStatus, AgentStatus, Brand, ContactAudience, ContactVerificationStatus, HuntResourceKind, LeadSource, ResearchFindingKind, SeoPlanKind, SeoReviewKind, Stage
-from agent_crm.seo_store import count_plans, count_reviews, count_targets, list_plans, list_reviews, list_targets
+from agent_crm.seo.store import count_plans, count_reviews, count_targets, list_plans, list_reviews, list_targets
 
 from agent_crm.dashboard_ui.common import (
     _export_filename,

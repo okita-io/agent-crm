@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-from agent_crm.hunt_status import STALE_RUNNING_MINUTES, build_hunt_status, infer_hunt_phase
+from agent_crm.hunt.status import STALE_RUNNING_MINUTES, build_hunt_status, infer_hunt_phase
 from agent_crm.runtime_settings_store import get_runtime_setting
 from agent_crm.token_usage_store import load_token_usage_snapshot
 
