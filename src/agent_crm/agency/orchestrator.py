@@ -15,6 +15,7 @@ from agent_crm.agent_control import (
     is_focused_roster,
     wait_while_disabled,
 )
+from agent_crm.agents.registry import STANDING_WORKERS
 from agent_crm.config import get_settings
 from agent_crm.contacts.quality import is_placeholder_email, is_role_inbox_email
 from agent_crm.db import session_scope
@@ -37,14 +38,6 @@ from agent_crm.presence import fetch_spark_queue_health, spark_slot_summary
 logger = logging.getLogger(__name__)
 
 ACTOR = "orchestrator"
-
-STANDING_WORKERS: tuple[str, ...] = (
-    "job-dispatcher",
-    "outbound_hunter",
-    "research",
-    "queue-review",
-    "orchestrator",
-)
 
 STALE_HEARTBEAT_MINUTES = 10
 

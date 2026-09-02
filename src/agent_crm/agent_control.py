@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 
+from .agents.registry import ENQUEUE_ACTION_AGENTS, WORK_AGENTS
 from .db import session_scope
 from .models import AgentToggle
 
@@ -16,27 +17,7 @@ logger = logging.getLogger(__name__)
 PAUSED_TASK = "paused"
 _POLL_SECONDS = 5.0
 
-# Standing workers that receive assigned work (excludes the orchestrator itself).
-WORK_AGENTS: tuple[str, ...] = (
-    "outbound_hunter",
-    "research",
-    "engagement",
-    "seo",
-    "aeo-geo",
-    "queue-review",
-    "job-dispatcher",
-)
-
 DISPATCHER_AGENT = "job-dispatcher"
-
-# Agency command enqueue types → the standing agent that drains them.
-ENQUEUE_ACTION_AGENTS: dict[str, str] = {
-    "enqueue_hunt": "outbound_hunter",
-    "enqueue_research": "research",
-    "enqueue_engagement": "engagement",
-    "enqueue_seo": "seo",
-    "enqueue_aeo_geo": "aeo-geo",
-}
 
 
 def is_agent_enabled(agent_name: str) -> bool:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent_crm.agents.registry import compose_services
+
 COMPOSE_PATH = Path(__file__).resolve().parents[1] / "docker-compose.yml"
 
 
@@ -17,6 +19,8 @@ def test_compose_declares_standing_workers() -> None:
     assert "aeo-geo-loop" in content
     assert "queue-review" in content
     assert 'command: ["agent-crm", "orchestrate"]' in content
+    for service in compose_services():
+        assert f"  {service}:" in content, f"registry compose_service missing: {service}"
 
 
 def test_compose_research_loop_is_bounded() -> None:
@@ -46,16 +50,7 @@ def test_compose_hunt_loop_stays_unbounded() -> None:
     assert "TREG_API_TOKEN: ${TREG_API_TOKEN:-}" in block
 
     content = COMPOSE_PATH.read_text(encoding="utf-8")
-    for service in (
-        "contact-worker",
-        "hunt-loop",
-        "research-loop",
-        "engagement-loop",
-        "seo-loop",
-        "aeo-geo-loop",
-        "queue-review",
-        "orchestrator",
-    ):
+    for service in compose_services():
         marker = f"  {service}:"
         start = content.index(marker)
         end = content.index("\n\n", start)
@@ -142,19 +137,32 @@ def test_compose_binds_sensitive_ports_to_localhost() -> None:
 def test_workers_wait_for_api_migrations() -> None:
     """Standing workers must start after api so Alembic finishes before init_db."""
     content = COMPOSE_PATH.read_text(encoding="utf-8")
-    for service in (
-        "contact-worker",
-        "hunt-loop",
-        "research-loop",
-        "engagement-loop",
-        "seo-loop",
-        "aeo-geo-loop",
-        "queue-review",
-        "orchestrator",
-    ):
+    for service in compose_services():
         start = content.index(f"  {service}:")
         end = content.index("\n\n", start)
         block = content[start:end]
         depends_start = block.index("depends_on:")
         depends_block = block[depends_start:]
         assert "api:" in depends_block, f"{service} should depend on api migrations"
+
+
+def test_compose_spark_depends_match_registry() -> None:
+    from agent_crm.agents.registry import AGENT_SPECS
+
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    for spec in AGENT_SPECS:
+        if spec.compose_service is None:
+            continue
+        start = content.index(f"  {spec.compose_service}:")
+        end = content.index("\n\n", start)
+        block = content[start:end]
+        depends_block = block[block.index("depends_on:") :]
+        if spec.spark_required:
+            assert "spark-queue:" in depends_block, (
+                f"{spec.compose_service} is spark_required but does not depend on spark-queue"
+            )
+        else:
+            assert "spark-queue:" not in depends_block, (
+                f"{spec.compose_service} should not depend on spark-queue"
+            )
+

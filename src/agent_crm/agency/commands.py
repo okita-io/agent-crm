@@ -24,6 +24,7 @@ from agent_crm.agent_control import (
     list_agent_enabled,
     set_agent_enabled,
 )
+from agent_crm.agents.registry import KNOWN_AGENT_ROSTER, toggleable_agents
 from agent_crm.config import get_settings
 from agent_crm.engagement.query_store import EngagementQueryStore
 from agent_crm.enums import AgentStatus, Brand, ResearchFindingKind, SeoQueryKind
@@ -32,7 +33,6 @@ from agent_crm.hunt.store import HuntStore
 from agent_crm.llm_client import chat_completions
 from agent_crm.llm_text import extract_json_object
 from agent_crm.models import AgencyRequest
-from agent_crm.presence import KNOWN_AGENT_ROSTER
 from agent_crm.research.query_store import ResearchQueryStore
 from agent_crm.seo.query_store import SeoQueryStore
 
@@ -41,27 +41,9 @@ logger = logging.getLogger(__name__)
 ACTOR = "orchestrator"
 ORIGIN = "explicit"
 
-TOGGLEABLE_AGENTS: tuple[str, ...] = (
-    "outbound_hunter",
-    "research",
-    "engagement",
-    "seo",
-    "aeo-geo",
-    "queue-review",
-    "job-dispatcher",
-    "orchestrator",
-)
+TOGGLEABLE_AGENTS: tuple[str, ...] = toggleable_agents()
 
-_ACTION_TYPES = frozenset(
-    {
-        "set_agent_enabled",
-        "enqueue_hunt",
-        "enqueue_research",
-        "enqueue_engagement",
-        "enqueue_seo",
-        "enqueue_aeo_geo",
-    }
-)
+_ACTION_TYPES = frozenset({"set_agent_enabled", *ENQUEUE_ACTION_AGENTS})
 
 _AGENT_ALIASES: dict[str, str] = {
     "outbound hunter": "outbound_hunter",

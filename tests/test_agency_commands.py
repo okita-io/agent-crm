@@ -133,8 +133,8 @@ def test_prompt_focuses_on_enabled_agents(db_url) -> None:
 
     ctx = _operator_context()
     assert ctx["focused"] is True
-    assert ctx["allowed_enqueue_actions"] == ["enqueue_hunt", "enqueue_research"]
+    assert ctx["allowed_enqueue_actions"] == ["enqueue_research", "enqueue_hunt"]
     prompt = _build_system_prompt(ctx)
     assert "Focused roster" in prompt
-    assert "enqueue_hunt, enqueue_research" in prompt
+    assert "enqueue_research, enqueue_hunt" in prompt
     assert "Do not enqueue work for paused agents" in prompt

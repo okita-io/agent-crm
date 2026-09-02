@@ -8,29 +8,10 @@ from typing import Any
 
 import httpx
 
+from .agents.registry import KNOWN_AGENT_ROSTER
 from .config import get_settings
 from .enums import AgentStatus
 from .token_usage_store import load_token_usage_snapshot, merge_usage_snapshots
-
-# Stable actor keys from the architecture brief.
-KNOWN_AGENT_ROSTER: dict[str, str] = {
-    "lead_intake": "Lead Intake",
-    "lead_scoring": "Lead Scoring",
-    "research": "Research",
-    "outbound_hunter": "Outbound Hunter",
-    "engagement": "Agent Engagement",
-    "seo": "SEO Documents",
-    "aeo-geo": "AEO / GEO Documents",
-    "queue-review": "Queue Review",
-    "outreach_writer": "Outreach Writer",
-    "nurture": "Nurture",
-    "crm_manager": "CRM Manager",
-    "analytics": "Analytics",
-    "brand_router": "Brand Router",
-    "lead_verifier": "Lead Verifier",
-    "job-dispatcher": "Job Dispatcher",
-    "orchestrator": "Orchestrator",
-}
 
 AGENT_IDENTITY_HEADER = "X-CRM-Agent"
 

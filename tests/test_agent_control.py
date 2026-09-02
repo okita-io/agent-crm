@@ -71,9 +71,9 @@ def test_focused_roster_when_one_or_two_agents_enabled(db_url) -> None:
     assert allowed_enqueue_actions() == ["enqueue_hunt"]
 
     _pause_except("outbound_hunter", "research")
-    assert enabled_work_agents() == ["outbound_hunter", "research"]
+    assert enabled_work_agents() == ["research", "outbound_hunter"]
     assert is_focused_roster() is True
-    assert allowed_enqueue_actions() == ["enqueue_hunt", "enqueue_research"]
+    assert allowed_enqueue_actions() == ["enqueue_research", "enqueue_hunt"]
 
 
 def test_dispatcher_work_allowed_follows_switch(db_url) -> None:
