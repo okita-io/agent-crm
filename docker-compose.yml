@@ -63,6 +63,7 @@ services:
       CRM_RESEARCH_MAX_PAGES_PER_RUN: "200"
       CRM_RESEARCH_MAX_MINUTES_DEFAULT: "60"
       CRM_RESEARCH_SEARCH_RESULT_LIMIT: "50"
+      TREG_API_TOKEN: ${TREG_API_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -86,6 +87,7 @@ services:
       CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}
       CRM_OBSERVER_LIVE_REFRESH_SECONDS: "5"
       CRM_OBSERVER_REFRESH_SECONDS: "600"
+      TREG_API_TOKEN: ${TREG_API_TOKEN:-}
     ports:
       - "127.0.0.1:8501:8501"
     depends_on:
@@ -105,6 +107,7 @@ services:
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_SEARXNG_URL: http://host.docker.internal:8080
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
+      TREG_API_TOKEN: ${TREG_API_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -116,7 +119,10 @@ services:
 
   hunt-loop:
     build: .
-    command: ["agent-crm", "hunt-loop"]
+    command:
+      - agent-crm
+      - hunt-loop
+      - --watch
     environment:
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
@@ -125,6 +131,7 @@ services:
       CRM_FIRECRAWL_URL: http://host.docker.internal:3002
       CRM_HUNTER_MAX_QUERIES_DEFAULT: "0"
       CRM_HUNTER_MAX_MINUTES_DEFAULT: "0"
+      TREG_API_TOKEN: ${TREG_API_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -157,6 +164,7 @@ services:
       CRM_RESEARCH_MAX_QUERIES_DEFAULT: "20"
       CRM_RESEARCH_MAX_PAGES_PER_RUN: "200"
       CRM_RESEARCH_MAX_MINUTES_DEFAULT: "60"
+      TREG_API_TOKEN: ${TREG_API_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -840,6 +841,37 @@ class SeoPlan(Base, TimestampMixin):
 
     target: Mapped[SeoTarget | None] = relationship(back_populates="plans")
     review: Mapped[SeoReview | None] = relationship(back_populates="plans")
+
+
+class TregTool(Base, TimestampMixin):
+    """A treg catalog endpoint the Agency can call for hunter/research follow-up."""
+
+    __tablename__ = "treg_tools"
+
+    endpoint_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    provider: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    capability: Mapped[str] = mapped_column(String(255), nullable=False, default="", index=True)
+    platform: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+    method: Mapped[str] = mapped_column(String(16), nullable=False, default="GET")
+    path: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="data")
+    queue_as: Mapped[str] = mapped_column(String(16), nullable=False, default="skip", index=True)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cost_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    cost_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_free: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    is_routed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    selectable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    allowed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    input_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    last_synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class Journey(Base, TimestampMixin):

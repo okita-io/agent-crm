@@ -10,7 +10,7 @@ import pytest
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, ContactAudience, HuntResourceKind, TopicalRelevanceVerdict
-from agent_crm.hunt_loop import HuntBudget, _llm_branch_terms, run_hunt_loop
+from agent_crm.hunt_loop import HuntBudget, _llm_branch_terms, run_hunt_loop, run_hunt_loop_watch
 from agent_crm.hunt_store import HuntStore
 from agent_crm.searxng_client import SearchResult
 
@@ -403,7 +403,7 @@ def test_resume_with_pending_still_enqueues_missing_seed_pack(loop_db) -> None:
         origin="seed_pack",
     )
 
-    with patch("agent_crm.hunt_loop.search"):
+    with patch("agent_crm.hunt_loop.collect_search_results", return_value=[]):
         run_hunt_loop(
             brand=Brand.MIDNIGHTSATIN,
             budget=HuntBudget(max_queries=0, max_minutes=0, max_pages_per_query=0),
@@ -508,4 +508,102 @@ def test_tactic_marketing_branch_prompt_targets_retail_fnb_leaders() -> None:
     assert "vp of marketing" in prompt
     assert "brand manager" in prompt
     assert "not individual people" not in prompt
+
+
+def test_unassigned_loop_seeds_all_brands_when_queue_empty(loop_db) -> None:
+    from agent_crm.hunt_seeds import HUNT_LOOP_BRANDS
+
+    with patch("agent_crm.hunt_loop.collect_search_results", return_value=[]):
+        result = run_hunt_loop(
+            budget=HuntBudget(max_queries=1, max_minutes=0, max_pages_per_query=0),
+            resume=True,
+        )
+    assert result.queries_run == 1
+    store = HuntStore()
+    brands = {row.brand for row in store.list_queries(limit=500)}
+    assert brands == set(HUNT_LOOP_BRANDS)
+    assert store.count_pending() > 0
+
+
+def test_unassigned_loop_no_seed_when_packs_already_completed(loop_db) -> None:
+    from agent_crm.enums import HuntQueryStatus
+    from agent_crm.hunt_seeds import loop_seed_entries
+
+    store = HuntStore()
+    for brand, query, origin in loop_seed_entries():
+        store.enqueue_query(query=query, brand=brand, origin=origin)
+    while True:
+        claimed = store.claim_next_pending_query()
+        if claimed is None:
+            break
+        store.mark_query_completed(claimed.id)
+    assert store.count_pending() == 0
+
+    result = run_hunt_loop(
+        budget=HuntBudget(max_queries=0, max_minutes=0, max_pages_per_query=0),
+        resume=True,
+    )
+    assert result.stop_reason == "no_seed"
+    assert result.queries_run == 0
+    assert store.count_pending() == 0
+    assert HuntQueryStatus.PENDING not in {
+        row.status for row in store.list_queries(limit=500)
+    }
+
+
+def test_hunt_loop_watch_idles_on_empty_queue(loop_db, monkeypatch) -> None:
+    from agent_crm import hunt_loop as hunt_loop_mod
+    from agent_crm.hunt_loop import HuntLoopResult
+
+    runs = {"n": 0}
+
+    def fake_run(**kwargs):
+        runs["n"] += 1
+        return HuntLoopResult(stop_reason="no_seed")
+
+    def boom(seconds):
+        raise KeyboardInterrupt(str(seconds))
+
+    monkeypatch.setattr(hunt_loop_mod, "run_hunt_loop", fake_run)
+    monkeypatch.setattr(hunt_loop_mod, "WATCH_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(hunt_loop_mod.time, "sleep", boom)
+    with pytest.raises(KeyboardInterrupt):
+        run_hunt_loop_watch(
+            budget=HuntBudget(max_queries=1, max_minutes=0, max_pages_per_query=0),
+        )
+    assert runs["n"] == 1
+
+
+def test_hunt_loop_watch_continues_when_backlog_remains(loop_db, monkeypatch) -> None:
+    from agent_crm import hunt_loop as hunt_loop_mod
+    from agent_crm.hunt_loop import HuntLoopResult
+
+    store = HuntStore()
+    store.enqueue_query(
+        query="romance booktok communities",
+        brand=Brand.MIDNIGHTSATIN,
+        origin="seed_pack",
+    )
+    runs = {"n": 0}
+    sleeps: list[float] = []
+
+    def fake_run(**kwargs):
+        runs["n"] += 1
+        if runs["n"] == 1:
+            return HuntLoopResult(queries_run=1, stop_reason="max_queries")
+        raise KeyboardInterrupt("done")
+
+    def track_sleep(seconds):
+        sleeps.append(seconds)
+        if runs["n"] >= 2:
+            raise KeyboardInterrupt("done")
+
+    monkeypatch.setattr(hunt_loop_mod, "run_hunt_loop", fake_run)
+    monkeypatch.setattr(hunt_loop_mod.time, "sleep", track_sleep)
+    with pytest.raises(KeyboardInterrupt):
+        run_hunt_loop_watch(
+            budget=HuntBudget(max_queries=1, max_minutes=0, max_pages_per_query=0),
+        )
+    assert runs["n"] == 2
+    assert sleeps and sleeps[0] == 1.0
 

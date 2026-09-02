@@ -39,13 +39,15 @@ from .research_utils import (
     is_scrapable_url,
 )
 from .schemas import ResearchRequest, ResearchResult
-from .searxng_client import SearchResult, SearxngError, search
+from .searxng_client import SearchResult, SearxngError
 from .target_companies import (
     companies_from_payload,
     enqueue_target_company_hunts,
     heuristic_companies_from_title,
 )
 from .tooling import CRMToolkit
+from .treg_client import TregError, treg_base_url
+from .treg_search import collect_search_results, treg_endpoint_from
 
 ACTOR = "research"
 
@@ -127,6 +129,7 @@ def run_research(
             break
 
         query_id: int | None
+        origin = "explicit"
         if explicit_work is not None:
             if explicit_index >= len(explicit_work):
                 break
@@ -137,18 +140,25 @@ def run_research(
             if claimed is None:
                 break
             query, query_id = claimed.query, claimed.id
+            origin = claimed.origin
 
         queries_run += 1
+        treg_id = treg_endpoint_from(origin, None)
         crm.record_heartbeat(
             status=AgentStatus.THINKING,
             task=f"searching: {query}",
-            resource=settings.searxng_url,
+            resource=treg_base_url() if treg_id else settings.searxng_url,
         )
 
         try:
-            results = search(query, limit=search_limit, client=searx_client)
-        except SearxngError as exc:
-            message = f"SearXNG search failed for {query!r}: {exc}"
+            results = collect_search_results(
+                query,
+                limit=search_limit,
+                origin=origin,
+                searx_client=searx_client,
+            )
+        except (SearxngError, TregError) as exc:
+            message = f"Search failed for {query!r}: {exc}"
             errors.append(message)
             crm.log_note(message, type=ActivityType.ERROR, payload={"query": query})
             if query_id is not None:

@@ -60,6 +60,52 @@ def test_seo_document_pickers_are_outside_expanders() -> None:
     assert aeo_plan_pick < aeo_plan_dl < aeo_plan_expand
 
 
+def test_pipeline_tab_has_full_csv_export() -> None:
+    source = DASHBOARD_PATH.read_text(encoding="utf-8")
+    pipeline = source.split("def _render_pipeline_tab")[1].split("def _render_hunter_tab")[0]
+    assert "_render_full_csv_export" in pipeline
+    assert 'key="pipeline_leads"' in pipeline
+
+
+def test_dashboard_tables_have_full_csv_export() -> None:
+    source = DASHBOARD_PATH.read_text(encoding="utf-8")
+    assert "def _render_full_csv_export" in source
+    assert '"Full export"' in source
+    required = {
+        "_render_pipeline_tab": ['key="pipeline_leads"'],
+        "_render_hunter_tab": [
+            'key="hunter_communities"',
+            'key="hunter_derived_queries"',
+            'key="hunter_resources"',
+        ],
+        "_render_research_tab": ['key="research_findings"'],
+        "_render_engagement_tab": [
+            'key="engagement_threads"',
+            'key="engagement_drafts"',
+        ],
+        "_render_seo_tab": [
+            'key="seo_targets"',
+            'key="seo_reviews"',
+            'key="seo_plans"',
+        ],
+        "_render_aeo_geo_tab": [
+            'key="aeo_geo_reviews"',
+            'key="aeo_geo_plans"',
+        ],
+        "_render_contacts_tab": ['key="contact_profiles"'],
+        "_render_comment_people_table": ['key=f"{key_prefix}comment_people"'],
+        "_render_verifier_tab": ['key="verifier_leads"'],
+        "_render_improvement_tab": ['key="improvement_notes"'],
+    }
+    for func, markers in required.items():
+        start = source.index(f"def {func}")
+        nxt = source.find("\ndef _", start + 1)
+        body = source[start:nxt] if nxt != -1 else source[start:]
+        assert "_render_full_csv_export" in body, f"{func} missing Full export"
+        for marker in markers:
+            assert marker in body, f"missing {marker} in {func}"
+
+
 def test_seo_export_filename_includes_kind_and_domain() -> None:
     from types import SimpleNamespace
 

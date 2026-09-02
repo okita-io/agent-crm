@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pandas as pd
@@ -35,6 +36,7 @@ from agent_crm.enums import (
     ContactAudience,
     ContactVerificationStatus,
     HuntResourceKind,
+    LeadSource,
     ResearchFindingKind,
     SeoPlanKind,
     SeoReviewKind,
@@ -46,7 +48,10 @@ from agent_crm.hunt_status import STALE_RUNNING_MINUTES, build_hunt_status, infe
 from agent_crm.hunt_store import HuntStore
 from agent_crm.improvement_store import count_open_improvement_notes, list_improvement_notes
 from agent_crm.pipeline import PipelineManager
-from agent_crm.pipeline_leads import list_pipeline_leads, normalize_audience
+from agent_crm.pipeline_leads import (
+    pipeline_lead_records,
+    pipeline_leads_export_filename,
+)
 from agent_crm.presence import (
     build_observer_rows,
     fetch_spark_queue_health,
@@ -99,37 +104,16 @@ def _lead_rows(
     *,
     audience: ContactAudience | None = None,
     brand: Brand | None = None,
+    limit: int | None = 500,
 ) -> pd.DataFrame:
-    leads = list_pipeline_leads(audience=audience, brand=brand, limit=500)
-    if not leads:
+    records = pipeline_lead_records(audience=audience, brand=brand, limit=limit)
+    if not records:
         return pd.DataFrame()
-    rows = []
-    for lead in leads:
-        rows.append(
-            {
-                "id": lead.id,
-                "name": lead.name,
-                "email": lead.email,
-                "company": lead.company,
-                "source": lead.source.value,
-                "score": lead.score,
-                "priority": lead.priority.value if lead.priority else None,
-                "brand": lead.brand.value,
-                "qualification": (
-                    normalize_audience(lead.audience).value
-                    if lead.audience
-                    else None
-                ),
-                "status": lead.status.value,
-                "verified": "valid",
-                "created": lead.created_at,
-            }
-        )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(records)
 
 
-def _resource_rows(brand: Brand | None) -> pd.DataFrame:
-    resources = HuntStore().list_resources(brand=brand, limit=500)
+def _resource_rows(brand: Brand | None, *, limit: int | None = 500) -> pd.DataFrame:
+    resources = HuntStore().list_resources(brand=brand, limit=limit)
     if not resources:
         return pd.DataFrame()
     return pd.DataFrame(
@@ -140,11 +124,438 @@ def _resource_rows(brand: Brand | None) -> pd.DataFrame:
                 "kind": r.kind.value,
                 "brand": r.brand.value,
                 "hits": r.hit_count,
-                "found_via": (r.found_via_query or "")[:80],
+                "found_via": (r.found_via_query or "")[:80] if limit is not None else (r.found_via_query or ""),
                 "url": r.url,
                 "last_seen": r.last_seen,
             }
             for r in resources
+        ]
+    )
+
+
+def _clip(value: str | None, length: int, *, truncate: bool) -> str | None:
+    if not value:
+        return value
+    if truncate and len(value) > length:
+        return value[:length] + "…"
+    return value
+
+
+def _export_filename(stem: str, *parts: str | None) -> str:
+    bits = [stem]
+    for part in parts:
+        if part:
+            bits.append(part)
+    return "-".join(bits) + ".csv"
+
+
+def _dataframe_csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+
+def _render_full_csv_export(
+    *,
+    key: str,
+    filename: str,
+    fetch_all: Callable[[], pd.DataFrame],
+    preview_count: int,
+    preview_cap: int | None = None,
+    filter_key: object = (),
+    caption: str | None = None,
+) -> None:
+    """On-demand CSV of every matching row; preview tables stay capped."""
+    actions, note = st.columns([1, 3])
+    with actions:
+        prepare = st.button(
+            "Full export",
+            key=f"{key}_prepare",
+            use_container_width=True,
+            help="CSV of every matching row, not just the preview in the table.",
+        )
+    with note:
+        if caption is not None:
+            st.caption(caption)
+        elif preview_cap is not None:
+            st.caption(
+                f"Table shows up to {preview_cap} matches ({preview_count} loaded). "
+                "Full export includes every matching row."
+            )
+        else:
+            st.caption(
+                f"Table shows {preview_count} rows. "
+                "Full export includes every matching row."
+            )
+    cache_name = f"{key}_csv"
+    if prepare:
+        with st.spinner("Building full CSV…"):
+            full_df = fetch_all()
+            csv_bytes = _dataframe_csv_bytes(full_df)
+        st.session_state[cache_name] = {
+            "filters": filter_key,
+            "csv": csv_bytes,
+            "name": filename,
+            "rows": int(len(full_df)),
+        }
+    cached = st.session_state.get(cache_name)
+    if isinstance(cached, dict) and cached.get("filters") == filter_key:
+        st.download_button(
+            f"Download CSV ({cached['rows']} rows)",
+            data=cached["csv"],
+            file_name=cached["name"],
+            mime="text/csv",
+            key=f"{key}_download",
+        )
+
+
+def _community_resource_rows(
+    brand: Brand | None, *, limit: int | None = 200
+) -> pd.DataFrame:
+    community_kinds = (
+        HuntResourceKind.COMMUNITY,
+        HuntResourceKind.FORUM,
+        HuntResourceKind.SOCIAL,
+    )
+    rows = HuntStore().list_resources(brand=brand, kinds=community_kinds, limit=limit)
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "kind": row.kind.value,
+                "title": row.title,
+                "domain": row.domain,
+                "slug": (parse_community_notes(row.notes) or {}).get("slug"),
+                "brand": row.brand.value,
+                "hits": row.hit_count,
+                "engagement": row.engagement_score,
+                "url": row.url,
+                "last_seen": row.last_seen,
+            }
+            for row in rows
+        ]
+    )
+
+
+def _derived_query_rows(brand: Brand | None, *, limit: int | None = 200) -> pd.DataFrame:
+    rows = HuntStore().list_feedback_queries(brand=brand, limit=limit)
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "origin": row.origin,
+                "query": row.query,
+                "status": row.status.value,
+                "brand": row.brand.value,
+                "created": row.created_at,
+            }
+            for row in rows
+        ]
+    )
+
+
+def _research_finding_rows(
+    *,
+    brand: Brand | None,
+    kind: ResearchFindingKind | None,
+    limit: int | None = 500,
+    truncate: bool = True,
+) -> pd.DataFrame:
+    findings = list_findings(brand=brand, kind=kind, limit=limit)
+    if not findings:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "id": row.id,
+                "brand": row.brand.value,
+                "kind": row.kind.value,
+                "domain": row.domain,
+                "title": row.title,
+                "url": row.url,
+                "summary": _clip(row.summary, 240, truncate=truncate),
+                "source query": row.source_query,
+                "extra": json.dumps(row.extra) if row.extra else None,
+                "last seen": row.last_seen_at,
+            }
+            for row in findings
+        ]
+    )
+
+
+def _engagement_thread_rows(
+    brand: Brand | None, *, limit: int | None = 200
+) -> pd.DataFrame:
+    threads = list_threads(brand=brand, limit=limit)
+    if not threads:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "score": row.popularity_score,
+                "comments": row.comment_count,
+                "status": row.status.value,
+                "title": row.title,
+                "platform": row.platform,
+                "brand": row.brand.value,
+                "url": row.url,
+                "trends": ", ".join(row.trend_keywords or []),
+                "last_scanned": row.last_scanned_at,
+            }
+            for row in threads
+        ]
+    )
+
+
+def _engagement_draft_rows(
+    brand: Brand | None, *, limit: int | None = 200, truncate: bool = True
+) -> pd.DataFrame:
+    drafts = list_drafts(brand=brand, limit=limit)
+    if not drafts:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "status": row.status.value,
+                "brand": row.brand.value,
+                "angle": row.product_angle,
+                "draft": _clip(row.draft_text, 400, truncate=truncate),
+                "thread_id": row.thread_id,
+                "updated": row.updated_at,
+            }
+            for row in drafts
+        ]
+    )
+
+
+def _seo_target_rows(brand: Brand | None, *, limit: int | None = 200) -> pd.DataFrame:
+    targets = list_targets(brand=brand, limit=limit)
+    if not targets:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "role": row.role.value,
+                "brand": row.brand.value,
+                "domain": row.domain,
+                "title": row.title,
+                "url": row.url,
+                "last_reviewed": row.last_reviewed_at,
+                "next_review": row.next_review_at,
+            }
+            for row in targets
+        ]
+    )
+
+
+def _seo_review_rows(
+    *,
+    brand: Brand | None,
+    geo: bool,
+    limit: int | None = 200,
+    truncate: bool = True,
+) -> pd.DataFrame:
+    if geo:
+        reviews = list_reviews(brand=brand, kind=SeoReviewKind.GEO, limit=limit)
+    else:
+        reviews = [
+            row for row in list_reviews(brand=brand, limit=limit) if row.kind != SeoReviewKind.GEO
+        ]
+    if not reviews:
+        return pd.DataFrame()
+    records = []
+    for row in reviews:
+        record: dict[str, object] = {
+            "id": row.id,
+            "score": row.score,
+            "status": row.status.value,
+        }
+        if not geo:
+            record["kind"] = row.kind.value
+        record.update(
+            {
+                "brand": row.brand.value,
+                "title": row.title,
+                "one_thing": _clip(row.one_thing, 240, truncate=truncate),
+                "url": row.url,
+                "updated": row.updated_at,
+            }
+        )
+        records.append(record)
+    return pd.DataFrame(records)
+
+
+def _seo_plan_rows(
+    *,
+    brand: Brand | None,
+    geo: bool,
+    limit: int | None = 200,
+    truncate: bool = True,
+) -> pd.DataFrame:
+    if geo:
+        plans = list_plans(brand=brand, kind=SeoPlanKind.GEO, limit=limit)
+    else:
+        plans = [row for row in list_plans(brand=brand, limit=limit) if row.kind != SeoPlanKind.GEO]
+    if not plans:
+        return pd.DataFrame()
+    records = []
+    for row in plans:
+        record: dict[str, object] = {
+            "id": row.id,
+            "status": row.status.value,
+        }
+        if not geo:
+            record["kind"] = row.kind.value
+        record.update(
+            {
+                "brand": row.brand.value,
+                "title": row.title,
+                "one_thing": _clip(row.one_thing, 240, truncate=truncate),
+                "tasks": len(row.tasks or []),
+                "url": row.url,
+                "review_id": row.review_id,
+                "updated": row.updated_at,
+            }
+        )
+        records.append(record)
+    return pd.DataFrame(records)
+
+
+def _contact_profile_rows(
+    *,
+    brand: Brand | None,
+    audience: ContactAudience | None,
+    quality: str,
+    limit: int | None = 100,
+    offset: int = 0,
+) -> pd.DataFrame:
+    profiles = list_contact_profiles(
+        brand=brand,
+        audience=audience,
+        quality=quality,
+        limit=limit,
+        offset=offset,
+    )
+    if not profiles:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "name": row.name,
+                "title": row.title,
+                "organization": row.organization,
+                "location": row.location,
+                "email": row.email,
+                "brand": row.brand.value,
+                "audience": row.audience.value if row.audience else None,
+                "socials": json.dumps(row.socials) if row.socials else None,
+                "source pages": ", ".join(row.source_urls or []),
+                "lead_id": row.lead_id,
+                "updated": row.updated_at,
+            }
+            for row in profiles
+        ]
+    )
+
+
+def _comment_people_rows(
+    *,
+    brand: Brand | None,
+    audience: ContactAudience | None,
+    limit: int | None = 100,
+    offset: int = 0,
+) -> pd.DataFrame:
+    people = list_comment_people(
+        brand=brand,
+        audience=audience,
+        limit=limit,
+        offset=offset,
+    )
+    if not people:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "platform": row.platform,
+                "handle": row.handle,
+                "display name": row.display_name,
+                "profile": row.profile_url,
+                "brand": row.brand.value,
+                "audience": row.audience.value if row.audience else None,
+                "source pages": ", ".join(row.source_urls or []),
+                "snippet": (
+                    (row.comment_snippets or [{}])[-1].get("snippet")
+                    if row.comment_snippets
+                    else None
+                ),
+                "updated": row.updated_at,
+            }
+            for row in people
+        ]
+    )
+
+
+def _verifier_rows(*, limit: int | None = 500) -> pd.DataFrame:
+    crm = CRMToolkit(actor="dashboard")
+    hunter_leads = crm.list_leads(source=LeadSource.HUNTER, limit=limit)
+    rows = []
+    for lead in hunter_leads:
+        try:
+            verifications = list_verifications(lead.id)
+        except Exception:
+            verifications = []
+        if not verifications:
+            rows.append(
+                {
+                    "lead_id": lead.id,
+                    "name": lead.name,
+                    "company": lead.company,
+                    "email": lead.email,
+                    "verification": "unverified",
+                    "contacts": 0,
+                }
+            )
+            continue
+        worst = ContactVerificationStatus.VALID
+        rank = {
+            ContactVerificationStatus.VALID: 0,
+            ContactVerificationStatus.UNKNOWN: 1,
+            ContactVerificationStatus.RISKY: 2,
+            ContactVerificationStatus.INVALID: 3,
+        }
+        for verification in verifications:
+            if rank[verification.status] > rank[worst]:
+                worst = verification.status
+        rows.append(
+            {
+                "lead_id": lead.id,
+                "name": lead.name,
+                "company": lead.company,
+                "email": lead.email,
+                "verification": worst.value,
+                "contacts": len(verifications),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _improvement_note_rows(*, limit: int | None = 200) -> pd.DataFrame:
+    notes = list_improvement_notes(limit=limit)
+    if not notes:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "id": note.id,
+                "severity": note.severity.value,
+                "kind": note.kind.value,
+                "source": note.source_agent.value,
+                "title": note.title,
+                "status": note.status.value,
+                "suggested_fix": note.suggested_fix,
+                "created": note.created_at,
+            }
+            for note in notes
         ]
     )
 
@@ -674,6 +1085,16 @@ def _render_pipeline_tab() -> None:
     if df.empty:
         st.info("No leads yet. Run `agent-crm seed` or POST to /intake/webhook.")
     else:
+        _render_full_csv_export(
+            key="pipeline_leads",
+            filename=pipeline_leads_export_filename(audience=audience, brand=brand),
+            fetch_all=lambda: _lead_rows(
+                audience=audience, brand=brand, limit=None
+            ),
+            preview_count=len(df),
+            preview_cap=500,
+            filter_key=(qual_filter, brand_filter),
+        )
         st.dataframe(df, use_container_width=True, hide_index=True)
 
         st.subheader("Lead detail")
@@ -759,35 +1180,21 @@ def _render_hunter_tab(refresh_seconds: int) -> None:
     brand = None if brand_filter == "all" else Brand(brand_filter)
 
     st.subheader("Communities & forums")
-    community_kinds = (
-        HuntResourceKind.COMMUNITY,
-        HuntResourceKind.FORUM,
-        HuntResourceKind.SOCIAL,
-    )
-    communities = store.list_resources(brand=brand, kinds=community_kinds, limit=200)
-    if not communities:
+    communities_df = _community_resource_rows(brand, limit=200)
+    if communities_df.empty:
         st.info("No community resources catalogued yet.")
     else:
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "kind": row.kind.value,
-                        "title": row.title,
-                        "domain": row.domain,
-                        "slug": (parse_community_notes(row.notes) or {}).get("slug"),
-                        "brand": row.brand.value,
-                        "hits": row.hit_count,
-                        "engagement": row.engagement_score,
-                        "url": row.url,
-                        "last_seen": row.last_seen,
-                    }
-                    for row in communities
-                ]
+        _render_full_csv_export(
+            key="hunter_communities",
+            filename=_export_filename(
+                "hunter-communities", brand.value if brand else None
             ),
-            use_container_width=True,
-            hide_index=True,
+            fetch_all=lambda: _community_resource_rows(brand, limit=None),
+            preview_count=len(communities_df),
+            preview_cap=200,
+            filter_key=brand_filter,
         )
+        st.dataframe(communities_df, use_container_width=True, hide_index=True)
 
     st.subheader("Derived hunt queries")
     st.caption(
@@ -795,32 +1202,37 @@ def _render_hunter_tab(refresh_seconds: int) -> None:
         "Inspect `origin` on `hunt_queries` (prefix `community:` or `person:`); "
         "`GET /hunt/queue` reports aggregate pending counts."
     )
-    derived = store.list_feedback_queries(brand=brand, limit=200)
-    if not derived:
+    derived_df = _derived_query_rows(brand, limit=200)
+    if derived_df.empty:
         st.info("No community/person feedback queries yet.")
     else:
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "origin": row.origin,
-                        "query": row.query,
-                        "status": row.status.value,
-                        "brand": row.brand.value,
-                        "created": row.created_at,
-                    }
-                    for row in derived
-                ]
+        _render_full_csv_export(
+            key="hunter_derived_queries",
+            filename=_export_filename(
+                "hunter-derived-queries", brand.value if brand else None
             ),
-            use_container_width=True,
-            hide_index=True,
+            fetch_all=lambda: _derived_query_rows(brand, limit=None),
+            preview_count=len(derived_df),
+            preview_cap=200,
+            filter_key=brand_filter,
         )
+        st.dataframe(derived_df, use_container_width=True, hide_index=True)
 
     st.subheader("All hunter resources")
-    df = _resource_rows(brand)
+    df = _resource_rows(brand, limit=500)
     if df.empty:
         st.info("No hunter resources yet. Run `agent-crm hunt-loop --brand midnightsatin`.")
     else:
+        _render_full_csv_export(
+            key="hunter_resources",
+            filename=_export_filename(
+                "hunter-resources", brand.value if brand else None
+            ),
+            fetch_all=lambda: _resource_rows(brand, limit=None),
+            preview_count=len(df),
+            preview_cap=500,
+            filter_key=brand_filter,
+        )
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 
@@ -854,37 +1266,31 @@ def _render_research_tab() -> None:
 
     brand = Brand(brand_filter) if brand_filter != "all" else None
     kind = ResearchFindingKind(kind_filter) if kind_filter != "all" else None
-    findings = list_findings(brand=brand, kind=kind, limit=500)
+    findings_df = _research_finding_rows(brand=brand, kind=kind, limit=500)
 
-    if not findings:
+    if findings_df.empty:
         st.info(
             "No findings yet. Run `agent-crm research --brand celestial-nexus` "
             "or POST to /research."
         )
         return
 
-    st.metric("Findings", len(findings))
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "id": row.id,
-                    "brand": row.brand.value,
-                    "kind": row.kind.value,
-                    "domain": row.domain,
-                    "title": row.title,
-                    "url": row.url,
-                    "summary": row.summary[:240] + ("…" if len(row.summary) > 240 else ""),
-                    "source query": row.source_query,
-                    "extra": json.dumps(row.extra) if row.extra else None,
-                    "last seen": row.last_seen_at,
-                }
-                for row in findings
-            ]
+    st.metric("Findings", len(findings_df))
+    _render_full_csv_export(
+        key="research_findings",
+        filename=_export_filename(
+            "research-findings",
+            brand.value if brand else None,
+            kind.value if kind else None,
         ),
-        use_container_width=True,
-        hide_index=True,
+        fetch_all=lambda: _research_finding_rows(
+            brand=brand, kind=kind, limit=None, truncate=False
+        ),
+        preview_count=len(findings_df),
+        preview_cap=500,
+        filter_key=(brand_filter, kind_filter),
     )
+    st.dataframe(findings_df, use_container_width=True, hide_index=True)
 
 
 def _render_engagement_tab() -> None:
@@ -910,56 +1316,43 @@ def _render_engagement_tab() -> None:
     qcols[3].metric("Comment drafts", count_drafts(brand=brand))
 
     st.subheader("Popular threads")
-    threads = list_threads(brand=brand, limit=200)
-    if not threads:
+    threads_df = _engagement_thread_rows(brand, limit=200)
+    if threads_df.empty:
         st.info(
             "No threads yet. The hunter catalogs forums, then `agent-crm engagement-loop` "
             "scans them for popular posts."
         )
     else:
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "score": row.popularity_score,
-                        "comments": row.comment_count,
-                        "status": row.status.value,
-                        "title": row.title,
-                        "platform": row.platform,
-                        "brand": row.brand.value,
-                        "url": row.url,
-                        "trends": ", ".join(row.trend_keywords or []),
-                        "last_scanned": row.last_scanned_at,
-                    }
-                    for row in threads
-                ]
+        _render_full_csv_export(
+            key="engagement_threads",
+            filename=_export_filename(
+                "engagement-threads", brand.value if brand else None
             ),
-            use_container_width=True,
-            hide_index=True,
+            fetch_all=lambda: _engagement_thread_rows(brand, limit=None),
+            preview_count=len(threads_df),
+            preview_cap=200,
+            filter_key=brand_filter,
         )
+        st.dataframe(threads_df, use_container_width=True, hide_index=True)
 
     st.subheader("Draft replies (not posted)")
-    drafts = list_drafts(brand=brand, limit=200)
-    if not drafts:
+    drafts_df = _engagement_draft_rows(brand, limit=200)
+    if drafts_df.empty:
         st.info("No drafts yet. Engagement loop writes drafts when a thread is popular enough.")
     else:
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "status": row.status.value,
-                        "brand": row.brand.value,
-                        "angle": row.product_angle,
-                        "draft": row.draft_text[:400],
-                        "thread_id": row.thread_id,
-                        "updated": row.updated_at,
-                    }
-                    for row in drafts
-                ]
+        _render_full_csv_export(
+            key="engagement_drafts",
+            filename=_export_filename(
+                "engagement-drafts", brand.value if brand else None
             ),
-            use_container_width=True,
-            hide_index=True,
+            fetch_all=lambda: _engagement_draft_rows(
+                brand, limit=None, truncate=False
+            ),
+            preview_count=len(drafts_df),
+            preview_cap=200,
+            filter_key=brand_filter,
         )
+        st.dataframe(drafts_df, use_container_width=True, hide_index=True)
 
 
 def _seo_document_label(row) -> str:
@@ -1043,6 +1436,16 @@ def _render_seo_tab() -> None:
             "No SEO targets yet. `agent-crm seo-loop` seeds owned sites and named competitors."
         )
     else:
+        _render_full_csv_export(
+            key="seo_targets",
+            filename=_export_filename(
+                "seo-targets", brand.value if brand else None
+            ),
+            fetch_all=lambda: _seo_target_rows(brand, limit=None),
+            preview_count=len(targets),
+            preview_cap=200,
+            filter_key=brand_filter,
+        )
         st.dataframe(
             pd.DataFrame(
                 [
@@ -1067,6 +1470,18 @@ def _render_seo_tab() -> None:
     if not reviews:
         st.info("No reviews yet. Run `agent-crm seo-loop` or POST /seo/loop.")
     else:
+        _render_full_csv_export(
+            key="seo_reviews",
+            filename=_export_filename(
+                "seo-reviews", brand.value if brand else None
+            ),
+            fetch_all=lambda: _seo_review_rows(
+                brand=brand, geo=False, limit=None, truncate=False
+            ),
+            preview_count=len(reviews),
+            preview_cap=200,
+            filter_key=brand_filter,
+        )
         st.dataframe(
             pd.DataFrame(
                 [
@@ -1110,6 +1525,18 @@ def _render_seo_tab() -> None:
             "Competitor reviews do not get plans."
         )
     else:
+        _render_full_csv_export(
+            key="seo_plans",
+            filename=_export_filename(
+                "seo-plans", brand.value if brand else None
+            ),
+            fetch_all=lambda: _seo_plan_rows(
+                brand=brand, geo=False, limit=None, truncate=False
+            ),
+            preview_count=len(plans),
+            preview_cap=200,
+            filter_key=brand_filter,
+        )
         st.dataframe(
             pd.DataFrame(
                 [
@@ -1178,6 +1605,18 @@ def _render_aeo_geo_tab() -> None:
             "No AEO/GEO reviews yet. Run `agent-crm aeo-geo-loop` or POST /aeo-geo/loop."
         )
     else:
+        _render_full_csv_export(
+            key="aeo_geo_reviews",
+            filename=_export_filename(
+                "aeo-geo-reviews", brand.value if brand else None
+            ),
+            fetch_all=lambda: _seo_review_rows(
+                brand=brand, geo=True, limit=None, truncate=False
+            ),
+            preview_count=len(geo_reviews),
+            preview_cap=200,
+            filter_key=brand_filter,
+        )
         st.dataframe(
             pd.DataFrame(
                 [
@@ -1220,6 +1659,18 @@ def _render_aeo_geo_tab() -> None:
             "Competitor reviews do not get plans."
         )
     else:
+        _render_full_csv_export(
+            key="aeo_geo_plans",
+            filename=_export_filename(
+                "aeo-geo-plans", brand.value if brand else None
+            ),
+            fetch_all=lambda: _seo_plan_rows(
+                brand=brand, geo=True, limit=None, truncate=False
+            ),
+            preview_count=len(geo_plans),
+            preview_cap=200,
+            filter_key=brand_filter,
+        )
         st.dataframe(
             pd.DataFrame(
                 [
@@ -1366,6 +1817,28 @@ def _render_contacts_tab() -> None:
     else:
         st.caption(f"Showing 0 of {total} matching")
 
+    _render_full_csv_export(
+        key="contact_profiles",
+        filename=_export_filename(
+            "contacts",
+            brand.value if brand else None,
+            audience.value if audience else None,
+            None if quality == "all" else quality,
+        ),
+        fetch_all=lambda: _contact_profile_rows(
+            brand=brand,
+            audience=audience,
+            quality=quality,
+            limit=None,
+        ),
+        preview_count=len(profiles),
+        filter_key=filter_key,
+        caption=(
+            f"Table shows {CONTACTS_PAGE_SIZE} per page. "
+            f"Full export includes all {total} matching rows."
+        ),
+    )
+
     nav_prev, nav_next, _ = st.columns([1, 1, 6])
     if nav_prev.button("Previous", disabled=page <= 0, key="contacts_prev"):
         st.session_state.contacts_page = max(page - 1, 0)
@@ -1442,6 +1915,28 @@ def _render_comment_people_table(
     else:
         st.caption(f"Showing 0 of {total} comment authors")
 
+    _render_full_csv_export(
+        key=f"{key_prefix}comment_people",
+        filename=_export_filename(
+            "comment-authors",
+            brand.value if brand else None,
+            audience.value if audience else None,
+        ),
+        fetch_all=lambda: _comment_people_rows(
+            brand=brand, audience=audience, limit=None
+        ),
+        preview_count=len(people),
+        filter_key=(
+            brand.value if brand else "all",
+            audience.value if audience else "all",
+            key_prefix,
+        ),
+        caption=(
+            f"Table shows {page_size} per page. "
+            f"Full export includes all {total} comment authors."
+        ),
+    )
+
     nav_prev, nav_next, _ = st.columns([1, 1, 6])
     if nav_prev.button(
         "Previous",
@@ -1488,55 +1983,20 @@ def _render_verifier_tab() -> None:
     st.subheader("Lead verifier")
     st.caption("Defensive DNS/MX/HTTP checks — no mail is ever sent.")
 
-    crm = CRMToolkit(actor="dashboard")
-    leads = crm.list_leads(limit=500)
-    hunter_leads = [lead for lead in leads if lead.source.value == "hunter"]
+    rows_df = _verifier_rows(limit=500)
+    st.metric("Hunter leads", len(rows_df))
 
-    st.metric("Hunter leads", len(hunter_leads))
-
-    rows = []
-    for lead in hunter_leads:
-        try:
-            verifications = list_verifications(lead.id)
-        except Exception:
-            verifications = []
-        if not verifications:
-            rows.append(
-                {
-                    "lead_id": lead.id,
-                    "name": lead.name,
-                    "company": lead.company,
-                    "email": lead.email,
-                    "verification": "unverified",
-                    "contacts": 0,
-                }
-            )
-            continue
-        worst = ContactVerificationStatus.VALID
-        rank = {
-            ContactVerificationStatus.VALID: 0,
-            ContactVerificationStatus.UNKNOWN: 1,
-            ContactVerificationStatus.RISKY: 2,
-            ContactVerificationStatus.INVALID: 3,
-        }
-        for v in verifications:
-            if rank[v.status] > rank[worst]:
-                worst = v.status
-        rows.append(
-            {
-                "lead_id": lead.id,
-                "name": lead.name,
-                "company": lead.company,
-                "email": lead.email,
-                "verification": worst.value,
-                "contacts": len(verifications),
-            }
-        )
-
-    if not rows:
+    if rows_df.empty:
         st.info("No hunter leads yet. Run `agent-crm hunt` first.")
     else:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        _render_full_csv_export(
+            key="verifier_leads",
+            filename=_export_filename("verifier-hunter-leads"),
+            fetch_all=lambda: _verifier_rows(limit=None),
+            preview_count=len(rows_df),
+            preview_cap=500,
+        )
+        st.dataframe(rows_df, use_container_width=True, hide_index=True)
 
     st.caption(
         "CLI: `agent-crm verify --lead-id N` or `agent-crm verify --unverified`. "
@@ -1641,8 +2101,162 @@ def _render_settings_tab() -> None:
         else:
             st.error(f"Spark probe failed: {probe.get('detail')}")
 
+    _render_treg_settings()
+
     with st.expander("Environment defaults (from container env)"):
         st.json(defaults)
+
+
+def _format_treg_cost(usd: float | None, cost_type: str) -> str:
+    if cost_type == "free" or usd == 0:
+        return "free"
+    if usd is None:
+        return "priced"
+    return f"${usd:.4f}/{cost_type.replace('_', ' ') or 'call'}"
+
+
+def _render_treg_settings() -> None:
+    from agent_crm.treg_client import TregClient, TregError, treg_configured
+    from agent_crm.treg_queue import allow_treg_tools, enqueue_free_treg_tools
+    from agent_crm.treg_store import list_treg_tools, sync_treg_catalog, treg_counts
+
+    st.subheader("treg paid tools")
+    st.caption(
+        "Free treg endpoints can run automatically. Paid people/link lookups stay "
+        "off until you allow them — then they queue as hunter (people) or research (links) follow-ups."
+    )
+    settings = get_settings()
+    counts = treg_counts()
+    configured = treg_configured()
+    cols = st.columns(4)
+    cols[0].metric("Catalog rows", counts["total"])
+    cols[1].metric("Free (auto)", counts["free"])
+    cols[2].metric("Paid to pick", counts["paid_selectable"])
+    cols[3].metric("Paid allowed", counts["allowed_paid"])
+    if not configured:
+        st.warning(
+            "TREG_API_TOKEN is not set. Add the okita-2 token to `.env` and restart API/dashboard."
+        )
+    else:
+        st.caption(f"Team `{settings.treg_org}` · {settings.treg_base_url}")
+        if st.button("Check treg balance", key="treg_balance"):
+            try:
+                with TregClient() as client:
+                    payload = client.balance()
+                st.json(payload)
+            except TregError as exc:
+                st.error(str(exc))
+
+    sync_cols = st.columns(2)
+    with sync_cols[0]:
+        do_sync = st.button("Sync treg catalog", type="primary", key="treg_sync")
+    with sync_cols[1]:
+        enqueue_free = st.checkbox(
+            "Queue free discovery tools on sync",
+            value=True,
+            key="treg_enqueue_free",
+        )
+    if do_sync:
+        try:
+            result = sync_treg_catalog()
+            hunt_n = 0
+            research_n = 0
+            if enqueue_free:
+                queued = enqueue_free_treg_tools()
+                hunt_n = queued.hunt_enqueued
+                research_n = queued.research_enqueued
+            st.success(
+                f"Synced {result.upserted} endpoints "
+                f"({result.free} free, {result.paid_selectable} paid jobs). "
+                f"Queued {hunt_n} hunt / {research_n} research free follow-ups."
+            )
+            if result.errors:
+                st.warning("Some catalog searches failed: " + "; ".join(result.errors[:5]))
+            st.rerun()
+        except TregError as exc:
+            st.error(str(exc))
+
+    free_tools = list_treg_tools(paid=False)
+    if free_tools:
+        with st.expander(f"Free tools already allowed ({len(free_tools)})"):
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "endpoint": row.endpoint_id,
+                            "queue as": row.queue_as,
+                            "summary": row.summary[:160],
+                        }
+                        for row in free_tools
+                    ]
+                ),
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    paid_tools = [
+        row
+        for row in list_treg_tools(paid=True, selectable=True)
+        if row.queue_as in {"hunter", "research"}
+    ]
+    if not paid_tools:
+        st.info("Sync the catalog to build the paid-tool picker.")
+        return
+
+    hunter_tools = [row for row in paid_tools if row.queue_as == "hunter"]
+    research_tools = [row for row in paid_tools if row.queue_as == "research"]
+    hunter_labels = {
+        f"{row.endpoint_id} · {_format_treg_cost(row.estimated_cost_usd, row.cost_type)} · {row.title}": row.endpoint_id
+        for row in hunter_tools
+        if not row.allowed
+    }
+    research_labels = {
+        f"{row.endpoint_id} · {_format_treg_cost(row.estimated_cost_usd, row.cost_type)} · {row.title}": row.endpoint_id
+        for row in research_tools
+        if not row.allowed
+    }
+    picked = st.multiselect(
+        "Hunter — find people to follow up on",
+        options=list(hunter_labels),
+        key="treg_hunter_pick",
+    )
+    picked_research = st.multiselect(
+        "Research — find links to follow up on",
+        options=list(research_labels),
+        key="treg_research_pick",
+    )
+    if st.button("Allow selected paid tools and queue work", key="treg_allow"):
+        ids = [hunter_labels[label] for label in picked] + [
+            research_labels[label] for label in picked_research
+        ]
+        if not ids:
+            st.error("Select at least one paid tool.")
+        else:
+            result = allow_treg_tools(ids)
+            st.success(
+                f"Allowed {len(result.allowed)}. Queued {result.hunt_enqueued} hunt "
+                f"and {result.research_enqueued} research follow-ups."
+            )
+            st.rerun()
+
+    allowed_paid = [row for row in paid_tools if row.allowed]
+    if allowed_paid:
+        st.caption("Already allowed (spend against the treg balance when hunter/research drain them):")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "endpoint": row.endpoint_id,
+                        "queue as": row.queue_as,
+                        "cost": _format_treg_cost(row.estimated_cost_usd, row.cost_type),
+                        "summary": row.summary[:160],
+                    }
+                    for row in allowed_paid
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
 
 
 def _render_command_tab() -> None:
@@ -1718,22 +2332,16 @@ def _render_improvement_tab() -> None:
         st.info("No improvement notes yet. The orchestrator records gaps as it inspects the stack.")
         return
 
+    notes_df = _improvement_note_rows(limit=200)
+    _render_full_csv_export(
+        key="improvement_notes",
+        filename=_export_filename("improvement-notes"),
+        fetch_all=lambda: _improvement_note_rows(limit=None),
+        preview_count=len(notes_df),
+        preview_cap=200,
+    )
     st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "id": note.id,
-                    "severity": note.severity.value,
-                    "kind": note.kind.value,
-                    "source": note.source_agent.value,
-                    "title": note.title,
-                    "status": note.status.value,
-                    "suggested_fix": note.suggested_fix,
-                    "created": note.created_at,
-                }
-                for note in notes
-            ]
-        ),
+        notes_df,
         use_container_width=True,
         hide_index=True,
     )

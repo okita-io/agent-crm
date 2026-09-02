@@ -65,7 +65,7 @@ def list_findings(
     *,
     brand: Brand | None = None,
     kind: ResearchFindingKind | None = None,
-    limit: int = 200,
+    limit: int | None = 200,
 ) -> list[ResearchFindingOut]:
     with session_scope() as session:
         stmt = select(ResearchFinding).order_by(ResearchFinding.last_seen_at.desc())
@@ -73,5 +73,6 @@ def list_findings(
             stmt = stmt.where(ResearchFinding.brand == brand)
         if kind is not None:
             stmt = stmt.where(ResearchFinding.kind == kind)
-        stmt = stmt.limit(limit)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return [ResearchFindingOut.model_validate(row) for row in session.scalars(stmt)]

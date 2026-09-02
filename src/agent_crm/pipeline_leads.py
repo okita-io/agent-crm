@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import csv
+import io
+from typing import Any
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -16,6 +20,21 @@ from .enums import (
 from .models import ContactVerification, Lead
 from .schemas import LeadOut
 from .topic_relevance_store import lead_is_topically_visible
+
+PIPELINE_LEAD_CSV_FIELDS = (
+    "id",
+    "name",
+    "email",
+    "company",
+    "source",
+    "score",
+    "priority",
+    "brand",
+    "qualification",
+    "status",
+    "verified",
+    "created",
+)
 
 
 def normalize_audience(audience: ContactAudience | None) -> ContactAudience | None:
@@ -52,9 +71,12 @@ def list_pipeline_leads(
     *,
     brand: Brand | None = None,
     audience: ContactAudience | None = None,
-    limit: int = 500,
+    limit: int | None = 500,
 ) -> list[LeadOut]:
-    """Leads whose primary email is DNS/MX verified VALID (not disqualified)."""
+    """Leads whose primary email is DNS/MX verified VALID (not disqualified).
+
+    Pass ``limit=None`` to return every matching row (CSV full export).
+    """
     with session_scope() as session:
         email_verification = (
             select(ContactVerification.lead_id)
@@ -74,8 +96,9 @@ def list_pipeline_leads(
             .where(Lead.status != LeadStatus.DISQUALIFIED)
             .where(email_verification)
             .order_by(Lead.created_at.desc())
-            .limit(limit)
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
         if brand is not None:
             stmt = stmt.where(Lead.brand == brand)
         if audience is not None:
@@ -91,3 +114,65 @@ def list_pipeline_leads(
                 stmt = stmt.where(Lead.audience == normalized)
         leads = [row for row in session.scalars(stmt) if lead_is_topically_visible(row)]
         return [LeadOut.model_validate(row) for row in leads]
+
+
+def pipeline_lead_records(
+    *,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+    limit: int | None = 500,
+) -> list[dict[str, Any]]:
+    """Display/export rows for the Pipeline & leads table."""
+    records: list[dict[str, Any]] = []
+    for lead in list_pipeline_leads(audience=audience, brand=brand, limit=limit):
+        created = lead.created_at.isoformat() if lead.created_at else None
+        records.append(
+            {
+                "id": lead.id,
+                "name": lead.name,
+                "email": lead.email,
+                "company": lead.company,
+                "source": lead.source.value,
+                "score": lead.score,
+                "priority": lead.priority.value if lead.priority else None,
+                "brand": lead.brand.value,
+                "qualification": (
+                    normalize_audience(lead.audience).value
+                    if lead.audience
+                    else None
+                ),
+                "status": lead.status.value,
+                "verified": "valid",
+                "created": created,
+            }
+        )
+    return records
+
+
+def pipeline_leads_csv(
+    *,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+) -> tuple[bytes, int]:
+    """UTF-8 CSV (Excel BOM) of every matching pipeline lead."""
+    records = pipeline_lead_records(brand=brand, audience=audience, limit=None)
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=PIPELINE_LEAD_CSV_FIELDS, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(records)
+    return buf.getvalue().encode("utf-8-sig"), len(records)
+
+
+def pipeline_leads_export_filename(
+    *,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+) -> str:
+    parts = ["pipeline-leads"]
+    if brand is not None:
+        parts.append(brand.value)
+    if audience is not None:
+        normalized = normalize_audience(audience)
+        if normalized is not None:
+            parts.append(normalized.value)
+    return "-".join(parts) + ".csv"

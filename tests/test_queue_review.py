@@ -34,8 +34,9 @@ def test_origin_needs_review_skips_trusted_seeds() -> None:
     assert origin_needs_review("branch:seed")
     assert origin_needs_review("community:reddit/RomanceBooks")
     assert origin_needs_review("marketing:community:reddit/RomanceBooks")
-    assert query_enqueue_status("seed_pack") == HuntQueryStatus.PENDING
-    assert query_enqueue_status("branch:x") == HuntQueryStatus.PENDING_REVIEW
+    assert not origin_needs_review("treg:paid:hunter:treg.people.enrich")
+    assert not origin_needs_review("treg:free:research:treg.google.serp.organic")
+    assert query_enqueue_status("treg:paid:research:treg.google.serp.organic") == HuntQueryStatus.PENDING
 
 
 def test_assess_search_query_tosses_noise_and_keeps_romance() -> None:

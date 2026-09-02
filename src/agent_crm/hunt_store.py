@@ -255,6 +255,8 @@ class HuntStore:
             return UpsertResourceResult(resource=None, is_new=False)
         if is_junk_title(title):
             title = None
+        elif title is not None:
+            title = title.strip()[:512] or None
 
         domain = registrable_domain(clean_url)
         classification = classify_resource_detailed(clean_url, title, snippet)
@@ -324,15 +326,17 @@ class HuntStore:
         self,
         *,
         brand: Brand | None = None,
-        limit: int = 500,
+        limit: int | None = 500,
         kinds: tuple[HuntResourceKind, ...] | None = None,
     ) -> list[HuntResource]:
         with session_scope() as session:
-            stmt = select(HuntResource).order_by(HuntResource.last_seen.desc()).limit(limit)
+            stmt = select(HuntResource).order_by(HuntResource.last_seen.desc())
             if brand is not None:
                 stmt = stmt.where(HuntResource.brand == brand)
             if kinds:
                 stmt = stmt.where(HuntResource.kind.in_(kinds))
+            if limit is not None:
+                stmt = stmt.limit(limit)
             return list(session.scalars(stmt))
 
     def list_queries(
@@ -357,7 +361,7 @@ class HuntStore:
         self,
         *,
         brand: Brand | None = None,
-        limit: int = 200,
+        limit: int | None = 200,
     ) -> list[HuntQuery]:
         """Queries enqueued from community, person, or handle feedback loops."""
         with session_scope() as session:
@@ -376,10 +380,11 @@ class HuntStore:
                     | HuntQuery.origin.contains(":company:")
                 )
                 .order_by(HuntQuery.id.desc())
-                .limit(limit)
             )
             if brand is not None:
                 stmt = stmt.where(HuntQuery.brand == brand)
+            if limit is not None:
+                stmt = stmt.limit(limit)
             return list(session.scalars(stmt))
 
     def current_running_query(

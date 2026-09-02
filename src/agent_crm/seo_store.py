@@ -66,14 +66,16 @@ def list_targets(
     *,
     brand: Brand | None = None,
     role: SeoTargetRole | None = None,
-    limit: int = 200,
+    limit: int | None = 200,
 ) -> list[SeoTarget]:
     with session_scope() as session:
-        stmt = select(SeoTarget).order_by(SeoTarget.updated_at.desc()).limit(limit)
+        stmt = select(SeoTarget).order_by(SeoTarget.updated_at.desc())
         if brand is not None:
             stmt = stmt.where(SeoTarget.brand == brand)
         if role is not None:
             stmt = stmt.where(SeoTarget.role == role)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(session.scalars(stmt))
 
 
@@ -282,16 +284,18 @@ def list_reviews(
     brand: Brand | None = None,
     kind: SeoReviewKind | None = None,
     status: SeoReviewStatus | None = None,
-    limit: int = 200,
+    limit: int | None = 200,
 ) -> list[SeoReview]:
     with session_scope() as session:
-        stmt = select(SeoReview).order_by(SeoReview.updated_at.desc()).limit(limit)
+        stmt = select(SeoReview).order_by(SeoReview.updated_at.desc())
         if brand is not None:
             stmt = stmt.where(SeoReview.brand == brand)
         if kind is not None:
             stmt = stmt.where(SeoReview.kind == kind)
         if status is not None:
             stmt = stmt.where(SeoReview.status == status)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(session.scalars(stmt))
 
 
@@ -300,14 +304,13 @@ def list_plans(
     brand: Brand | None = None,
     kind: SeoPlanKind | None = None,
     status: SeoPlanStatus | None = None,
-    limit: int = 200,
+    limit: int | None = 200,
 ) -> list[SeoPlan]:
     with session_scope() as session:
         stmt = (
             select(SeoPlan)
             .options(selectinload(SeoPlan.review))
             .order_by(SeoPlan.updated_at.desc())
-            .limit(limit)
         )
         if brand is not None:
             stmt = stmt.where(SeoPlan.brand == brand)
@@ -315,6 +318,8 @@ def list_plans(
             stmt = stmt.where(SeoPlan.kind == kind)
         if status is not None:
             stmt = stmt.where(SeoPlan.status == status)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(session.scalars(stmt))
 
 

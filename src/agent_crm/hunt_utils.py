@@ -118,6 +118,8 @@ def origin_needs_review(origin: str | None) -> bool:
     value = (origin or "").strip().lower()
     if not value:
         return True
+    if value.startswith("treg:"):
+        return False
     parts = [part for part in value.split(":") if part]
     if any(part in _HUNTER_ORIGIN_KINDS for part in parts):
         return True

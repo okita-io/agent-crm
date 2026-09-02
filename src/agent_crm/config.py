@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Database
@@ -45,6 +47,14 @@ class Settings(BaseSettings):
     # Local ranch search + scrape (SearXNG + Firecrawl on the host)
     searxng_url: str = "http://host.docker.internal:8080"
     firecrawl_url: str = "http://host.docker.internal:3002"
+
+    # treg.to catalog (people/link lookups). Also reads TREG_API_TOKEN / TREG_TOKEN.
+    treg_api_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("CRM_TREG_API_TOKEN", "TREG_API_TOKEN", "TREG_TOKEN"),
+    )
+    treg_base_url: str = "https://treg.to"
+    treg_org: str = "okita-2"
 
     # Outbound Hunter defaults
     hunter_max_pages_per_run: int = 50
@@ -120,6 +130,18 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def resolved_treg_api_token(self) -> str:
+        """CRM_TREG_API_TOKEN, else a bare TREG_API_TOKEN / TREG_TOKEN in the environment."""
+        import os
+
+        return (
+            self.treg_api_token
+            or os.environ.get("TREG_API_TOKEN")
+            or os.environ.get("TREG_TOKEN")
+            or ""
+        ).strip()
 
 
 @lru_cache

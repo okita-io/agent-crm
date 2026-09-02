@@ -145,7 +145,7 @@ def list_comment_people(
     audience: ContactAudience | None = None,
     platform: str | None = None,
     offset: int = 0,
-    limit: int = 500,
+    limit: int | None = 500,
 ) -> list[CommentPersonOut]:
     with session_scope() as session:
         stmt = select(CommentPerson).order_by(CommentPerson.updated_at.desc())
@@ -155,7 +155,9 @@ def list_comment_people(
             audience=audience,
             platform=platform,
         )
-        stmt = stmt.offset(max(offset, 0)).limit(limit)
+        stmt = stmt.offset(max(offset, 0))
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return [CommentPersonOut.model_validate(row) for row in session.scalars(stmt)]
 
 

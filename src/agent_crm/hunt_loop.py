@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from .agent_control import stop_if_disabled
+from .agent_control import stop_if_disabled, wait_while_disabled
 from .comment_people_store import process_scraped_page_comment_people
 from .config import Settings, get_settings
 from .contact_store import ContactExtractionBudget, process_scraped_page_contacts
@@ -31,7 +31,7 @@ from .hunt_feedback import (
     enqueue_person_terms,
 )
 from .hunt_relevance import assess_topical_relevance, is_obvious_off_topic_url
-from .hunt_seeds import audience_from_origin, seed_query_entries
+from .hunt_seeds import audience_from_origin, loop_seed_entries, seed_query_entries
 from .hunt_store import HuntStore
 from .hunt_utils import (
     ResourceClassification,
@@ -41,10 +41,13 @@ from .hunt_utils import (
 from .job_store import enqueue_topical_relevance_job
 from .llm_client import chat_completions
 from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
-from .searxng_client import SearchResult, search
+from .searxng_client import SearchResult
 from .topic_relevance_store import upsert_url_topic_relevance
+from .treg_client import treg_base_url
+from .treg_search import collect_search_results, treg_endpoint_from
 
 ACTOR = "outbound_hunter"
+WATCH_POLL_SECONDS = 60.0
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +114,28 @@ def _query_budget_exhausted(queries_run: int, max_queries: int | None) -> bool:
     return queries_run >= max_queries
 
 
+def _seed_hunt_queue(
+    store: HuntStore, brand: Brand, *, run_id: str | None = None
+) -> None:
+    """Insert missing seed-pack queries for one brand, or all brands when global."""
+    if brand == Brand.UNASSIGNED:
+        for seed_brand, seed_query, seed_origin in loop_seed_entries():
+            store.enqueue_query(
+                query=seed_query,
+                brand=seed_brand,
+                origin=seed_origin,
+                run_id=run_id,
+            )
+        return
+    for seed_query, seed_origin in seed_query_entries(brand):
+        store.enqueue_query(
+            query=seed_query,
+            brand=brand,
+            origin=seed_origin,
+            run_id=run_id,
+        )
+
+
 def run_hunt_loop(
     *,
     query: str | None = None,
@@ -138,20 +163,13 @@ def run_hunt_loop(
     # by a previous container restart instead of waiting 30 minutes.
     store.reset_stale_running_queries(stale_minutes=0)
 
-    pending_existing = store.count_pending(brand if brand != Brand.UNASSIGNED else None)
-
     if query:
         store.enqueue_query(query=query, brand=brand, origin="seed", run_id=result.run_id)
 
-    if brand != Brand.UNASSIGNED:
-        for seed_query, seed_origin in seed_query_entries(brand):
-            store.enqueue_query(
-                query=seed_query,
-                brand=brand,
-                origin=seed_origin,
-                run_id=result.run_id,
-            )
-    elif not query and pending_existing == 0:
+    _seed_hunt_queue(store, brand, run_id=result.run_id)
+
+    pending_existing = store.count_pending(brand if brand != Brand.UNASSIGNED else None)
+    if not query and pending_existing == 0:
         result.stop_reason = "no_seed"
         record_heartbeat(ACTOR, status=AgentStatus.IDLE)
         return result
@@ -186,10 +204,11 @@ def run_hunt_loop(
             if budget.max_queries > 0
             else f"query {result.queries_run + 1}"
         )
+        treg_id = treg_endpoint_from(pending.origin, params if isinstance(params, dict) else None)
         store.set_heartbeat(
             AgentStatus.THINKING,
             f"{query_progress}: {pending.query}",
-            resource=settings.searxng_url,
+            resource=treg_base_url() if treg_id else settings.searxng_url,
         )
 
         try:
@@ -253,6 +272,46 @@ def run_hunt_loop(
     return result
 
 
+def run_hunt_loop_watch(
+    *,
+    query: str | None = None,
+    brand: Brand = Brand.UNASSIGNED,
+    budget: HuntBudget | None = None,
+    resume: bool = True,
+    summarize_branches: bool = True,
+    searx_client: httpx.Client | None = None,
+    firecrawl_client: httpx.Client | None = None,
+) -> None:
+    """Drain the hunt queue forever, sleeping when the backlog is empty."""
+    store = HuntStore()
+    brand_filter = brand if brand != Brand.UNASSIGNED else None
+    while True:
+        wait_while_disabled(ACTOR)
+        result = run_hunt_loop(
+            query=query,
+            brand=brand,
+            budget=budget,
+            resume=resume,
+            summarize_branches=summarize_branches,
+            searx_client=searx_client,
+            firecrawl_client=firecrawl_client,
+        )
+        pending = store.count_pending(brand_filter)
+        if pending > 0:
+            time.sleep(1.0)
+            continue
+        record_heartbeat(
+            ACTOR,
+            status=AgentStatus.IDLE,
+            task=(
+                "hunt queue empty; waiting for new queries"
+                if result.stop_reason in {"queue_empty", "no_seed"}
+                else f"hunt idle after {result.stop_reason}"
+            ),
+        )
+        time.sleep(WATCH_POLL_SECONDS)
+
+
 def _run_queued_query(
     query: str,
     *,
@@ -270,12 +329,13 @@ def _run_queued_query(
     feedback_budget: HuntFeedbackBudget | None = None,
     audience: ContactAudience | None = None,
 ) -> dict[str, int]:
-    search_kwargs = dict(params)
-    results = search(
+    search_kwargs = dict(params) if isinstance(params, dict) else {}
+    results = collect_search_results(
         query,
         limit=settings.hunter_search_result_limit,
-        client=searx_client,
-        **search_kwargs,
+        origin=origin,
+        params=search_kwargs,
+        searx_client=searx_client,
     )
     results = _filter_relevant_hunt_results(
         results,

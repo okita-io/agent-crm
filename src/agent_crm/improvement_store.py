@@ -80,7 +80,7 @@ def record_improvement_note(
 def list_improvement_notes(
     *,
     status: ImprovementNoteStatus | None = ImprovementNoteStatus.OPEN,
-    limit: int = 200,
+    limit: int | None = 200,
 ) -> list[ImprovementNoteOut]:
     """List improvement notes, newest first."""
     with session_scope() as session:
@@ -90,7 +90,9 @@ def list_improvement_notes(
         )
         if status is not None:
             stmt = stmt.where(AgentImprovementNote.status == status)
-        rows = list(session.scalars(stmt.limit(max(limit, 1))))
+        if limit is not None:
+            stmt = stmt.limit(max(limit, 1))
+        rows = list(session.scalars(stmt))
         return [ImprovementNoteOut.model_validate(row) for row in rows]
 
 

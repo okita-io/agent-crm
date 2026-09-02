@@ -124,6 +124,11 @@ from .schemas import (
     SeoReviewOut,
     SeoTargetOut,
     SparkProbeOut,
+    TregAllowIn,
+    TregAllowResultOut,
+    TregStatusOut,
+    TregSyncResultOut,
+    TregToolOut,
     VerifyRawRequest,
     VerifyRawResult,
 )
@@ -272,6 +277,123 @@ def research_findings(
     limit: int = 200,
 ) -> list[ResearchFindingOut]:
     return list_findings(brand=brand, kind=kind, limit=limit)
+
+
+# ---- treg catalog (paid hunter/research tool allowlist) -------------------
+
+
+def _treg_tool_out(row) -> TregToolOut:
+    return TregToolOut(
+        endpoint_id=row.endpoint_id,
+        title=row.title,
+        summary=row.summary,
+        provider=row.provider,
+        capability=row.capability,
+        platform=row.platform,
+        method=row.method,
+        queue_as=row.queue_as,
+        estimated_cost_usd=row.estimated_cost_usd,
+        cost_type=row.cost_type,
+        cost_note=row.cost_note,
+        is_free=row.is_free,
+        is_routed=row.is_routed,
+        selectable=row.selectable,
+        allowed=row.allowed,
+        queued_at=row.queued_at,
+    )
+
+
+@app.get("/treg/status", response_model=TregStatusOut, tags=["treg"])
+def treg_status() -> TregStatusOut:
+    from .treg_client import TregClient, TregError, treg_configured
+    from .treg_store import treg_counts
+
+    counts = treg_counts()
+    settings = get_settings()
+    out = TregStatusOut(
+        configured=treg_configured(),
+        org=settings.treg_org,
+        **counts,
+    )
+    if not treg_configured():
+        out.detail = "TREG_API_TOKEN is not set"
+        return out
+    try:
+        with TregClient() as client:
+            payload = client.balance()
+        out.balance = payload if isinstance(payload, dict) else None
+        if isinstance(payload, dict):
+            raw = payload.get("balance_usd")
+            if raw is None and isinstance(payload.get("balance"), dict):
+                raw = payload["balance"].get("usd")
+            if raw is None:
+                micro = payload.get("balance_micro")
+                if micro is not None:
+                    raw = float(micro) / 1_000_000
+            if raw is not None:
+                out.balance_usd = float(raw)
+    except TregError as exc:
+        out.detail = str(exc)
+    return out
+
+
+@app.post("/treg/catalog/sync", response_model=TregSyncResultOut, tags=["treg"])
+def treg_catalog_sync(enqueue_free: bool = True) -> TregSyncResultOut:
+    from .treg_client import TregError
+    from .treg_queue import enqueue_free_treg_tools
+    from .treg_store import sync_treg_catalog
+
+    try:
+        result = sync_treg_catalog()
+    except TregError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    hunt_enqueued = 0
+    research_enqueued = 0
+    if enqueue_free:
+        queued = enqueue_free_treg_tools()
+        hunt_enqueued = queued.hunt_enqueued
+        research_enqueued = queued.research_enqueued
+    return TregSyncResultOut(
+        fetched=result.fetched,
+        upserted=result.upserted,
+        free=result.free,
+        paid_selectable=result.paid_selectable,
+        auto_allowed_free=result.auto_allowed_free,
+        hunt_enqueued=hunt_enqueued,
+        research_enqueued=research_enqueued,
+        errors=result.errors,
+    )
+
+
+@app.get("/treg/tools", response_model=list[TregToolOut], tags=["treg"])
+def treg_tools(
+    paid: bool | None = None,
+    selectable: bool | None = None,
+    allowed: bool | None = None,
+    queue_as: str | None = None,
+) -> list[TregToolOut]:
+    from .treg_store import list_treg_tools
+
+    rows = list_treg_tools(
+        paid=paid,
+        selectable=selectable,
+        allowed=allowed,
+        queue_as=queue_as,
+    )
+    return [_treg_tool_out(row) for row in rows]
+
+
+@app.post("/treg/tools/allow", response_model=TregAllowResultOut, tags=["treg"])
+def treg_tools_allow(body: TregAllowIn) -> TregAllowResultOut:
+    from .treg_queue import allow_treg_tools
+
+    result = allow_treg_tools(body.endpoint_ids)
+    return TregAllowResultOut(
+        allowed=result.allowed,
+        hunt_enqueued=result.hunt_enqueued,
+        research_enqueued=result.research_enqueued,
+        skipped=result.skipped,
+    )
 
 
 # ---- agent engagement (comment drafts; never posts) -----------------------

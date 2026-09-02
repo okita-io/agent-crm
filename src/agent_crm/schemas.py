@@ -591,6 +591,60 @@ class SparkProbeOut(BaseModel):
     detail: str = ""
 
 
+class TregToolOut(BaseModel):
+    endpoint_id: str
+    title: str
+    summary: str
+    provider: str
+    capability: str
+    platform: str
+    method: str
+    queue_as: str
+    estimated_cost_usd: float | None = None
+    cost_type: str
+    cost_note: str | None = None
+    is_free: bool
+    is_routed: bool
+    selectable: bool
+    allowed: bool
+    queued_at: datetime | None = None
+
+
+class TregStatusOut(BaseModel):
+    configured: bool
+    org: str
+    balance_usd: float | None = None
+    balance: dict | None = None
+    total: int = 0
+    free: int = 0
+    paid: int = 0
+    paid_selectable: int = 0
+    allowed_paid: int = 0
+    detail: str = ""
+
+
+class TregSyncResultOut(BaseModel):
+    fetched: int
+    upserted: int
+    free: int
+    paid_selectable: int
+    auto_allowed_free: int
+    hunt_enqueued: int = 0
+    research_enqueued: int = 0
+    errors: list[str] = []
+
+
+class TregAllowIn(BaseModel):
+    endpoint_ids: list[str] = Field(min_length=1)
+
+
+class TregAllowResultOut(BaseModel):
+    allowed: list[str]
+    hunt_enqueued: int
+    research_enqueued: int
+    skipped: list[str] = []
+
+
 class ContactProfileOut(ORMModel):
     id: int
     email: str

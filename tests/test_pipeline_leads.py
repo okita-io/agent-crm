@@ -20,7 +20,12 @@ from agent_crm.enums import (
 )
 from agent_crm.hunt_relevance import RelevanceAssessment
 from agent_crm.models import ContactVerification, Lead
-from agent_crm.pipeline_leads import list_pipeline_leads
+from agent_crm.pipeline_leads import (
+    PIPELINE_LEAD_CSV_FIELDS,
+    list_pipeline_leads,
+    pipeline_leads_csv,
+    pipeline_leads_export_filename,
+)
 from agent_crm.topic_relevance_store import upsert_url_topic_relevance
 from agent_crm.verifier import record_immediate_invalid_email
 
@@ -171,3 +176,37 @@ def test_pipeline_filters_by_qualification() -> None:
     )
     assert len(marketing_only) == 1
     assert marketing_only[0].email == "jane.vega@brand.com"
+
+
+def test_pipeline_leads_full_export_includes_every_row() -> None:
+    for index in range(3):
+        profile = upsert_contact_profile(
+            email=f"fan{index}@romanceblog.com",
+            name=f"Fan {index}",
+            brand=Brand.MIDNIGHTSATIN,
+            source_url=f"https://romanceblog.example/readers/{index}",
+            audience=ContactAudience.END_USER,
+        )
+        with session_scope() as session:
+            lead = session.get(Lead, profile.lead_id)
+            assert lead is not None
+            _mark_valid(session, lead.id, f"fan{index}@romanceblog.com")
+
+    assert len(list_pipeline_leads(limit=2)) == 2
+    assert len(list_pipeline_leads(limit=None)) == 3
+
+    payload, count = pipeline_leads_csv()
+    assert count == 3
+    text = payload.decode("utf-8-sig")
+    assert text.splitlines()[0] == ",".join(PIPELINE_LEAD_CSV_FIELDS)
+    assert "fan0@romanceblog.com" in text
+    assert "fan1@romanceblog.com" in text
+    assert "fan2@romanceblog.com" in text
+    assert payload.startswith(b"\xef\xbb\xbf")
+    assert (
+        pipeline_leads_export_filename(
+            brand=Brand.MIDNIGHTSATIN,
+            audience=ContactAudience.END_USER,
+        )
+        == "pipeline-leads-midnightsatin-end_user.csv"
+    )

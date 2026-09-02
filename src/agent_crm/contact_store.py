@@ -441,7 +441,7 @@ def list_contact_profiles(
     email: str | None = None,
     quality: EmailQualityFilter = "all",
     offset: int = 0,
-    limit: int = 500,
+    limit: int | None = 500,
 ) -> list[ContactProfileOut]:
     with session_scope() as session:
         stmt = select(ContactProfile).order_by(ContactProfile.updated_at.desc())
@@ -452,7 +452,9 @@ def list_contact_profiles(
             email=email,
             quality=quality,
         )
-        stmt = stmt.offset(max(offset, 0)).limit(max(limit, 0))
+        stmt = stmt.offset(max(offset, 0))
+        if limit is not None:
+            stmt = stmt.limit(max(limit, 0))
         rows = list(session.scalars(stmt))
         return [ContactProfileOut.model_validate(row) for row in rows]
 

@@ -103,16 +103,12 @@ def list_threads(
     brand: Brand | None = None,
     status: EngagementThreadStatus | None = None,
     min_score: int = 0,
-    limit: int = 200,
+    limit: int | None = 200,
 ) -> list[EngagementThread]:
     with session_scope() as session:
-        stmt = (
-            select(EngagementThread)
-            .order_by(
-                EngagementThread.popularity_score.desc(),
-                EngagementThread.updated_at.desc(),
-            )
-            .limit(limit)
+        stmt = select(EngagementThread).order_by(
+            EngagementThread.popularity_score.desc(),
+            EngagementThread.updated_at.desc(),
         )
         if brand is not None:
             stmt = stmt.where(EngagementThread.brand == brand)
@@ -120,6 +116,8 @@ def list_threads(
             stmt = stmt.where(EngagementThread.status == status)
         if min_score > 0:
             stmt = stmt.where(EngagementThread.popularity_score >= min_score)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(session.scalars(stmt))
 
 
@@ -289,19 +287,20 @@ def list_drafts(
     *,
     brand: Brand | None = None,
     status: EngagementDraftStatus | None = None,
-    limit: int = 200,
+    limit: int | None = 200,
 ) -> list[EngagementDraft]:
     with session_scope() as session:
         stmt = (
             select(EngagementDraft)
             .options(selectinload(EngagementDraft.thread))
             .order_by(EngagementDraft.updated_at.desc())
-            .limit(limit)
         )
         if brand is not None:
             stmt = stmt.where(EngagementDraft.brand == brand)
         if status is not None:
             stmt = stmt.where(EngagementDraft.status == status)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(session.scalars(stmt))
 
 

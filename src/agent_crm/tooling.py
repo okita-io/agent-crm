@@ -26,7 +26,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import session_scope
-from .enums import ActivityType, AgentStatus, Brand, LeadStatus, Priority, Stage
+from .enums import (
+    ActivityType,
+    AgentStatus,
+    Brand,
+    LeadSource,
+    LeadStatus,
+    Priority,
+    Stage,
+)
 from .errors import NotFoundError
 from .models import Account, Activity, Journey, Lead, Opportunity
 from .schemas import (
@@ -267,7 +275,8 @@ class CRMToolkit:
         status: LeadStatus | None = None,
         brand: Brand | None = None,
         priority: Priority | None = None,
-        limit: int = 100,
+        source: LeadSource | None = None,
+        limit: int | None = 100,
     ) -> list[LeadOut]:
         with session_scope() as session:
             stmt = select(Lead).order_by(Lead.created_at.desc())
@@ -277,7 +286,10 @@ class CRMToolkit:
                 stmt = stmt.where(Lead.brand == brand)
             if priority is not None:
                 stmt = stmt.where(Lead.priority == priority)
-            stmt = stmt.limit(limit)
+            if source is not None:
+                stmt = stmt.where(Lead.source == source)
+            if limit is not None:
+                stmt = stmt.limit(limit)
             return [LeadOut.model_validate(row) for row in session.scalars(stmt)]
 
     def list_activities(self, lead_id: int, limit: int = 200) -> list[ActivityOut]:

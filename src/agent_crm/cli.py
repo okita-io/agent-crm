@@ -126,7 +126,7 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
     from .db import init_db
     from .enums import Brand
     from .hunt_loop import ACTOR as HUNT_ACTOR
-    from .hunt_loop import HuntBudget, run_hunt_loop
+    from .hunt_loop import HuntBudget, run_hunt_loop, run_hunt_loop_watch
 
     init_db()
     wait_while_disabled(HUNT_ACTOR)
@@ -136,6 +136,15 @@ def _cmd_hunt_loop(args: argparse.Namespace) -> int:
         max_minutes=args.max_minutes,
         max_pages_per_query=args.max_pages_per_query,
     )
+    if args.watch:
+        run_hunt_loop_watch(
+            query=args.query,
+            brand=brand,
+            budget=budget,
+            resume=not args.no_resume,
+            summarize_branches=not args.no_summarize,
+        )
+        return 0
     result = run_hunt_loop(
         query=args.query,
         brand=brand,
@@ -413,6 +422,88 @@ def _cmd_orchestrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_treg(args: argparse.Namespace) -> int:
+    from .treg_client import TregClient, TregError, treg_configured
+    from .treg_queue import allow_treg_tools, enqueue_free_treg_tools
+    from .treg_store import list_treg_tools, sync_treg_catalog, treg_counts
+
+    action = args.treg_command
+    if action == "status":
+        counts = treg_counts()
+        payload = {
+            "configured": treg_configured(),
+            **counts,
+        }
+        if treg_configured():
+            try:
+                with TregClient() as client:
+                    payload["balance"] = client.balance()
+            except TregError as exc:
+                payload["balance_error"] = str(exc)
+        print(json.dumps(payload, indent=2, default=str))
+        return 0
+    if action == "sync":
+        try:
+            result = sync_treg_catalog()
+        except TregError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        queued = enqueue_free_treg_tools() if args.enqueue_free else None
+        print(
+            json.dumps(
+                {
+                    "fetched": result.fetched,
+                    "upserted": result.upserted,
+                    "free": result.free,
+                    "paid_selectable": result.paid_selectable,
+                    "errors": result.errors,
+                    "free_hunt_enqueued": queued.hunt_enqueued if queued else 0,
+                    "free_research_enqueued": queued.research_enqueued if queued else 0,
+                },
+                indent=2,
+            )
+        )
+        return 0
+    if action == "allow":
+        result = allow_treg_tools(args.endpoint_ids)
+        print(
+            json.dumps(
+                {
+                    "allowed": result.allowed,
+                    "hunt_enqueued": result.hunt_enqueued,
+                    "research_enqueued": result.research_enqueued,
+                    "skipped": result.skipped,
+                },
+                indent=2,
+            )
+        )
+        return 0
+    if action == "list":
+        rows = list_treg_tools(
+            paid=None if args.all else True,
+            selectable=None if args.all else True,
+        )
+        print(
+            json.dumps(
+                [
+                    {
+                        "endpoint_id": row.endpoint_id,
+                        "queue_as": row.queue_as,
+                        "is_free": row.is_free,
+                        "allowed": row.allowed,
+                        "estimated_cost_usd": row.estimated_cost_usd,
+                        "title": row.title,
+                    }
+                    for row in rows
+                ],
+                indent=2,
+            )
+        )
+        return 0
+    print("unknown treg command", file=sys.stderr)
+    return 2
+
+
 def _cmd_queue_review(args: argparse.Namespace) -> int:
     from .agent_control import wait_while_disabled
     from .config import get_settings
@@ -563,6 +654,11 @@ def main(argv: list[str] | None = None) -> int:
         "--no-summarize",
         action="store_true",
         help="Skip Spark LLM branch-term extraction",
+    )
+    hunt_loop.add_argument(
+        "--watch",
+        action="store_true",
+        help="Stay running: drain due queries, then wait when the queue is empty",
     )
     hunt_loop.set_defaults(func=_cmd_hunt_loop)
 
@@ -877,6 +973,36 @@ def main(argv: list[str] | None = None) -> int:
         help="Deterministic review only (no Spark)",
     )
     queue_review.set_defaults(func=_cmd_queue_review)
+
+    treg = sub.add_parser(
+        "treg",
+        help="Sync the treg catalog and allow paid hunter/research tool calls",
+    )
+    treg_sub = treg.add_subparsers(dest="treg_command", required=True)
+    treg_sub.add_parser("status", help="Show token, catalog counts, and balance").set_defaults(
+        func=_cmd_treg
+    )
+    treg_sync = treg_sub.add_parser("sync", help="Pull CRM-relevant treg endpoints")
+    treg_sync.add_argument(
+        "--no-enqueue-free",
+        dest="enqueue_free",
+        action="store_false",
+        help="Do not queue free discovery tools after sync",
+    )
+    treg_sync.set_defaults(func=_cmd_treg, enqueue_free=True)
+    treg_allow = treg_sub.add_parser(
+        "allow",
+        help="Allow paid endpoints and queue hunter/research follow-ups",
+    )
+    treg_allow.add_argument("endpoint_ids", nargs="+", help="Catalog endpoint ids")
+    treg_allow.set_defaults(func=_cmd_treg)
+    treg_list = treg_sub.add_parser("list", help="List catalogued treg tools")
+    treg_list.add_argument(
+        "--all",
+        action="store_true",
+        help="Include free tools and non-selectable children",
+    )
+    treg_list.set_defaults(func=_cmd_treg)
 
     purge_noise = sub.add_parser(
         "purge-noise",

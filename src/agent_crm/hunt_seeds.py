@@ -9,6 +9,13 @@ from __future__ import annotations
 
 from agent_crm.enums import Brand, ContactAudience
 
+HUNT_LOOP_BRANDS: tuple[Brand, ...] = (
+    Brand.CELESTIAL_NEXUS,
+    Brand.MIDNIGHTSATIN,
+    Brand.HEYBUDDY,
+    Brand.TACTIC_STUDIO,
+)
+
 SEED_PACKS: dict[str, list[str]] = {
     Brand.MIDNIGHTSATIN.value: [
         "romance booktok communities",
@@ -152,6 +159,15 @@ def origin_with_audience(base_origin: str, audience: ContactAudience | None) -> 
     if base_origin.startswith(f"{audience.value}:"):
         return base_origin
     return f"{audience.value}:{base_origin}"
+
+
+def loop_seed_entries() -> list[tuple[Brand, str, str]]:
+    """Flatten seed packs the standing hunt-loop should enqueue (append-only)."""
+    entries: list[tuple[Brand, str, str]] = []
+    for brand in HUNT_LOOP_BRANDS:
+        for query, origin in seed_query_entries(brand):
+            entries.append((brand, query, origin))
+    return entries
 
 
 def seed_query_entries(brand: Brand) -> list[tuple[str, str]]:
