@@ -8,6 +8,7 @@ Milestone 1 surface:
 - ``GET  /leads/{id}/activities`` -- append-only history
 - ``POST /leads/{id}/stage``  -- Pipeline Manager stage transition
 - ``GET  /report/weekly``     -- Analytics weekly snapshot
+- ``GET  /report/growth``     -- Catalog deltas for 1h / 4h / 24h
 
 The API is a thin shell over the tooling + Pipeline Manager. It does not embed
 business logic so the same operations work from an agent process without HTTP.
@@ -38,6 +39,7 @@ from .agent_query import (
 from .auth import require_api_token, require_known_agent
 from agent_crm.contacts.comment_people_store import count_comment_people, list_comment_people
 from .config import get_settings
+from agent_crm.contacts.growth import catalog_growth
 from agent_crm.contacts.store import (
     backfill_contact_enrichment,
     backfill_contact_quality,
@@ -89,6 +91,7 @@ from .schemas import (
     AgentSearchOut,
     BatchVerifyRequest,
     BatchVerifyResult,
+    CatalogGrowthOut,
     CommentPersonOut,
     ContactBackfillRequest,
     ContactBackfillResultOut,
@@ -735,6 +738,17 @@ def change_stage(lead_id: int, body: StageChangeIn) -> OpportunityOut:
 @app.get("/report/weekly", tags=["analytics"])
 def weekly_report() -> dict:
     return PipelineManager(actor="analytics").weekly_report()
+
+
+@app.get("/report/growth", response_model=CatalogGrowthOut, tags=["analytics"])
+def catalog_growth_report(
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+) -> CatalogGrowthOut:
+    """New emails, names, companies, websites, and related fields in 1h / 4h / 24h."""
+    return CatalogGrowthOut.model_validate(
+        catalog_growth(brand=brand, audience=audience)
+    )
 
 
 # ---- agent presence / observer ---------------------------------------------

@@ -7,9 +7,26 @@ from datetime import UTC, datetime, timedelta
 import pandas as pd
 import streamlit as st
 
+from agent_crm.contacts.growth import GROWTH_METRIC_KEYS, catalog_growth
+from agent_crm.enums import Brand, ContactAudience
 from agent_crm.hunt.status import STALE_RUNNING_MINUTES, build_hunt_status, infer_hunt_phase
 from agent_crm.runtime_settings_store import get_runtime_setting
 from agent_crm.token_usage_store import load_token_usage_snapshot
+
+_GROWTH_METRIC_LABELS: dict[str, str] = {
+    "emails": "Emails",
+    "person_emails": "Person emails",
+    "names": "Names",
+    "companies": "Companies",
+    "titles": "Titles",
+    "socials": "Socials",
+    "websites": "Websites",
+    "commenters": "Comment authors",
+    "accounts": "Accounts",
+    "enriched": "Enriched",
+}
+
+_GROWTH_HEADLINE_KEYS: tuple[str, ...] = ("emails", "names", "companies", "websites")
 
 def _clip(value: str | None, length: int, *, truncate: bool) -> str | None:
     if not value:
@@ -170,9 +187,64 @@ def _cached_token_snapshot() -> dict:
     return load_token_usage_snapshot()
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_catalog_growth() -> dict:
+    return catalog_growth()
+
+
 def _clear_live_caches() -> None:
     _cached_hunt_status.clear()
     _cached_token_snapshot.clear()
+    _cached_catalog_growth.clear()
+
+
+def _render_catalog_growth(
+    *,
+    compact: bool = False,
+    brand: Brand | None = None,
+    audience: ContactAudience | None = None,
+) -> None:
+    if brand is None and audience is None:
+        report = _cached_catalog_growth()
+    else:
+        report = catalog_growth(brand=brand, audience=audience)
+    windows = report["windows"]
+    rates = report["per_hour"]
+
+    st.subheader("Catalog growth")
+    st.caption(
+        "New rows first seen in each window. Per-hour rates make 1h / 4h / 24h "
+        "comparable — a 1h pace above the 24h rate means intake sped up in the last hour."
+    )
+
+    headline = st.columns(len(_GROWTH_HEADLINE_KEYS))
+    for column, key in zip(headline, _GROWTH_HEADLINE_KEYS, strict=True):
+        rate_1h = float(rates["1h"][key])
+        rate_24h = float(rates["24h"][key])
+        column.metric(
+            f"{_GROWTH_METRIC_LABELS[key]} / hr",
+            f"{rate_1h:.1f}",
+            delta=f"{rate_1h - rate_24h:+.1f} vs 24h",
+        )
+
+    rows = []
+    for key in GROWTH_METRIC_KEYS:
+        if compact and key in {"titles", "accounts", "enriched"}:
+            continue
+        row: dict[str, object] = {"metric": _GROWTH_METRIC_LABELS[key]}
+        for hours in (1, 4, 24):
+            window = f"{hours}h"
+            row[f"+{window}"] = int(windows[window][key])
+            row[f"{window} /hr"] = round(float(rates[window][key]), 1)
+        rows.append(row)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    if not compact:
+        st.caption(
+            "Emails are new contact profiles. Names, companies, titles, and socials "
+            "are fields present on those new profiles. Websites are newly catalogued "
+            "hunt URLs. Enriched counts profiles whose people-enrichment payload was "
+            "written in the window (existing rows included)."
+        )
 
 
 def _render_live_refresh_bar(

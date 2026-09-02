@@ -12,6 +12,7 @@ from agent_crm.presence import build_observer_rows, fetch_spark_queue_health, sp
 
 from agent_crm.dashboard_ui.common import (
     _cached_token_snapshot,
+    _render_catalog_growth,
     _render_hunt_loop_status,
     _render_live_refresh_bar,
 )
@@ -211,6 +212,7 @@ def _render_agent_observer(*, live_seconds: int, token_seconds: int) -> None:
     summary = spark_slot_summary(queue_health, persisted_usage=token_snapshot)
     _render_spark_strip(summary)
     _render_hunt_loop_status(compact=True, live_spark=summary)
+    _render_catalog_growth(compact=True)
 
     observer_rows = build_observer_rows(
         list_heartbeats(),

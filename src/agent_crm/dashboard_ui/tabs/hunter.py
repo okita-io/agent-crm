@@ -12,6 +12,7 @@ from agent_crm.hunt.store import HuntStore
 
 from agent_crm.dashboard_ui.common import (
     _export_filename,
+    _render_catalog_growth,
     _render_full_csv_export,
     _render_hunt_loop_status,
 )
@@ -93,6 +94,7 @@ def _render_hunter_tab(refresh_seconds: int) -> None:
     @fragment
     def _hunter_live() -> None:
         _render_hunt_loop_status(refresh_seconds=refresh_seconds)
+        _render_catalog_growth(compact=True)
 
     _hunter_live()
 

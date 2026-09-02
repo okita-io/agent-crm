@@ -49,6 +49,13 @@ def test_dashboard_disables_streamlit_stale_fade() -> None:
     assert "cols[0].toggle(" in observer
     assert "agent_enabled_" in observer
     assert "_on_agent_enabled_change" in observer
+    assert "_render_catalog_growth(compact=True)" in observer
+    common = (DASHBOARD_UI / "common.py").read_text(encoding="utf-8")
+    assert "def _render_catalog_growth" in common
+    hunter = (TAB_DIR / "hunter.py").read_text(encoding="utf-8")
+    assert "_render_catalog_growth(compact=True)" in hunter
+    contacts = (TAB_DIR / "contacts.py").read_text(encoding="utf-8")
+    assert "_render_catalog_growth(brand=brand, audience=audience)" in contacts
 
 
 def test_seo_document_pickers_are_outside_expanders() -> None:

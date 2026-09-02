@@ -673,6 +673,25 @@ class ContactProfilesSummaryOut(BaseModel):
     by_brand: list[ContactProfileBrandCountOut]
 
 
+class CatalogGrowthCountsOut(BaseModel):
+    emails: int
+    person_emails: int
+    names: int
+    companies: int
+    titles: int
+    socials: int
+    websites: int
+    commenters: int
+    accounts: int
+    enriched: int
+
+
+class CatalogGrowthOut(BaseModel):
+    generated_at: datetime
+    windows: dict[str, CatalogGrowthCountsOut]
+    per_hour: dict[str, dict[str, float]]
+
+
 class CommentPersonOut(ORMModel):
     id: int
     platform: str

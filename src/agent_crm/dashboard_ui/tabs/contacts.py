@@ -12,6 +12,7 @@ from agent_crm.enums import AgencyRequestStatus, AgentStatus, Brand, ContactAudi
 
 from agent_crm.dashboard_ui.common import (
     _export_filename,
+    _render_catalog_growth,
     _render_full_csv_export,
 )
 
@@ -137,6 +138,8 @@ def _render_contacts_tab() -> None:
         else ContactAudience(audience_filter)
     )
     quality = quality_filter
+
+    _render_catalog_growth(brand=brand, audience=audience)
 
     filter_key = f"{view_filter}:{brand_filter}:{audience_filter}:{quality_filter}"
     if st.session_state.get("contacts_filter_key") != filter_key:
