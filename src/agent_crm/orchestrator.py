@@ -8,11 +8,16 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
-from .agent_control import wait_while_disabled
+from .agent_control import (
+    dispatcher_work_allowed,
+    enabled_work_agents,
+    is_agent_enabled,
+    is_focused_roster,
+    wait_while_disabled,
+)
 from .config import get_settings
 from .contact_quality import is_placeholder_email, is_role_inbox_email
 from .db import session_scope
-from .idle_backlog import seed_idle_backlog_jobs
 from .enums import (
     AgentJobKind,
     AgentJobStatus,
@@ -23,6 +28,7 @@ from .enums import (
     ImprovementSourceAgent,
 )
 from .heartbeat import list_heartbeats
+from .idle_backlog import seed_idle_backlog_jobs
 from .improvement_store import make_fingerprint, record_improvement_note
 from .job_store import count_pending_jobs, count_running_jobs
 from .models import AgentJob, ContactVerification, Lead
@@ -41,6 +47,16 @@ STANDING_WORKERS: tuple[str, ...] = (
 )
 
 STALE_HEARTBEAT_MINUTES = 10
+
+
+def _focused_task_label(enabled: list[str] | None = None) -> str:
+    """Heartbeat task text that reflects which agents can currently take work."""
+    names = enabled if enabled is not None else enabled_work_agents()
+    if not names:
+        return "no work agents enabled"
+    if is_focused_roster(names):
+        return f"focused tasking: {', '.join(names)}"
+    return "inspecting stack health"
 
 
 def _note_from_failure_text(
@@ -118,6 +134,8 @@ def _check_stale_heartbeats(now: datetime) -> None:
     cutoff = now - timedelta(minutes=STALE_HEARTBEAT_MINUTES)
     heartbeats = {row.agent_name: row for row in list_heartbeats()}
     for agent_name in STANDING_WORKERS:
+        if not is_agent_enabled(agent_name):
+            continue
         snapshot = heartbeats.get(agent_name)
         if snapshot is None or snapshot.last_seen_at < cutoff:
             record_improvement_note(
@@ -311,8 +329,9 @@ def run_orchestrator_cycle() -> None:
     _check_stale_heartbeats(now)
     _check_failed_jobs()
     _check_spark_queue()
-    _check_verify_backlog()
-    _check_verification_coverage()
+    if dispatcher_work_allowed():
+        _check_verify_backlog()
+        _check_verification_coverage()
     _check_dummy_email_slips()
     seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
 
@@ -359,7 +378,7 @@ def run_orchestrator(*, poll_seconds: int | None = None) -> None:
         record_heartbeat(
             ACTOR,
             status=AgentStatus.THINKING,
-            task="inspecting stack health",
+            task=_focused_task_label(),
         )
         try:
             run_orchestrator_cycle()
@@ -377,7 +396,7 @@ def run_orchestrator(*, poll_seconds: int | None = None) -> None:
         record_heartbeat(
             ACTOR,
             status=AgentStatus.IDLE,
-            task="orchestration cycle complete",
+            task=_focused_task_label(),
         )
         last_health_at = time.monotonic()
         time.sleep(command_poll)

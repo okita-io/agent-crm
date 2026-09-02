@@ -16,6 +16,28 @@ logger = logging.getLogger(__name__)
 PAUSED_TASK = "paused"
 _POLL_SECONDS = 5.0
 
+# Standing workers that receive assigned work (excludes the orchestrator itself).
+WORK_AGENTS: tuple[str, ...] = (
+    "outbound_hunter",
+    "research",
+    "engagement",
+    "seo",
+    "aeo-geo",
+    "queue-review",
+    "job-dispatcher",
+)
+
+DISPATCHER_AGENT = "job-dispatcher"
+
+# Agency command enqueue types → the standing agent that drains them.
+ENQUEUE_ACTION_AGENTS: dict[str, str] = {
+    "enqueue_hunt": "outbound_hunter",
+    "enqueue_research": "research",
+    "enqueue_engagement": "engagement",
+    "enqueue_seo": "seo",
+    "enqueue_aeo_geo": "aeo-geo",
+}
+
 
 def is_agent_enabled(agent_name: str) -> bool:
     """Return True when the agent may work. Missing rows default to on."""
@@ -31,6 +53,39 @@ def list_agent_enabled() -> dict[str, bool]:
     with session_scope() as session:
         rows = session.scalars(select(AgentToggle)).all()
         return {row.agent_name: bool(row.enabled) for row in rows}
+
+
+def roster_enabled(names: tuple[str, ...] | list[str] | None = None) -> dict[str, bool]:
+    """Return on/off for each name. Missing toggle rows default to on."""
+    stored = list_agent_enabled()
+    keys = tuple(names) if names is not None else WORK_AGENTS
+    return {name: stored.get(name, True) for name in keys}
+
+
+def enabled_work_agents() -> list[str]:
+    """Standing work agents whose Live Agents switch is on."""
+    return [name for name, on in roster_enabled().items() if on]
+
+
+def is_focused_roster(enabled: list[str] | None = None) -> bool:
+    """True when only one or two work agents are switched on."""
+    names = enabled if enabled is not None else enabled_work_agents()
+    return 1 <= len(names) <= 2
+
+
+def allowed_enqueue_actions(enabled: list[str] | None = None) -> list[str]:
+    """Enqueue action types that currently enabled agents can drain."""
+    on = set(enabled if enabled is not None else enabled_work_agents())
+    return [
+        action
+        for action, agent in ENQUEUE_ACTION_AGENTS.items()
+        if agent in on
+    ]
+
+
+def dispatcher_work_allowed() -> bool:
+    """True when the job dispatcher may be assigned verify/enrich/qualify work."""
+    return is_agent_enabled(DISPATCHER_AGENT)
 
 
 def set_agent_enabled(agent_name: str, enabled: bool) -> bool:

@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
+from .agent_control import dispatcher_work_allowed
 from .contact_qualification import count_unqualified_contacts, seed_qualify_jobs_for_unqualified
 from .contact_quality import is_role_inbox_email
 from .db import session_scope
@@ -68,7 +69,15 @@ def seed_enrich_jobs_for_unenriched(*, limit: int = 50) -> int:
 
 
 def seed_idle_backlog_jobs(*, limit: int = 50) -> dict[str, int]:
-    """Seed verify, enrich, or qualify jobs for the furthest-behind backlog kind."""
+    """Seed verify, enrich, or qualify jobs for the furthest-behind backlog kind.
+
+    No-op when the job dispatcher is paused so work does not pile up for a
+    disabled agent.
+    """
+    empty = {"verify": 0, "enrich": 0, "qualify": 0, "topical": 0}
+    if not dispatcher_work_allowed():
+        return empty
+
     pending_metrics = pending_kind_lag_metrics()
     pending_counts = count_pending_jobs_by_kind()
     metrics: dict[AgentJobKind, tuple[int, datetime]] = dict(pending_metrics)
@@ -161,4 +170,4 @@ def seed_idle_backlog_jobs(*, limit: int = 50) -> dict[str, int]:
             "topical": seed_topical_relevance_jobs(limit=limit),
         }
 
-    return {"verify": 0, "enrich": 0, "qualify": 0, "topical": 0}
+    return empty

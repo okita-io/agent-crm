@@ -198,3 +198,46 @@ def test_orchestrator_idle_seed_runs_on_every_cycle() -> None:
         mock_seed.return_value = {"verify": 0, "enrich": 0}
         run_orchestrator_cycle()
     mock_seed.assert_called_once()
+
+
+def test_seed_idle_backlog_skips_when_dispatcher_paused() -> None:
+    from agent_crm.agent_control import set_agent_enabled
+
+    upsert_contact_profile(
+        email="paused.dispatcher@studio.com",
+        name="Paused Dispatcher",
+        brand=Brand.TACTIC_STUDIO,
+        source_url="https://studio.com/team",
+    )
+    with session_scope() as session:
+        from agent_crm.models import AgentJob
+
+        for row in session.scalars(select(AgentJob)):
+            session.delete(row)
+        session.flush()
+
+    set_agent_enabled("job-dispatcher", False)
+    result = seed_idle_backlog_jobs(limit=5)
+    assert result == {"verify": 0, "enrich": 0, "qualify": 0, "topical": 0}
+    assert count_pending_jobs(kind=AgentJobKind.VERIFY_LEAD) == 0
+
+
+def test_orchestrator_does_not_seed_when_dispatcher_paused() -> None:
+    from agent_crm.agent_control import set_agent_enabled
+
+    upsert_contact_profile(
+        email="orch.pause@studio.com",
+        name="Orch Pause",
+        brand=Brand.MIDNIGHTSATIN,
+        source_url="https://studio.com/a",
+    )
+    with session_scope() as session:
+        from agent_crm.models import AgentJob
+
+        for row in session.scalars(select(AgentJob)):
+            session.delete(row)
+        session.flush()
+
+    set_agent_enabled("job-dispatcher", False)
+    run_orchestrator_cycle()
+    assert count_pending_jobs(kind=AgentJobKind.VERIFY_LEAD) == 0

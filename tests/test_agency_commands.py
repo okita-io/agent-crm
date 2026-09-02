@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 
 from agent_crm.agency_commands import execute_action, execute_actions
-from agent_crm.agent_control import is_agent_enabled
+from agent_crm.agent_control import is_agent_enabled, set_agent_enabled
 from agent_crm.enums import Brand
 from agent_crm.hunt_store import HuntStore
 
@@ -88,3 +88,53 @@ def test_format_llm_error_upstream(db_url) -> None:
     text = format_llm_error(err)
     assert "Spark LLM is unavailable" in text
     assert "Pause/resume" in text
+
+
+def test_enqueue_skipped_when_agent_paused(db_url) -> None:
+    set_agent_enabled("outbound_hunter", False)
+    result = execute_action(
+        {
+            "type": "enqueue_hunt",
+            "query": "astrology community reddit",
+            "brand": Brand.TACTIC_STUDIO.value,
+        }
+    )
+    assert result["ok"] is False
+    assert result["agent"] == "outbound_hunter"
+    assert "paused" in result["detail"]
+    assert HuntStore().count_pending() == 0
+
+
+def test_execute_actions_enables_then_enqueues(db_url) -> None:
+    set_agent_enabled("research", False)
+    results = execute_actions(
+        [
+            {
+                "type": "enqueue_research",
+                "query": "competitor sites",
+                "brand": "midnightsatin",
+                "kind": "competitor",
+            },
+            {"type": "set_agent_enabled", "agent": "research", "enabled": True},
+        ]
+    )
+    assert results[1]["ok"] is True
+    assert results[1]["enabled"] is True
+    assert results[0]["ok"] is True
+    assert results[0]["enqueued"] is True
+
+
+def test_prompt_focuses_on_enabled_agents(db_url) -> None:
+    from agent_crm.agency_commands import _build_system_prompt, _operator_context
+    from agent_crm.agent_control import WORK_AGENTS
+
+    for name in WORK_AGENTS:
+        set_agent_enabled(name, name in {"outbound_hunter", "research"})
+
+    ctx = _operator_context()
+    assert ctx["focused"] is True
+    assert ctx["allowed_enqueue_actions"] == ["enqueue_hunt", "enqueue_research"]
+    prompt = _build_system_prompt(ctx)
+    assert "Focused roster" in prompt
+    assert "enqueue_hunt, enqueue_research" in prompt
+    assert "Do not enqueue work for paused agents" in prompt

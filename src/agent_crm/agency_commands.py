@@ -8,7 +8,6 @@ from typing import Any
 
 import httpx
 
-from .agent_control import list_agent_enabled, set_agent_enabled
 from .agency_request_store import (
     claim_next_pending_agency_request,
     count_pending_agency_requests,
@@ -16,9 +15,18 @@ from .agency_request_store import (
     mark_agency_request_completed,
     mark_agency_request_failed,
 )
+from .agent_control import (
+    ENQUEUE_ACTION_AGENTS,
+    allowed_enqueue_actions,
+    enabled_work_agents,
+    is_agent_enabled,
+    is_focused_roster,
+    list_agent_enabled,
+    set_agent_enabled,
+)
 from .config import get_settings
-from .enums import AgentStatus, Brand, ResearchFindingKind, SeoQueryKind
 from .engagement_query_store import EngagementQueryStore
+from .enums import AgentStatus, Brand, ResearchFindingKind, SeoQueryKind
 from .heartbeat import record_heartbeat
 from .hunt_store import HuntStore
 from .llm_client import chat_completions
@@ -186,11 +194,15 @@ def _operator_context() -> dict[str, Any]:
     brands = [brand.value for brand in Brand if brand != Brand.UNASSIGNED]
     research_kinds = [kind.value for kind in ResearchFindingKind]
     seo_kinds = [kind.value for kind in SeoQueryKind]
+    enabled = enabled_work_agents()
     return {
         "agents": agents,
         "brands": brands,
         "research_kinds": research_kinds,
         "seo_kinds": seo_kinds,
+        "enabled_work_agents": enabled,
+        "allowed_enqueue_actions": allowed_enqueue_actions(enabled),
+        "focused": is_focused_roster(enabled),
     }
 
 
@@ -199,6 +211,28 @@ def _build_system_prompt(ctx: dict[str, Any]) -> str:
         f"- {row['key']}: {row['label']} (enabled={row['enabled']})"
         for row in ctx["agents"]
     )
+    enabled = list(ctx.get("enabled_work_agents") or [])
+    allowed = list(ctx.get("allowed_enqueue_actions") or [])
+    allowed_text = ", ".join(allowed) if allowed else "(none — do not enqueue work)"
+    if not enabled:
+        focus_rules = (
+            "- No work agents are enabled. Do not enqueue hunt/research/engagement/SEO/"
+            "AEO work. You may enable agents only if the operator explicitly asks.\n"
+        )
+    elif ctx.get("focused"):
+        focus_rules = (
+            f"- Focused roster: only {len(enabled)} work agent(s) enabled "
+            f"({', '.join(enabled)}). Restrict tasking and task types to those agents. "
+            f"Allowed enqueue actions: {allowed_text}. "
+            "Do not enqueue work for paused agents. Do not enable additional agents "
+            "unless the operator explicitly asks to turn them on.\n"
+        )
+    else:
+        focus_rules = (
+            f"- Allowed enqueue actions for currently enabled agents: {allowed_text}. "
+            "Do not enqueue work for paused agents. Do not enable paused agents unless "
+            "the operator explicitly asks.\n"
+        )
     return (
         "You are the orchestrator for The Agency CRM. Operators send short commands. "
         "Respond with JSON only (no markdown fences) using this schema:\n"
@@ -226,8 +260,9 @@ def _build_system_prompt(ctx: dict[str, Any]) -> str:
         + ".\n"
         "- enqueue_aeo_geo uses kind aeo_geo internally; do not pass kind on that action.\n"
         "- If the operator only asks a question, return actions=[] and answer in reply.\n"
-        "- Prefer enabling agents before enqueueing work when both are needed.\n\n"
-        "Toggleable agents now:\n"
+        "- Observe Live Agents enable/disable switches when assigning work.\n"
+        + focus_rules
+        + "\nToggleable agents now:\n"
         + agent_lines
     )
 
@@ -307,6 +342,15 @@ def execute_action(action: dict[str, Any]) -> dict[str, Any]:
             "ok": True,
             "agent": agent,
             "enabled": stored,
+        }
+
+    owner = ENQUEUE_ACTION_AGENTS.get(action_type)
+    if owner is not None and not is_agent_enabled(owner):
+        return {
+            "type": action_type,
+            "ok": False,
+            "agent": owner,
+            "detail": f"{owner} is paused; enqueue skipped",
         }
 
     brand = _parse_brand(str(action.get("brand") or ""))
@@ -403,7 +447,15 @@ def execute_action(action: dict[str, Any]) -> dict[str, Any]:
 
 
 def execute_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [execute_action(action) for action in actions]
+    """Apply enable/disable toggles first so a batch can enable then enqueue."""
+    results: list[dict[str, Any] | None] = [None] * len(actions)
+    for index, action in enumerate(actions):
+        if str(action.get("type") or "").strip() == "set_agent_enabled":
+            results[index] = execute_action(action)
+    for index, action in enumerate(actions):
+        if results[index] is None:
+            results[index] = execute_action(action)
+    return [row for row in results if row is not None]
 
 
 def interpret_operator_message(
