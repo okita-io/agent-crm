@@ -18,7 +18,7 @@ class SparkQueueSettings(BaseSettings):
     )
 
     # Upstream Spark SGLang OpenAI-compatible base URL (includes /v1).
-    base_url: str = "http://10.0.1.9:8888/v1"
+    base_url: str = "http://10.0.1.3:8888/v1"
     model: str = "qwen3.8-27b-sglang"
     max_concurrency: int = 4
     queue_timeout: float = 600.0

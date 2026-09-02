@@ -15,7 +15,7 @@ Spark must never take down a queued request. ``get_running_count`` returns
 ``None`` when no source answered, and the gate treats that as "unknown —
 keep waiting" instead of assuming the GPU is idle.
 
-The cloud build VM cannot reach ``10.0.1.9``; use ``FakeOccupancyBackend`` in
+The cloud build VM cannot reach ``10.0.1.3``; use ``FakeOccupancyBackend`` in
 tests or set ``SPARK_LLM_BASE_URL`` to a reachable mock upstream.
 """
 
@@ -108,6 +108,9 @@ class SparkOccupancyBackend(OccupancyBackend):
         self._origin = origin_url.rstrip("/")
         self._client = client
         self._owns_client = client is None
+
+    def set_origin(self, origin_url: str) -> None:
+        self._origin = origin_url.rstrip("/")
 
     def _get_client(self) -> httpx.AsyncClient:
         # One persistent pooled client for the process lifetime. Recreating a

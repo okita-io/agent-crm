@@ -20,17 +20,39 @@ from .occupancy import SparkOccupancyBackend, SparkOccupancyClient
 from .usage import TokenUsageLedger
 
 logger = logging.getLogger(__name__)
-settings = get_spark_queue_settings()
-occupancy_client = SparkOccupancyClient(
-    SparkOccupancyBackend(settings.origin_url)
-)
+_bootstrap = get_spark_queue_settings()
+occupancy_backend = SparkOccupancyBackend(_bootstrap.origin_url)
+occupancy_client = SparkOccupancyClient(occupancy_backend)
 gate = GlobalConcurrencyGate(
     occupancy_client=occupancy_client,
-    max_concurrency=settings.max_concurrency,
-    queue_timeout=settings.queue_timeout,
-    poll_interval=settings.occupancy_poll_interval,
+    max_concurrency=_bootstrap.max_concurrency,
+    queue_timeout=_bootstrap.queue_timeout,
+    poll_interval=_bootstrap.occupancy_poll_interval,
 )
 http_client: httpx.AsyncClient | None = None
+
+
+def _sync_runtime_spark_config() -> None:
+    """Apply dashboard overrides before each upstream call."""
+    try:
+        from agent_crm.runtime_settings_store import get_runtime_setting, spark_origin_url
+
+        occupancy_backend.set_origin(spark_origin_url())
+        gate.set_max_concurrency(int(get_runtime_setting("spark_max_concurrency")))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("runtime spark settings sync skipped: %s", exc)
+
+
+def _effective_upstream_base_url() -> str:
+    from agent_crm.runtime_settings_store import get_runtime_setting
+
+    return str(get_runtime_setting("spark_upstream_base_url")).rstrip("/")
+
+
+def _effective_model() -> str:
+    from agent_crm.runtime_settings_store import get_runtime_setting
+
+    return str(get_runtime_setting("spark_model"))
 
 
 def _persist_token_usage(
@@ -82,7 +104,8 @@ def _client() -> httpx.AsyncClient:
 
 
 def _upstream_url(path: str) -> str:
-    return f"{settings.base_url.rstrip('/')}/{path.lstrip('/')}"
+    _sync_runtime_spark_config()
+    return f"{_effective_upstream_base_url()}/{path.lstrip('/')}"
 
 
 def _request_actor(request: Request) -> str:
@@ -101,6 +124,7 @@ def _serialize_actor_entries(entries: list) -> list[dict[str, str | float]]:
 
 
 async def _proxy_request(request: Request, upstream_path: str) -> Response:
+    _sync_runtime_spark_config()
     body = await request.body()
     actor = _request_actor(request)
     headers = {
@@ -152,6 +176,18 @@ async def _proxy_request(request: Request, upstream_path: str) -> Response:
             headers=dict(upstream.headers),
             media_type=upstream.headers.get("content-type"),
         )
+    except httpx.HTTPError as exc:
+        logger.exception("Spark upstream request failed")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "message": f"Spark upstream unreachable: {exc}",
+                    "type": "upstream_error",
+                    "code": "spark_upstream_down",
+                }
+            },
+        )
     finally:
         await gate.release(actor)
 
@@ -184,6 +220,7 @@ async def _stream_upstream(
 
 @app.get("/health", tags=["system"])
 async def health() -> dict:
+    _sync_runtime_spark_config()
     await occupancy_client.observe_running_count()
     observed = occupancy_client.last_observed
     local = gate.local_in_flight
@@ -193,8 +230,8 @@ async def health() -> dict:
         "waiting": gate.waiting,
         "observed_upstream_in_flight": observed,
         "max_concurrency": gate.max_concurrency,
-        "upstream": settings.base_url,
-        "model": settings.model,
+        "upstream": _effective_upstream_base_url(),
+        "model": _effective_model(),
         "waiters": _serialize_actor_entries(gate.waiters),
         "in_flight": _serialize_actor_entries(gate.in_flight),
         "external_upstream_slots": max(0, (observed or 0) - local),

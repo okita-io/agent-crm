@@ -10,6 +10,10 @@ import pandas as pd
 import streamlit as st
 
 from agent_crm.agent_control import set_agent_enabled
+from agent_crm.agency_request_store import (
+    create_agency_request,
+    list_agency_requests,
+)
 from agent_crm.comment_people_store import (
     count_comment_people,
     list_comment_people,
@@ -25,6 +29,7 @@ from agent_crm.db import database_kind, init_db
 from agent_crm.engagement_query_store import EngagementQueryStore
 from agent_crm.engagement_store import count_drafts, count_threads, list_drafts, list_threads
 from agent_crm.enums import (
+    AgencyRequestStatus,
     AgentStatus,
     Brand,
     ContactAudience,
@@ -58,6 +63,12 @@ from agent_crm.seo_store import (
     list_plans,
     list_reviews,
     list_targets,
+)
+from agent_crm.runtime_settings_store import (
+    docker_spark_host_hint,
+    list_runtime_settings_meta,
+    probe_spark_upstream,
+    update_runtime_settings,
 )
 from agent_crm.token_usage_store import load_token_usage_snapshot
 from agent_crm.tooling import CRMToolkit
@@ -219,12 +230,16 @@ def _priority_label(priority: int) -> str:
 
 def _observer_live_refresh_seconds() -> int:
     """Spark slots + heartbeat/status/task. Floor at 2s to avoid a busy loop."""
-    return max(2, int(get_settings().observer_live_refresh_seconds or 5))
+    from agent_crm.runtime_settings_store import get_runtime_setting
+
+    return max(2, int(get_runtime_setting("observer_live_refresh_seconds") or 5))
 
 
 def _observer_refresh_seconds() -> int:
     """Token totals / hunt snapshot. Floor at 10s so 0 cannot hammer Postgres."""
-    return max(10, int(get_settings().observer_refresh_seconds or 600))
+    from agent_crm.runtime_settings_store import get_runtime_setting
+
+    return max(10, int(get_runtime_setting("observer_refresh_seconds") or 600))
 
 
 def _format_refresh_interval(seconds: int) -> str:
@@ -1529,6 +1544,165 @@ def _render_verifier_tab() -> None:
     )
 
 
+def _render_settings_tab() -> None:
+    st.subheader("Settings")
+    st.caption(
+        "Runtime overrides stored in the CRM database. Spark URL changes apply immediately "
+        "to spark-queue; SearXNG and Firecrawl URLs apply on the next search/scrape call."
+    )
+
+    meta = list_runtime_settings_meta()
+    values = {row["key"]: row["value"] for row in meta}
+    defaults = {row["key"]: row["default"] for row in meta}
+
+    with st.form("agency_settings_form"):
+        spark_url = st.text_input(
+            "Spark SGLang base URL",
+            value=str(values.get("spark_upstream_base_url") or ""),
+            help="OpenAI-compatible base URL, usually ends with /v1",
+        )
+        spark_model = st.text_input(
+            "Spark model id",
+            value=str(values.get("spark_model") or ""),
+        )
+        spark_cap = st.number_input(
+            "Spark global session cap",
+            min_value=1,
+            max_value=32,
+            value=int(values.get("spark_max_concurrency") or 4),
+        )
+        searxng = st.text_input(
+            "SearXNG URL",
+            value=str(values.get("searxng_url") or ""),
+        )
+        firecrawl = st.text_input(
+            "Firecrawl URL",
+            value=str(values.get("firecrawl_url") or ""),
+        )
+        live_refresh = st.number_input(
+            "Live Agents refresh (seconds)",
+            min_value=2,
+            max_value=3600,
+            value=int(values.get("observer_live_refresh_seconds") or 5),
+        )
+        token_cache = st.number_input(
+            "Token totals cache (seconds)",
+            min_value=10,
+            max_value=86400,
+            value=int(values.get("observer_refresh_seconds") or 600),
+        )
+        input_rate = st.number_input(
+            "Est. cloud input $/M tokens",
+            min_value=0.0,
+            value=float(values.get("llm_input_usd_per_million") or 2.0),
+            step=0.1,
+        )
+        output_rate = st.number_input(
+            "Est. cloud output $/M tokens",
+            min_value=0.0,
+            value=float(values.get("llm_output_usd_per_million") or 10.0),
+            step=0.1,
+        )
+        saved = st.form_submit_button("Save settings", type="primary")
+
+    if saved:
+        try:
+            update_runtime_settings(
+                {
+                    "spark_upstream_base_url": spark_url,
+                    "spark_model": spark_model,
+                    "spark_max_concurrency": int(spark_cap),
+                    "searxng_url": searxng,
+                    "firecrawl_url": firecrawl,
+                    "observer_live_refresh_seconds": int(live_refresh),
+                    "observer_refresh_seconds": int(token_cache),
+                    "llm_input_usd_per_million": float(input_rate),
+                    "llm_output_usd_per_million": float(output_rate),
+                }
+            )
+            st.success("Settings saved.")
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+
+    host_hint = docker_spark_host_hint()
+    if host_hint:
+        st.info(
+            f"Docker compose maps hostname `spark` via extra_hosts. "
+            f"When Spark moves, set URL to `http://{host_hint}:8888/v1` here, "
+            f"and update `spark:{host_hint}` in docker-compose.yml if you use the `spark` alias."
+        )
+
+    if st.button("Test Spark connection", key="probe_spark_settings"):
+        probe = probe_spark_upstream(spark_url.strip() or None)
+        if probe["ok"]:
+            models = ", ".join(probe.get("models") or []) or "no models listed"
+            st.success(f"Spark reachable at {probe['url']} — models: {models}")
+        else:
+            st.error(f"Spark probe failed: {probe.get('detail')}")
+
+    with st.expander("Environment defaults (from container env)"):
+        st.json(defaults)
+
+
+def _render_command_tab() -> None:
+    st.subheader("Command")
+    st.caption(
+        "Send natural-language instructions to the orchestrator. It can pause or resume "
+        "standing agents and enqueue hunt, research, engagement, SEO, or AEO/GEO work. "
+        "Responses appear here once the orchestrator picks up your message (usually within a few seconds)."
+    )
+
+    requests = list_agency_requests(limit=80)
+    pending = any(
+        row.status in (AgencyRequestStatus.PENDING, AgencyRequestStatus.PROCESSING)
+        for row in requests
+    )
+    if pending:
+        st.info("Orchestrator is processing your request…")
+
+    if not requests:
+        st.info("No commands yet. Ask the orchestrator to pause agents or queue new work.")
+
+    for row in requests:
+        with st.chat_message("user"):
+            st.markdown(row.message)
+            st.caption(row.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
+        if row.status == AgencyRequestStatus.COMPLETED:
+            with st.chat_message("assistant"):
+                st.markdown(row.reply or "Done.")
+                if row.actions:
+                    with st.expander("Actions taken"):
+                        st.json(row.actions)
+        elif row.status == AgencyRequestStatus.FAILED:
+            with st.chat_message("assistant"):
+                st.error(row.error_message or "Orchestrator could not handle that command.")
+        elif row.status in (
+            AgencyRequestStatus.PENDING,
+            AgencyRequestStatus.PROCESSING,
+        ):
+            with st.chat_message("assistant"):
+                st.caption("Queued — waiting for orchestrator…")
+
+    prompt = st.chat_input("Message the orchestrator…")
+    if prompt:
+        create_agency_request(prompt)
+        st.rerun()
+
+
+def _command_fragment() -> None:
+    try:
+        fragment = st.fragment(run_every=timedelta(seconds=5))
+    except TypeError:
+        fragment = st.fragment
+
+    @fragment
+    def _command() -> None:
+        _render_command_tab()
+
+    _command()
+
+
 def _render_improvement_tab() -> None:
     st.subheader("Improvement / gaps")
     st.caption(
@@ -1617,9 +1791,11 @@ def main() -> None:
     st.title("The Agency")
     st.caption(f"Store: {database_kind()} · CRM + SEO + AEO/GEO documents")
 
-    observer_tab, pipeline_tab, hunter_tab, research_tab, engagement_tab, seo_tab, aeo_geo_tab, contacts_tab, verifier_tab, improvement_tab = st.tabs(
+    observer_tab, command_tab, settings_tab, pipeline_tab, hunter_tab, research_tab, engagement_tab, seo_tab, aeo_geo_tab, contacts_tab, verifier_tab, improvement_tab = st.tabs(
         [
             "Live agents",
+            "Command",
+            "Settings",
             "Pipeline & leads",
             "Hunter",
             "Research",
@@ -1634,6 +1810,12 @@ def main() -> None:
 
     with observer_tab:
         _observer_fragment(live_seconds=live_seconds, token_seconds=refresh_seconds)
+
+    with command_tab:
+        _command_fragment()
+
+    with settings_tab:
+        _render_settings_tab()
 
     with pipeline_tab:
         _render_pipeline_tab()

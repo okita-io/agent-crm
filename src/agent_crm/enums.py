@@ -190,6 +190,15 @@ class AgentJobStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class AgencyRequestStatus(str, enum.Enum):
+    """Operator command submitted from the dashboard Command tab."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 SPARK_AGENT_JOB_KINDS: frozenset[AgentJobKind] = frozenset(
     {
         AgentJobKind.ENRICH_CONTACT,

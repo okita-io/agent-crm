@@ -49,6 +49,9 @@ class GlobalConcurrencyGate:
     def max_concurrency(self) -> int:
         return self._max
 
+    def set_max_concurrency(self, value: int) -> None:
+        self._max = max(1, int(value))
+
     @property
     def local_in_flight(self) -> int:
         return self._local_in_flight

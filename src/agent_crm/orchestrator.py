@@ -319,17 +319,43 @@ def run_orchestrator_cycle() -> None:
 
 def run_orchestrator(*, poll_seconds: int | None = None) -> None:
     """Run forever: inspect stack health and record improvement notes."""
+    from .agency_commands import has_pending_agency_requests, process_pending_agency_requests
     from .heartbeat import record_heartbeat
     from .idle_backlog import seed_idle_backlog_jobs
 
     settings = get_settings()
     poll = poll_seconds if poll_seconds is not None else settings.orchestrator_poll_seconds
+    command_poll = min(5.0, float(poll))
 
     record_heartbeat(ACTOR, status=AgentStatus.IDLE, task="orchestrator starting")
     wait_while_disabled(ACTOR)
     seed_idle_backlog_jobs(limit=settings.job_dispatcher_idle_verify_limit)
+    last_health_at = 0.0
     while True:
         wait_while_disabled(ACTOR)
+        if has_pending_agency_requests():
+            record_heartbeat(
+                ACTOR,
+                status=AgentStatus.THINKING,
+                task="operator command",
+            )
+            try:
+                process_pending_agency_requests(max_requests=1)
+            except Exception:  # noqa: BLE001
+                logger.exception("Agency command processing failed")
+            record_heartbeat(
+                ACTOR,
+                status=AgentStatus.IDLE,
+                task="command handled",
+            )
+            time.sleep(command_poll)
+            continue
+
+        now_mono = time.monotonic()
+        if now_mono - last_health_at < poll:
+            time.sleep(command_poll)
+            continue
+
         record_heartbeat(
             ACTOR,
             status=AgentStatus.THINKING,
@@ -353,4 +379,5 @@ def run_orchestrator(*, poll_seconds: int | None = None) -> None:
             status=AgentStatus.IDLE,
             task="orchestration cycle complete",
         )
-        time.sleep(poll)
+        last_health_at = time.monotonic()
+        time.sleep(command_poll)

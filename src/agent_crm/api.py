@@ -61,7 +61,12 @@ from .enums import (
     SeoTargetRole,
     Stage,
 )
-from .errors import InvalidStageTransition, NotFoundError
+from .agency_request_store import create_agency_request, list_agency_requests
+from .runtime_settings_store import (
+    list_runtime_settings_meta,
+    probe_spark_upstream,
+    update_runtime_settings,
+)
 from .heartbeat import list_heartbeats, record_heartbeat
 from .hunt_loop import HuntBudget, run_hunt_loop
 from .hunt_status import build_hunt_status
@@ -77,6 +82,9 @@ from .schemas import (
     AgentCatalogOut,
     AgentEnabledIn,
     AgentObserverOut,
+    AgencyRequestIn,
+    AgencyRequestOut,
+    AgencySettingsUpdateIn,
     AgentPageOut,
     AgentSearchOut,
     BatchVerifyRequest,
@@ -109,11 +117,13 @@ from .schemas import (
     ResearchFindingOut,
     ResearchRequest,
     ResearchResult,
+    RuntimeSettingMetaOut,
     SeoLoopRequest,
     SeoLoopResultOut,
     SeoPlanOut,
     SeoReviewOut,
     SeoTargetOut,
+    SparkProbeOut,
     VerifyRawRequest,
     VerifyRawResult,
 )
@@ -659,6 +669,42 @@ def set_agent_enabled_flag(agent_name: str, body: AgentEnabledIn) -> dict:
 @app.get("/agents/spark", tags=["agents"])
 def spark_resources() -> dict:
     return spark_slot_summary(fetch_spark_queue_health())
+
+
+@app.post("/agency/requests", response_model=AgencyRequestOut, tags=["agency"])
+def submit_agency_request(body: AgencyRequestIn) -> AgencyRequestOut:
+    """Queue an operator command for the orchestrator."""
+    row = create_agency_request(body.message)
+    return AgencyRequestOut.model_validate(row)
+
+
+@app.get("/agency/requests", response_model=list[AgencyRequestOut], tags=["agency"])
+def list_agency_request_history(limit: int = 50) -> list[AgencyRequestOut]:
+    """Recent operator commands and orchestrator replies."""
+    rows = list_agency_requests(limit=limit)
+    return [AgencyRequestOut.model_validate(row) for row in rows]
+
+
+@app.get("/agency/settings", response_model=list[RuntimeSettingMetaOut], tags=["agency"])
+def list_agency_settings() -> list[RuntimeSettingMetaOut]:
+    """Dashboard runtime settings (effective values + env defaults)."""
+    return [RuntimeSettingMetaOut.model_validate(row) for row in list_runtime_settings_meta()]
+
+
+@app.put("/agency/settings", response_model=list[RuntimeSettingMetaOut], tags=["agency"])
+def update_agency_settings(body: AgencySettingsUpdateIn) -> list[RuntimeSettingMetaOut]:
+    """Persist dashboard overrides for ranch infrastructure tuning."""
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        return list_agency_settings()
+    update_runtime_settings(updates)
+    return list_agency_settings()
+
+
+@app.post("/agency/settings/probe-spark", response_model=SparkProbeOut, tags=["agency"])
+def probe_agency_spark(url: str | None = Query(default=None)) -> SparkProbeOut:
+    """Test Spark SGLang reachability from the API container."""
+    return SparkProbeOut.model_validate(probe_spark_upstream(url))
 
 
 # ---- Hermes read-only query API --------------------------------------------

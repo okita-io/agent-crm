@@ -300,13 +300,15 @@ def avoided_cloud_usd(
 ) -> float:
     """Estimate cloud API spend avoided by running the same tokens locally."""
     settings = get_settings()
+    from .runtime_settings_store import get_runtime_setting
+
     input_rate = (
-        settings.llm_input_usd_per_million
+        float(get_runtime_setting("llm_input_usd_per_million"))
         if input_usd_per_million is None
         else input_usd_per_million
     )
     output_rate = (
-        settings.llm_output_usd_per_million
+        float(get_runtime_setting("llm_output_usd_per_million"))
         if output_usd_per_million is None
         else output_usd_per_million
     )
@@ -332,14 +334,15 @@ def _token_usage_block(
     merged = merge_usage_snapshots(stored, raw)
     prompt = int((merged.get("totals") or {}).get("prompt_tokens") or 0)
     completion = int((merged.get("totals") or {}).get("completion_tokens") or 0)
-    settings = get_settings()
+    from .runtime_settings_store import get_runtime_setting
+
     totals = dict(merged.get("totals") or {})
     totals["saved_usd"] = avoided_cloud_usd(prompt, completion)
     return {
         "by_actor": merged.get("by_actor") or {},
         "totals": totals,
-        "input_usd_per_million": settings.llm_input_usd_per_million,
-        "output_usd_per_million": settings.llm_output_usd_per_million,
+        "input_usd_per_million": float(get_runtime_setting("llm_input_usd_per_million")),
+        "output_usd_per_million": float(get_runtime_setting("llm_output_usd_per_million")),
     }
 
 

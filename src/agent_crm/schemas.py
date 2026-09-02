@@ -8,11 +8,13 @@ and cannot accidentally mutate the store outside a transaction.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .enums import (
     ActivityType,
+    AgencyRequestStatus,
     AgentStatus,
     Brand,
     ContactAudience,
@@ -544,6 +546,49 @@ class AgentObserverOut(BaseModel):
 
 class AgentEnabledIn(BaseModel):
     enabled: bool
+
+
+class AgencyRequestIn(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class AgencyRequestOut(ORMModel):
+    id: int
+    message: str
+    status: AgencyRequestStatus
+    reply: str | None
+    actions: list | dict | None
+    error_message: str | None
+    created_at: datetime
+    processed_at: datetime | None
+
+
+class RuntimeSettingMetaOut(BaseModel):
+    key: str
+    label: str
+    value: Any
+    default: Any
+    overridden: bool
+
+
+class AgencySettingsUpdateIn(BaseModel):
+    spark_upstream_base_url: str | None = None
+    spark_model: str | None = None
+    spark_max_concurrency: int | None = None
+    searxng_url: str | None = None
+    firecrawl_url: str | None = None
+    observer_live_refresh_seconds: int | None = None
+    observer_refresh_seconds: int | None = None
+    llm_input_usd_per_million: float | None = None
+    llm_output_usd_per_million: float | None = None
+
+
+class SparkProbeOut(BaseModel):
+    ok: bool
+    url: str
+    status_code: int | None = None
+    models: list[str] = []
+    detail: str = ""
 
 
 class ContactProfileOut(ORMModel):

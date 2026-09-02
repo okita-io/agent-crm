@@ -65,7 +65,7 @@ CRM_LLM_BASE_URL=http://spark-queue:8088/v1
 - Global cap: **4 concurrent Spark sessions** (shared with Hermes; leaves GPU headroom for ComfyUI)
 - **Never point agents at Spark SGLang directly**
 
-The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats, a compact hunt-loop phase strip, and per-agent in/out token counts with an hourly average rate and estimated cloud-cost avoided (default **$2.00 / million input** and **$10.00 / million output**). Each row has an on/off switch to the left of the agent name: standing workers (hunter, research, engagement, SEO, AEO/GEO, queue review, job dispatcher, orchestrator) pause between jobs when switched off and resume from this page — no Docker or CLI restart. Token totals persist in the CRM database. Spark slots, work status, current task, and last heartbeat refresh every **5 seconds**; token totals cache for **10 minutes** (use **Refresh now** for an immediate pull). The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
+The dashboard **Live agents** tab shows spark-queue occupancy alongside agent heartbeats, a compact hunt-loop phase strip, and per-agent in/out token counts with an hourly average rate and estimated cloud-cost avoided (default **$2.00 / million input** and **$10.00 / million output**). Each row has an on/off switch to the left of the agent name: standing workers (hunter, research, engagement, SEO, AEO/GEO, queue review, job dispatcher, orchestrator) pause between jobs when switched off and resume from this page — no Docker or CLI restart. Token totals persist in the CRM database. Spark slots, work status, current task, and last heartbeat refresh every **5 seconds**; token totals cache for **10 minutes** (use **Refresh now** for an immediate pull). The **Command** tab is a chat-style console: send natural-language instructions to the orchestrator (pause agents, enqueue hunt/research/engagement/SEO/AEO work). Messages queue in Postgres; the orchestrator interprets them with Spark and replies in the same thread (polls every few seconds). The **Hunter** tab shows live drain status (current query, phase, queue breakdown, Pete's list progress, recently completed queries).
 
 ### Database and migrations
 
@@ -368,6 +368,8 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The Live Agents tab r
 | Tab | Shows |
 |-----|-------|
 | **Live agents** | On/off switch per row; slots / status / task / heartbeat every 5s; persisted tokens / tok/hr / savings every 10 min |
+| **Command** | Chat with the orchestrator — pause agents or enqueue work via natural language |
+| **Settings** | Spark URL, SearXNG/Firecrawl endpoints, observer refresh, cloud cost estimates |
 | **Pipeline & leads** | Weekly metrics, stage chart, lead table, activity history, verifications |
 | **Hunter** | Live hunt-loop drain status + query queue + `hunt_resources` table |
 | **Research** | `research_findings` with brand/kind filters |

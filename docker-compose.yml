@@ -29,14 +29,14 @@ services:
     build: .
     command: ["spark-queue"]
     environment:
-      # Reach Spark on the ranch LAN via extra_hosts (spark -> 10.0.1.9).
+      # Reach Spark on the ranch LAN via extra_hosts (spark -> 10.0.1.3).
       SPARK_LLM_BASE_URL: http://spark:8888/v1
       SPARK_LLM_MODEL: qwen3.8-27b-sglang
       SPARK_LLM_MAX_CONCURRENCY: "4"
       SPARK_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
     extra_hosts:
-      - "spark:10.0.1.9"
+      - "spark:10.0.1.3"
     ports:
       - "127.0.0.1:8088:8088"
     depends_on:

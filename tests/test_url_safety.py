@@ -11,7 +11,7 @@ from agent_crm.url_safety import UnsafeURLError, assert_public_http_url, is_publ
 
 def test_blocks_literal_private_and_loopback_ips() -> None:
     assert not is_public_http_url("http://127.0.0.1/admin", resolve_dns=False)
-    assert not is_public_http_url("http://10.0.1.9:8888/v1", resolve_dns=False)
+    assert not is_public_http_url("http://10.0.1.3:8888/v1", resolve_dns=False)
     assert not is_public_http_url("http://192.168.1.1/", resolve_dns=False)
     assert not is_public_http_url("http://169.254.169.254/latest/meta-data/", resolve_dns=False)
     assert not is_public_http_url("http://[::1]/", resolve_dns=False)

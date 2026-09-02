@@ -34,6 +34,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from .enums import (
     ActivityType,
+    AgencyRequestStatus,
     AgentJobKind,
     AgentJobStatus,
     AgentStatus,
@@ -263,6 +264,43 @@ class AgentToggle(Base):
 
     agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
     enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class AgencyRequest(Base):
+    """Operator message for the orchestrator to interpret and act on."""
+
+    __tablename__ = "agency_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[AgencyRequestStatus] = mapped_column(
+        str_enum(AgencyRequestStatus),
+        default=AgencyRequestStatus.PENDING,
+        nullable=False,
+    )
+    reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class AgencySetting(Base):
+    """Dashboard overrides for ranch infrastructure and observer tuning."""
+
+    __tablename__ = "agency_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(
+        JSON, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )

@@ -25,9 +25,10 @@ class FirecrawlError(Exception):
     """Firecrawl request failed."""
 
 
-@lru_cache
 def get_firecrawl_base_url() -> str:
-    return get_settings().firecrawl_url.rstrip("/")
+    from .runtime_settings_store import get_runtime_setting
+
+    return str(get_runtime_setting("firecrawl_url")).rstrip("/")
 
 
 def scrape(
