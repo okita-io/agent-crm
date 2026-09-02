@@ -4,44 +4,66 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent_crm.dashboard import TAB_EXPORT_KEYS, TAB_LABELS
+
 DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "src" / "agent_crm" / "dashboard.py"
+DASHBOARD_UI = Path(__file__).resolve().parents[1] / "src" / "agent_crm" / "dashboard_ui"
+TAB_DIR = DASHBOARD_UI / "tabs"
+
+
+def test_dashboard_shell_is_thin_and_registers_tabs() -> None:
+    source = DASHBOARD_PATH.read_text(encoding="utf-8")
+    assert source.count("\n") < 220
+    assert 'page_title="The Agency"' in source
+    assert 'st.title("The Agency")' in source
+    assert "_disable_stale_fade()" in source
+    assert list(TAB_LABELS) == [
+        "Live agents",
+        "Command",
+        "Settings",
+        "Pipeline & leads",
+        "Hunter",
+        "Research",
+        "Engagement",
+        "SEO",
+        "AEO / GEO",
+        "Contacts",
+        "Verifier",
+        "Improvement",
+    ]
+    for label in TAB_LABELS:
+        assert f'"{label}"' in source or label in TAB_LABELS
 
 
 def test_dashboard_disables_streamlit_stale_fade() -> None:
-    source = DASHBOARD_PATH.read_text(encoding="utf-8")
-    assert "opacity: 1 !important" in source
-    assert "transition: none !important" in source
-    main_at = source.index("def main() -> None:")
-    config_at = source.index("st.set_page_config", main_at)
-    fade_at = source.index("_disable_stale_fade()", main_at)
+    common = (DASHBOARD_UI / "common.py").read_text(encoding="utf-8")
+    assert "opacity: 1 !important" in common
+    assert "transition: none !important" in common
+    shell = DASHBOARD_PATH.read_text(encoding="utf-8")
+    main_at = shell.index("def main() -> None:")
+    config_at = shell.index("st.set_page_config", main_at)
+    fade_at = shell.index("_disable_stale_fade()", main_at)
     assert fade_at > config_at
-    assert '"SEO"' in source
-    assert '"AEO / GEO"' in source
-    assert "_render_seo_tab" in source
-    assert "_render_aeo_geo_tab" in source
-    assert "_pick_seo_document" in source
-    assert 'page_title="The Agency"' in source
-    assert 'st.title("The Agency")' in source
-    assert "_render_agent_roster" in source
-    assert "cols[0].toggle(" in source
-    assert "agent_enabled_" in source
-    assert "_on_agent_enabled_change" in source
+    observer = (TAB_DIR / "observer.py").read_text(encoding="utf-8")
+    assert "_render_agent_roster" in observer
+    assert "cols[0].toggle(" in observer
+    assert "agent_enabled_" in observer
+    assert "_on_agent_enabled_change" in observer
 
 
 def test_seo_document_pickers_are_outside_expanders() -> None:
     """Selectboxes inside expanders clip their dropdowns; pickers must stay visible."""
-    source = DASHBOARD_PATH.read_text(encoding="utf-8")
-    seo = source.split("def _render_seo_tab")[1].split("def _render_aeo_geo_tab")[0]
-    aeo_geo = source.split("def _render_aeo_geo_tab")[1].split("def _render_contacts_tab")[0]
+    seo = (TAB_DIR / "seo.py").read_text(encoding="utf-8")
+    aeo_geo = (TAB_DIR / "aeo_geo.py").read_text(encoding="utf-8")
     assert 'expander("Open a plan document")' not in seo
     assert 'expander("Open a review document")' not in seo
     assert 'label="Which plan to open"' in seo
     assert 'label="Which review to open"' in seo
     assert "_seo_download_buttons" in seo
-    assert "Download review" in source
-    assert "Download plan" in source
-    assert "Export all reviews (.zip)" in source
-    assert "Export all plans (.zip)" in source
+    assert "Download review" in seo
+    assert "Download plan" in seo
+    assert "Export all reviews (.zip)" in seo
+    assert "Export all plans (.zip)" in seo
     plan_pick = seo.index('label="Which plan to open"')
     plan_dl = seo.index("_seo_download_buttons", plan_pick)
     plan_expand = seo.index("Plan —", plan_pick)
@@ -60,50 +82,39 @@ def test_seo_document_pickers_are_outside_expanders() -> None:
     assert aeo_plan_pick < aeo_plan_dl < aeo_plan_expand
 
 
-def test_pipeline_tab_has_full_csv_export() -> None:
-    source = DASHBOARD_PATH.read_text(encoding="utf-8")
-    pipeline = source.split("def _render_pipeline_tab")[1].split("def _render_hunter_tab")[0]
-    assert "_render_full_csv_export" in pipeline
-    assert 'key="pipeline_leads"' in pipeline
-
-
 def test_dashboard_tables_have_full_csv_export() -> None:
-    source = DASHBOARD_PATH.read_text(encoding="utf-8")
-    assert "def _render_full_csv_export" in source
-    assert '"Full export"' in source
-    required = {
-        "_render_pipeline_tab": ['key="pipeline_leads"'],
-        "_render_hunter_tab": [
-            'key="hunter_communities"',
-            'key="hunter_derived_queries"',
-            'key="hunter_resources"',
-        ],
-        "_render_research_tab": ['key="research_findings"'],
-        "_render_engagement_tab": [
-            'key="engagement_threads"',
-            'key="engagement_drafts"',
-        ],
-        "_render_seo_tab": [
-            'key="seo_targets"',
-            'key="seo_reviews"',
-            'key="seo_plans"',
-        ],
-        "_render_aeo_geo_tab": [
-            'key="aeo_geo_reviews"',
-            'key="aeo_geo_plans"',
-        ],
-        "_render_contacts_tab": ['key="contact_profiles"'],
-        "_render_comment_people_table": ['key=f"{key_prefix}comment_people"'],
-        "_render_verifier_tab": ['key="verifier_leads"'],
-        "_render_improvement_tab": ['key="improvement_notes"'],
+    common = (DASHBOARD_UI / "common.py").read_text(encoding="utf-8")
+    assert "def _render_full_csv_export" in common
+    assert '"Full export"' in common
+    tab_files = {
+        "pipeline": TAB_DIR / "pipeline.py",
+        "hunter": TAB_DIR / "hunter.py",
+        "research": TAB_DIR / "research.py",
+        "engagement": TAB_DIR / "engagement.py",
+        "seo": TAB_DIR / "seo.py",
+        "aeo_geo": TAB_DIR / "aeo_geo.py",
+        "contacts": TAB_DIR / "contacts.py",
+        "verifier": TAB_DIR / "verifier.py",
+        "improvement": TAB_DIR / "improvement.py",
     }
-    for func, markers in required.items():
-        start = source.index(f"def {func}")
-        nxt = source.find("\ndef _", start + 1)
-        body = source[start:nxt] if nxt != -1 else source[start:]
-        assert "_render_full_csv_export" in body, f"{func} missing Full export"
-        for marker in markers:
-            assert marker in body, f"missing {marker} in {func}"
+    for tab, keys in TAB_EXPORT_KEYS.items():
+        if tab == "comment_people":
+            body = (TAB_DIR / "contacts.py").read_text(encoding="utf-8")
+            assert 'key=f"{key_prefix}comment_people"' in body
+            assert "_render_full_csv_export" in body
+            continue
+        path = tab_files[tab]
+        body = path.read_text(encoding="utf-8")
+        assert "_render_full_csv_export" in body, f"{tab} missing Full export"
+        for key in keys:
+            assert f'key="{key}"' in body, f"missing key={key} in {tab}"
+
+
+def test_pipeline_and_research_selectboxes_have_keys() -> None:
+    pipeline = (TAB_DIR / "pipeline.py").read_text(encoding="utf-8")
+    research = (TAB_DIR / "research.py").read_text(encoding="utf-8")
+    assert 'key="pipeline_lead_pick"' in pipeline
+    assert 'key="research_kind"' in research
 
 
 def test_seo_export_filename_includes_kind_and_domain() -> None:
