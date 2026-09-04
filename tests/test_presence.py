@@ -76,6 +76,11 @@ def test_build_observer_rows_idle_without_signals() -> None:
     assert len(rows) == len(KNOWN_AGENT_ROSTER)
     assert all(row.status == AgentStatus.IDLE for row in rows)
     assert all(row.task is None for row in rows)
+    by_name = {row.name: row for row in rows}
+    assert by_name["lead_intake"].placeholder is True
+    assert by_name["research"].placeholder is False
+    assert by_name["research"].toggleable is True
+    assert by_name["orchestrator"].toggleable is True
 
 
 def test_build_observer_rows_merges_queue_and_heartbeat() -> None:

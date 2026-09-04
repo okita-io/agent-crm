@@ -98,6 +98,17 @@ services:
       spark-queue:
         condition: service_started
 
+  web:
+    build:
+      context: ./frontend
+    environment:
+      CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      api:
+        condition: service_started
+
   contact-worker:
     build: .
     command: ["agent-crm", "jobs"]

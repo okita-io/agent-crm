@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # Dashboard
     dashboard_port: int = 8501
     dashboard_password: str = ""
+    # Browser origins for the Vite dashboard (comma-separated). Empty uses localhost defaults.
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:3000,http://127.0.0.1:3000"
+    )
 
     # LLM (Spark queue proxy — never point agents at Spark directly)
     llm_base_url: str = "http://spark-queue:8088/v1"

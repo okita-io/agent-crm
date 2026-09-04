@@ -38,10 +38,10 @@ from agent_crm.hunt.store import HuntStore
 from agent_crm.hunt.utils import classify_resource_detailed, is_junk_title
 from agent_crm.llm_client import chat_completions
 from agent_crm.llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
-from agent_crm.marketing_skill import brand_context_snippet
-from agent_crm.social_skill import engagement_draft_guidance
 from agent_crm.models import EngagementThread, HuntResource
 from agent_crm.searxng_client import SearxngError, search
+from agent_crm.skill_runtime import brand_context_for, has_skill
+from agent_crm.social_skill import engagement_draft_guidance
 from agent_crm.tooling import CRMToolkit
 from agent_crm.url_safety import is_public_http_url
 
@@ -523,7 +523,7 @@ def _maybe_draft_reply(
 ) -> bool:
     """Draft a helpful product-related comment. Never posts."""
     settings = get_settings()
-    brand_context = brand_context_snippet(brand)
+    brand_context = brand_context_for(ACTOR, brand)
     system = (
         "You draft a single public forum comment for a CRM agent. "
         "Discovery only — do not claim the comment was posted, do not invent proof, "
@@ -532,9 +532,10 @@ def _maybe_draft_reply(
         "Be helpful first; mention the product only when it naturally answers the post."
         + UNTRUSTED_DATA_SYSTEM_SUFFIX
     )
-    draft_guidance = engagement_draft_guidance()
-    if draft_guidance:
-        system += f"\n\n--- social-media engagement rules ---\n{draft_guidance}"
+    if has_skill(ACTOR, "social-media") or has_skill(ACTOR, "social-media/post-package"):
+        draft_guidance = engagement_draft_guidance()
+        if draft_guidance:
+            system += f"\n\n--- social-media engagement rules ---\n{draft_guidance}"
     if brand_context:
         system += f"\n\n--- brand context (excerpt) ---\n{brand_context}"
     user = (

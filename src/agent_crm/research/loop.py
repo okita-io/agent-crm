@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 
+from agent_crm.agency.orchestrator import note_worker_failure
 from agent_crm.agent_control import stop_if_disabled, wait_while_disabled
 from agent_crm.config import get_settings
-from agent_crm.enums import AgentStatus, Brand
+from agent_crm.enums import AgentStatus, Brand, ImprovementSourceAgent
 from agent_crm.heartbeat import record_heartbeat
-from .runner import run_research
-from .query_store import ResearchQueryStore
-from .seeds import loop_seed_entries
 from agent_crm.schemas import ResearchRequest
+
+from .query_store import ResearchQueryStore
+from .runner import run_research
+from .seeds import loop_seed_entries
+
+logger = logging.getLogger(__name__)
 
 ACTOR = "research"
 WATCH_POLL_SECONDS = 60.0
@@ -133,19 +138,30 @@ def run_research_loop(
         kind = claimed.kind
         query_id = claimed.id
 
-        run_result = run_research(
-            ResearchRequest(
-                brand=brand,
-                kind=kind,
-                query=query,
-                max_queries=1,
-                max_pages=_remaining_pages(budget.max_pages, result.pages_scraped),
-                max_minutes=_remaining_minutes(started, budget.max_minutes),
-                search_limit=budget.search_limit,
-                summarize=summarize,
-                write_accounts=write_accounts,
+        try:
+            run_result = run_research(
+                ResearchRequest(
+                    brand=brand,
+                    kind=kind,
+                    query=query,
+                    max_queries=1,
+                    max_pages=_remaining_pages(budget.max_pages, result.pages_scraped),
+                    max_minutes=_remaining_minutes(started, budget.max_minutes),
+                    search_limit=budget.search_limit,
+                    summarize=summarize,
+                    write_accounts=write_accounts,
+                )
             )
-        )
+        except Exception as exc:
+            logger.exception("Research query %s crashed: %s", query_id, query[:120])
+            store.mark_query_failed(query_id, str(exc)[:2000])
+            result.errors.append(str(exc))
+            note_worker_failure(
+                source_agent=ImprovementSourceAgent.RESEARCH_LOOP,
+                error_text=str(exc),
+                context=f"research {brand.value} query crashed",
+            )
+            continue
 
         result.queries_run += run_result.queries_run
         result.pages_scraped += run_result.pages_scraped
@@ -153,9 +169,6 @@ def run_research_loop(
         result.follow_up_terms_enqueued += run_result.follow_up_terms_enqueued
         result.errors.extend(run_result.errors)
         for error in run_result.errors:
-            from agent_crm.enums import ImprovementSourceAgent
-            from agent_crm.agency.orchestrator import note_worker_failure
-
             note_worker_failure(
                 source_agent=ImprovementSourceAgent.RESEARCH_LOOP,
                 error_text=error,

@@ -321,3 +321,39 @@ class CRMToolkit:
             resource=resource,
             metadata=metadata,
         )
+
+    def list_skills(self) -> list[dict]:
+        """Return the vendored skill catalog with current agent usage."""
+        from .skill_store import catalog_with_usage
+
+        return catalog_with_usage()
+
+    def list_agent_skills(self, agent_name: str | None = None) -> list[str]:
+        """Skills assigned to ``agent_name`` (defaults to this toolkit's actor)."""
+        from .skill_store import list_agent_skills
+
+        return list_agent_skills(agent_name or self.actor)
+
+    def assign_skill(self, skill_id: str, *, agent_name: str | None = None) -> list[str]:
+        """Attach a pack or module to an agent and log a note."""
+        from .skill_store import assign_skill
+
+        name = agent_name or self.actor
+        skills = assign_skill(name, skill_id)
+        self.log_note(
+            f"Assigned skill {skill_id} to {name}",
+            payload={"agent": name, "skill_id": skill_id, "action": "assign_skill"},
+        )
+        return skills
+
+    def unassign_skill(self, skill_id: str, *, agent_name: str | None = None) -> list[str]:
+        """Detach a pack or module from an agent and log a note."""
+        from .skill_store import unassign_skill
+
+        name = agent_name or self.actor
+        skills = unassign_skill(name, skill_id)
+        self.log_note(
+            f"Unassigned skill {skill_id} from {name}",
+            payload={"agent": name, "skill_id": skill_id, "action": "unassign_skill"},
+        )
+        return skills

@@ -39,7 +39,7 @@ def test_competitor_summarizer_guidance_includes_competitive_module() -> None:
     assert "public sources only" in guidance.lower()
 
 
-def test_maybe_summarize_competitor_includes_competitive_guidance() -> None:
+def test_maybe_summarize_competitor_includes_competitive_guidance(db_url) -> None:
     hit = SearchResult(
         url="https://co-star.app",
         title="Co–Star Astrology",

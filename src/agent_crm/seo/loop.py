@@ -29,9 +29,9 @@ from agent_crm.firecrawl_client import FirecrawlError, scrape
 from agent_crm.heartbeat import record_heartbeat
 from agent_crm.llm_client import chat_completions
 from agent_crm.llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
-from agent_crm.marketing_skill import brand_context_snippet
 from agent_crm.models import SeoQuery
 from agent_crm.searxng_client import SearxngError, search
+from agent_crm.skill_runtime import brand_context_for, has_skill
 from .runner import (
     AuditBundle,
     SeoIssue,
@@ -694,9 +694,14 @@ def _llm_review(
     fallback_one_thing: str,
 ) -> tuple[str, int, str, str] | None:
     settings = get_settings()
-    brand_context = brand_context_snippet(brand, max_chars=700)
-    system = (
+    brand_context = brand_context_for(ACTOR, brand, max_chars=700)
+    review_guidance = (
         review_writer_guidance()
+        if has_skill(ACTOR, "open-seo") or has_skill(ACTOR, "open-seo/site-audit")
+        else "Write an SEO review document. Do not implement changes on any website."
+    )
+    system = (
+        review_guidance
         + " You output JSON only."
         + UNTRUSTED_DATA_SYSTEM_SUFFIX
     )
@@ -764,9 +769,14 @@ def _llm_plan(
     fallback_tasks: list[dict[str, Any]],
 ) -> tuple[str, str, str, list[dict[str, Any]]] | None:
     settings = get_settings()
-    brand_context = brand_context_snippet(brand, max_chars=600)
-    system = (
+    brand_context = brand_context_for(ACTOR, brand, max_chars=600)
+    plan_guidance = (
         plan_writer_guidance()
+        if has_skill(ACTOR, "open-seo") or has_skill(ACTOR, "open-seo/seo-plan")
+        else "Write an SEO implementation plan for a human to apply on the target site."
+    )
+    system = (
+        plan_guidance
         + " You output JSON only."
         + UNTRUSTED_DATA_SYSTEM_SUFFIX
     )

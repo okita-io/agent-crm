@@ -26,6 +26,7 @@ docker compose up -d --build
 | Service | Port | Role |
 |---------|------|------|
 | `api` | 8000 | FastAPI — runs `alembic upgrade head` on boot, then serves |
+| `web` | 3000 | Vite/React Live Agents dashboard (Pencil floor view) |
 | `dashboard` | 8501 | Streamlit observer + pipeline/hunter/research/contacts/verifier |
 | `db` | 5432 | Postgres 16 |
 | `spark-queue` | 8088 | GPU-aware LLM queue proxy |
@@ -361,7 +362,7 @@ Dashboard list GETs stay unchanged for the Streamlit UI.
 
 Agents call `CRMToolkit(actor="…")` for typed writes. Every mutation appends an `Activity`. Stage changes go through `PipelineManager`.
 
-Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The Live Agents tab reads heartbeats and spark-queue `/health` every 5 seconds, and overlays cached token totals.
+Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The **Vite Live Agents floor** (`web` on port 3000, or `frontend/` via `npm run dev`) reads heartbeats, spark-queue occupancy, catalog growth, and work-queue counts every 5 seconds. Streamlit on 8501 still has the rest of the tabs.
 
 ### Dashboard tabs
 
@@ -468,6 +469,10 @@ agent-crm verify --url https://example.com
 Dashboard (outside Compose):
 
 ```bash
+# New Live Agents UI (proxies /api to :8000)
+cd frontend && npm install && npm run dev
+
+# Streamlit (remaining tabs)
 streamlit run src/agent_crm/dashboard.py
 ```
 
@@ -504,6 +509,8 @@ streamlit run src/agent_crm/dashboard.py
 | POST | `/agents/{name}/heartbeat` | Agent heartbeat |
 | GET | `/agents` | Observer roster |
 | GET | `/agents/spark` | Spark queue slot summary |
+| GET | `/queues` | Hunt/research/engagement/SEO/job pending counts |
+| PUT | `/agents/{name}/enabled` | Pause or resume a standing worker |
 | GET | `/jobs/status` | Agent job queue counts |
 | GET | `/improvement-notes` | Self-learning gap notes (`?status=open`) |
 

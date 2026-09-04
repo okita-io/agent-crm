@@ -19,6 +19,8 @@ def test_compose_declares_standing_workers() -> None:
     assert "aeo-geo-loop" in content
     assert "queue-review" in content
     assert 'command: ["agent-crm", "orchestrate"]' in content
+    assert "  web:" in content
+    assert "context: ./frontend" in content
     for service in compose_services():
         assert f"  {service}:" in content, f"registry compose_service missing: {service}"
 
@@ -129,6 +131,7 @@ def test_compose_binds_sensitive_ports_to_localhost() -> None:
     assert '"127.0.0.1:8088:8088"' in content
     assert '"127.0.0.1:8000:8000"' in content
     assert '"127.0.0.1:8501:8501"' in content
+    assert '"127.0.0.1:3000:80"' in content
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}" in content
     assert "CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}" in content
     assert "CRM_DASHBOARD_PASSWORD: ${CRM_DASHBOARD_PASSWORD:-}" in content

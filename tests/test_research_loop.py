@@ -130,6 +130,37 @@ def test_research_loop_stops_on_query_budget(tmp_path, monkeypatch) -> None:
     _teardown_db()
 
 
+def test_research_loop_continues_after_query_crash(tmp_path, monkeypatch) -> None:
+    _setup_db(tmp_path, monkeypatch, "research-loop-crash.db")
+    calls = {"n": 0}
+
+    def fake_run_research(request):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("value too long for type character varying(255)")
+        return ResearchResult(
+            brand=request.brand,
+            kind=request.kind,
+            queries_run=1,
+            pages_scraped=1,
+            findings_written=[calls["n"]],
+            errors=[],
+        )
+
+    with patch("agent_crm.research.loop.run_research", side_effect=fake_run_research):
+        result = run_research_loop(
+            budget=ResearchLoopBudget(max_queries=2, max_pages=10, max_minutes=5),
+            summarize=False,
+            write_accounts=False,
+        )
+
+    assert calls["n"] >= 3
+    assert result.queries_run == 2
+    assert result.stop_reason == "query_budget"
+    assert any("value too long" in err for err in result.errors)
+    _teardown_db()
+
+
 def test_research_loop_watch_idles_on_empty_queue(tmp_path, monkeypatch) -> None:
     from agent_crm.research import loop as research_loop_mod
 

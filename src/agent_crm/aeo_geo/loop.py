@@ -40,7 +40,6 @@ from agent_crm.firecrawl_client import FirecrawlError, scrape
 from agent_crm.heartbeat import record_heartbeat
 from agent_crm.llm_client import chat_completions
 from agent_crm.llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
-from agent_crm.marketing_skill import brand_context_snippet
 from agent_crm.models import SeoQuery
 from agent_crm.seo.runner import extract_page_signals
 from agent_crm.seo.loop import SeoBudget, _sleep_until
@@ -57,6 +56,7 @@ from agent_crm.seo.store import (
     upsert_review,
     upsert_target,
 )
+from agent_crm.skill_runtime import brand_context_for, has_skill
 from agent_crm.tooling import CRMToolkit
 from agent_crm.url_safety import is_public_http_url
 
@@ -674,9 +674,14 @@ def _llm_review(
     fallback_one_thing: str,
 ) -> tuple[str, int, str, str] | None:
     settings = get_settings()
-    brand_context = brand_context_snippet(brand, max_chars=700)
-    system = (
+    brand_context = brand_context_for(ACTOR, brand, max_chars=700)
+    review_guidance = (
         review_writer_guidance()
+        if has_skill(ACTOR, "aeo-geo") or has_skill(ACTOR, "aeo-geo/aeo-geo-review")
+        else "Write an AEO/GEO review document. Do not implement changes on any website."
+    )
+    system = (
+        review_guidance
         + " You output JSON only."
         + UNTRUSTED_DATA_SYSTEM_SUFFIX
     )
@@ -744,9 +749,14 @@ def _llm_plan(
     fallback_tasks: list[dict[str, Any]],
 ) -> tuple[str, str, str, list[dict[str, Any]]] | None:
     settings = get_settings()
-    brand_context = brand_context_snippet(brand, max_chars=600)
-    system = (
+    brand_context = brand_context_for(ACTOR, brand, max_chars=600)
+    plan_guidance = (
         plan_writer_guidance()
+        if has_skill(ACTOR, "aeo-geo") or has_skill(ACTOR, "aeo-geo/aeo-geo-plan")
+        else "Write an AEO/GEO implementation plan for a human to apply on the target site."
+    )
+    system = (
+        plan_guidance
         + " You output JSON only."
         + UNTRUSTED_DATA_SYSTEM_SUFFIX
     )

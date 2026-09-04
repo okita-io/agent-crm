@@ -8,12 +8,13 @@ from typing import Any
 
 import httpx
 
-from .agents.registry import KNOWN_AGENT_ROSTER
+from .agents.registry import KNOWN_AGENT_ROSTER, get_agent, toggleable_agents
 from .config import get_settings
 from .enums import AgentStatus
 from .token_usage_store import load_token_usage_snapshot, merge_usage_snapshots
 
 AGENT_IDENTITY_HEADER = "X-CRM-Agent"
+_TOGGLEABLE_AGENTS: frozenset[str] = frozenset(toggleable_agents())
 
 _STATUS_RANK: dict[AgentStatus, int] = {
     AgentStatus.IDLE: 0,
@@ -45,6 +46,8 @@ class AgentObserverRow:
     saved_usd: float = 0.0
     tokens_per_hour: float = 0.0
     enabled: bool = True
+    placeholder: bool = False
+    toggleable: bool = False
 
 
 def spark_queue_health_url() -> str:
@@ -151,6 +154,7 @@ def build_observer_rows(
         prompt_tokens, completion_tokens, saved_usd, hourly = _actor_token_fields(
             agent_name, usage
         )
+        spec = get_agent(agent_name)
         rows.append(
             AgentObserverRow(
                 name=agent_name,
@@ -164,6 +168,8 @@ def build_observer_rows(
                 saved_usd=saved_usd,
                 tokens_per_hour=hourly,
                 enabled=enabled_map.get(agent_name, True),
+                placeholder=bool(spec.placeholder) if spec else False,
+                toggleable=agent_name in _TOGGLEABLE_AGENTS,
             )
         )
 
@@ -198,6 +204,8 @@ def build_observer_rows(
                 saved_usd=saved_usd,
                 tokens_per_hour=hourly,
                 enabled=enabled_map.get(actor, True),
+                placeholder=False,
+                toggleable=False,
             )
         )
 

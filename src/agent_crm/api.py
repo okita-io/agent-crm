@@ -17,7 +17,36 @@ business logic so the same operations work from an agent process without HTTP.
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+from agent_crm.aeo_geo.loop import run_aeo_geo_loop
+from agent_crm.agency.request_store import create_agency_request, list_agency_requests
+from agent_crm.contacts.comment_people_store import count_comment_people, list_comment_people
+from agent_crm.contacts.growth import catalog_growth
+from agent_crm.contacts.store import (
+    backfill_contact_enrichment,
+    backfill_contact_quality,
+    count_contact_profiles,
+    count_contact_profiles_by_brand,
+    list_contact_profiles,
+)
+from agent_crm.contacts.verifier import (
+    list_verifications,
+    verify_batch_unverified,
+    verify_lead,
+    verify_raw,
+)
+from agent_crm.engagement.loop import EngagementBudget, run_engagement_loop
+from agent_crm.engagement.store import list_drafts, list_threads
+from agent_crm.hunt.loop import HuntBudget, run_hunt_loop
+from agent_crm.hunt.outbound import run_hunt
+from agent_crm.hunt.status import build_hunt_status
+from agent_crm.hunt.store import HuntStore
+from agent_crm.research.runner import run_research
+from agent_crm.research.store import list_findings
+from agent_crm.seo.loop import SeoBudget, run_seo_loop
+from agent_crm.seo.store import list_plans, list_reviews, list_targets
 
 from . import __version__
 from .agent_control import set_agent_enabled
@@ -37,19 +66,8 @@ from .agent_query import (
     query_websites,
 )
 from .auth import require_api_token, require_known_agent
-from agent_crm.contacts.comment_people_store import count_comment_people, list_comment_people
 from .config import get_settings
-from agent_crm.contacts.growth import catalog_growth
-from agent_crm.contacts.store import (
-    backfill_contact_enrichment,
-    backfill_contact_quality,
-    count_contact_profiles,
-    count_contact_profiles_by_brand,
-    list_contact_profiles,
-)
 from .db import database_kind, init_db
-from agent_crm.engagement.loop import EngagementBudget, run_engagement_loop
-from agent_crm.engagement.store import list_drafts, list_threads
 from .enums import (
     Brand,
     ContactAudience,
@@ -63,32 +81,37 @@ from .enums import (
     SeoTargetRole,
     Stage,
 )
-from agent_crm.agency.request_store import create_agency_request, list_agency_requests
+from .errors import NotFoundError
+from .floor import build_queue_lanes
+from .heartbeat import list_heartbeats, record_heartbeat
+from .improvement_store import list_improvement_notes
+from .pipeline import PipelineManager
+from .presence import build_observer_rows, fetch_spark_queue_health, spark_slot_summary
 from .runtime_settings_store import (
     list_runtime_settings_meta,
     probe_spark_upstream,
     update_runtime_settings,
 )
-from .heartbeat import list_heartbeats, record_heartbeat
-from agent_crm.hunt.loop import HuntBudget, run_hunt_loop
-from agent_crm.hunt.status import build_hunt_status
-from agent_crm.hunt.store import HuntStore
-from .improvement_store import list_improvement_notes
-from agent_crm.hunt.outbound import run_hunt
-from .pipeline import PipelineManager
-from .presence import build_observer_rows, fetch_spark_queue_health, spark_slot_summary
-from agent_crm.research.runner import run_research
-from agent_crm.research.store import list_findings
+from .skill_store import (
+    assign_skill,
+    catalog_with_usage,
+    list_agent_skills,
+    list_assignments_by_agent,
+    unassign_skill,
+    unassign_skill_everywhere,
+)
 from .schemas import (
     ActivityOut,
-    AgentCatalogOut,
-    AgentEnabledIn,
-    AgentObserverOut,
     AgencyRequestIn,
     AgencyRequestOut,
     AgencySettingsUpdateIn,
+    AgentCatalogOut,
+    AgentEnabledIn,
+    AgentObserverOut,
     AgentPageOut,
     AgentSearchOut,
+    AgentSkillIn,
+    AgentSkillsOut,
     BatchVerifyRequest,
     BatchVerifyResult,
     CatalogGrowthOut,
@@ -117,6 +140,8 @@ from .schemas import (
     LeadCreate,
     LeadOut,
     OpportunityOut,
+    QueueLaneOut,
+    QueuesOut,
     ResearchFindingOut,
     ResearchRequest,
     ResearchResult,
@@ -126,7 +151,10 @@ from .schemas import (
     SeoPlanOut,
     SeoReviewOut,
     SeoTargetOut,
+    SkillCatalogItemOut,
+    SkillsOut,
     SparkProbeOut,
+    SparkSlotSummaryOut,
     TregAllowIn,
     TregAllowResultOut,
     TregStatusOut,
@@ -135,11 +163,7 @@ from .schemas import (
     VerifyRawRequest,
     VerifyRawResult,
 )
-from agent_crm.aeo_geo.loop import run_aeo_geo_loop
-from agent_crm.seo.loop import SeoBudget, run_seo_loop
-from agent_crm.seo.store import list_plans, list_reviews, list_targets
 from .tooling import CRMToolkit
-from agent_crm.contacts.verifier import list_verifications, verify_batch_unverified, verify_lead, verify_raw
 
 app = FastAPI(
     title="The Agency",
@@ -149,6 +173,20 @@ app = FastAPI(
         "(never applied to live sites). Repository: okita-io/agent-crm."
     ),
     dependencies=[Depends(require_api_token)],
+)
+
+
+def _cors_origins() -> list[str]:
+    raw = get_settings().cors_origins.strip()
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -778,6 +816,7 @@ def agent_heartbeat(agent_name: str, body: HeartbeatIn) -> HeartbeatOut:
 def list_agents() -> list[AgentObserverOut]:
     queue_health = fetch_spark_queue_health()
     rows = build_observer_rows(list_heartbeats(), queue_health)
+    assignments = list_assignments_by_agent()
     return [
         AgentObserverOut(
             name=row.name,
@@ -791,6 +830,9 @@ def list_agents() -> list[AgentObserverOut]:
             saved_usd=row.saved_usd,
             tokens_per_hour=row.tokens_per_hour,
             enabled=row.enabled,
+            placeholder=row.placeholder,
+            toggleable=row.toggleable,
+            skills=assignments.get(row.name, []),
         )
         for row in rows
     ]
@@ -802,9 +844,69 @@ def set_agent_enabled_flag(agent_name: str, body: AgentEnabledIn) -> dict:
     return {"name": agent_name, "enabled": enabled}
 
 
-@app.get("/agents/spark", tags=["agents"])
-def spark_resources() -> dict:
-    return spark_slot_summary(fetch_spark_queue_health())
+@app.get("/agents/spark", response_model=SparkSlotSummaryOut, tags=["agents"])
+def spark_resources() -> SparkSlotSummaryOut:
+    return SparkSlotSummaryOut.model_validate(spark_slot_summary(fetch_spark_queue_health()))
+
+
+@app.get("/queues", response_model=QueuesOut, tags=["agents"])
+def list_work_queues() -> QueuesOut:
+    """Pending hunt/research/engagement/SEO/job counts for the Live Agents rail."""
+    payload = build_queue_lanes()
+    return QueuesOut(
+        waiting=payload["waiting"],
+        lanes=[QueueLaneOut.model_validate(lane) for lane in payload["lanes"]],
+    )
+
+
+@app.get("/skills", response_model=SkillsOut, tags=["skills"])
+def list_skills() -> SkillsOut:
+    """Vendored skill catalog plus which agents currently have each skill."""
+    return SkillsOut(
+        skills=[SkillCatalogItemOut.model_validate(item) for item in catalog_with_usage()]
+    )
+
+
+@app.get("/agents/{agent_name}/skills", response_model=AgentSkillsOut, tags=["skills"])
+def get_agent_skills(agent_name: str) -> AgentSkillsOut:
+    try:
+        skills = list_agent_skills(agent_name)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return AgentSkillsOut(name=agent_name, skills=skills)
+
+
+@app.post("/agents/{agent_name}/skills", response_model=AgentSkillsOut, tags=["skills"])
+def add_agent_skill(agent_name: str, body: AgentSkillIn) -> AgentSkillsOut:
+    try:
+        skills = assign_skill(agent_name, body.skill_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return AgentSkillsOut(name=agent_name, skills=skills)
+
+
+@app.delete("/agents/{agent_name}/skills", response_model=AgentSkillsOut, tags=["skills"])
+def remove_agent_skill(
+    agent_name: str,
+    skill_id: str = Query(..., min_length=1, max_length=128),
+) -> AgentSkillsOut:
+    try:
+        skills = unassign_skill(agent_name, skill_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return AgentSkillsOut(name=agent_name, skills=skills)
+
+
+@app.delete("/skills/assignments", tags=["skills"])
+def remove_skill_assignments(
+    skill_id: str = Query(..., min_length=1, max_length=128),
+) -> dict:
+    """Unassign a skill from every agent. Does not delete vendored files."""
+    try:
+        removed = unassign_skill_everywhere(skill_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"skill_id": skill_id, "removed": removed}
 
 
 @app.post("/agency/requests", response_model=AgencyRequestOut, tags=["agency"])

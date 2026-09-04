@@ -99,19 +99,31 @@ def load_reference_slice(
     return _read_bounded(path, max_chars=max_chars)
 
 
-def competitor_summarizer_guidance() -> str:
+def competitor_summarizer_guidance(
+    *,
+    include_competitive: bool = True,
+    include_positioning: bool = True,
+) -> str:
     """Bounded competitive + positioning guidance for Research competitor kind."""
-    competitive = load_reference_slice(
-        "references/competitive.md",
-        start_heading="## The teardown protocol",
-        end_heading="## Cross-competitor synthesis",
-        max_chars=1600,
+    competitive = (
+        load_reference_slice(
+            "references/competitive.md",
+            start_heading="## The teardown protocol",
+            end_heading="## Cross-competitor synthesis",
+            max_chars=1600,
+        )
+        if include_competitive
+        else ""
     )
-    positioning = load_reference_slice(
-        "references/positioning.md",
-        start_heading="## Positioning",
-        end_heading="## Offer design",
-        max_chars=700,
+    positioning = (
+        load_reference_slice(
+            "references/positioning.md",
+            start_heading="## Positioning",
+            end_heading="## Offer design",
+            max_chars=700,
+        )
+        if include_positioning
+        else ""
     )
     parts = [
         "Follow the marketing-agi competitive teardown protocol (public sources only).",
@@ -125,25 +137,41 @@ def competitor_summarizer_guidance() -> str:
     return "\n\n".join(parts)
 
 
-def ad_placement_summarizer_guidance() -> str:
+def ad_placement_summarizer_guidance(
+    *,
+    include_paid_ads: bool = True,
+    include_hooks: bool = True,
+) -> str:
     """Bounded paid-ads + hooks guidance for ad-placement discovery briefs."""
-    paid_ads = load_reference_slice(
-        "references/paid-ads.md",
-        start_heading="## Before you start",
-        end_heading="## Step 1 — Classify by concept",
-        max_chars=700,
+    paid_ads = (
+        load_reference_slice(
+            "references/paid-ads.md",
+            start_heading="## Before you start",
+            end_heading="## Step 1 — Classify by concept",
+            max_chars=700,
+        )
+        if include_paid_ads
+        else ""
     )
-    paid_brief = load_reference_slice(
-        "references/paid-ads.md",
-        start_heading="## Step 4 — Ranked production brief",
-        end_heading="## Production brief",
-        max_chars=500,
+    paid_brief = (
+        load_reference_slice(
+            "references/paid-ads.md",
+            start_heading="## Step 4 — Ranked production brief",
+            end_heading="## Production brief",
+            max_chars=500,
+        )
+        if include_paid_ads
+        else ""
     )
-    hooks = load_reference_slice(
-        "references/hooks.md",
-        start_heading="## The three components",
-        end_heading="## Grounding — before generating anything",
-        max_chars=600,
+    hooks = (
+        load_reference_slice(
+            "references/hooks.md",
+            start_heading="## The three components",
+            end_heading="## Grounding — before generating anything",
+            max_chars=600,
+        )
+        if include_hooks
+        else ""
     )
     parts = [
         "Discovery only — never buy ads, log into ad accounts, or invent pricing/contacts.",

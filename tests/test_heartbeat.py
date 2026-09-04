@@ -122,6 +122,37 @@ def test_record_and_list_heartbeat(tmp_path, monkeypatch) -> None:
     reset_engine()
 
 
+def test_record_heartbeat_clips_long_task_and_resource(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "heartbeat-clip.db"
+    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    get_settings.cache_clear()
+    reset_engine()
+    init_db()
+
+    query = (
+        "searching: Compile a comprehensive list of potential client companies "
+        "for tactic-studio: major US/UK food and beverage brands and sports "
+        "clothing brands. Include company names, websites, locations, category, "
+        "and why they fit as potential clients. Also provide a count of "
+        "qualifying companies."
+    )
+    assert len(query) > 255
+    snapshot = record_heartbeat(
+        "research",
+        status=AgentStatus.THINKING,
+        task=query,
+        resource="https://example.com/" + ("a" * 300),
+    )
+    assert snapshot.task is not None
+    assert len(snapshot.task) == 255
+    assert snapshot.task.endswith("…")
+    assert snapshot.resource is not None
+    assert len(snapshot.resource) == 255
+    stored = list_heartbeats()
+    assert stored[0].task == snapshot.task
+    reset_engine()
+
+
 def test_heartbeat_api_round_trip(client: TestClient) -> None:
     response = client.post(
         "/agents/orchestrator/heartbeat",
@@ -149,6 +180,13 @@ def test_list_agents_includes_idle_roster(client: TestClient) -> None:
     assert all("prompt_tokens" in row and "completion_tokens" in row for row in agents)
     assert all("tokens_per_hour" in row for row in agents)
     assert all(row["enabled"] is True for row in agents)
+    research = next(row for row in agents if row["name"] == "research")
+    assert research["placeholder"] is False
+    assert research["toggleable"] is True
+    assert "marketing-agi" in research["skills"]
+    intake = next(row for row in agents if row["name"] == "lead_intake")
+    assert intake["placeholder"] is True
+    assert intake["toggleable"] is False
 
 
 def test_agent_enabled_api_round_trip(client: TestClient) -> None:

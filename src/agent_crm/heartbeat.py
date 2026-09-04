@@ -11,6 +11,20 @@ from .enums import AgentStatus
 from .models import AgentHeartbeat
 from .presence import HeartbeatSnapshot
 
+# Match ``AgentHeartbeat.task`` / ``resource`` VARCHAR(255) so long hunt/research
+# queries cannot crash standing workers on Postgres.
+_HEARTBEAT_TEXT_MAX = 255
+
+
+def _clip_heartbeat_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if len(value) <= _HEARTBEAT_TEXT_MAX:
+        return value
+    if _HEARTBEAT_TEXT_MAX <= 1:
+        return value[:_HEARTBEAT_TEXT_MAX]
+    return value[: _HEARTBEAT_TEXT_MAX - 1] + "…"
+
 
 def record_heartbeat(
     agent_name: str,
@@ -22,14 +36,16 @@ def record_heartbeat(
 ) -> HeartbeatSnapshot:
     """Upsert the latest heartbeat for an agent actor."""
     now = datetime.now(UTC)
+    clipped_task = _clip_heartbeat_text(task)
+    clipped_resource = _clip_heartbeat_text(resource)
     with session_scope() as session:
         row = session.get(AgentHeartbeat, agent_name)
         if row is None:
             row = AgentHeartbeat(agent_name=agent_name)
             session.add(row)
         row.status = status
-        row.task = task
-        row.resource = resource
+        row.task = clipped_task
+        row.resource = clipped_resource
         row.metadata_ = metadata
         row.last_seen_at = now
         session.flush()

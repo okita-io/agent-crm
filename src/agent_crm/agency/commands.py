@@ -43,7 +43,14 @@ ORIGIN = "explicit"
 
 TOGGLEABLE_AGENTS: tuple[str, ...] = toggleable_agents()
 
-_ACTION_TYPES = frozenset({"set_agent_enabled", *ENQUEUE_ACTION_AGENTS})
+_ACTION_TYPES = frozenset(
+    {
+        "set_agent_enabled",
+        "assign_skill",
+        "unassign_skill",
+        *ENQUEUE_ACTION_AGENTS,
+    }
+)
 
 _AGENT_ALIASES: dict[str, str] = {
     "outbound hunter": "outbound_hunter",
@@ -225,10 +232,12 @@ def _build_system_prompt(ctx: dict[str, Any]) -> str:
         '"kind":"competitor"},'
         '{"type":"enqueue_engagement","query":"reddit astrology","brand":"tactic-studio"},'
         '{"type":"enqueue_seo","query":"homepage audit","brand":"heybuddy","kind":"site_audit"},'
-        '{"type":"enqueue_aeo_geo","query":"llms.txt review","brand":"celestial-nexus"}]}\n'
+        '{"type":"enqueue_aeo_geo","query":"llms.txt review","brand":"celestial-nexus"},'
+        '{"type":"assign_skill","agent":"research","skill_id":"marketing-agi/hooks"},'
+        '{"type":"unassign_skill","agent":"engagement","skill_id":"social-media/voice"}]}\n'
         "Rules:\n"
         "- Use action types only from: set_agent_enabled, enqueue_hunt, enqueue_research, "
-        "enqueue_engagement, enqueue_seo, enqueue_aeo_geo.\n"
+        "enqueue_engagement, enqueue_seo, enqueue_aeo_geo, assign_skill, unassign_skill.\n"
         "- Agent keys for toggles: "
         + ", ".join(TOGGLEABLE_AGENTS)
         + ".\n"
@@ -324,6 +333,39 @@ def execute_action(action: dict[str, Any]) -> dict[str, Any]:
             "ok": True,
             "agent": agent,
             "enabled": stored,
+        }
+
+    if action_type in {"assign_skill", "unassign_skill"}:
+        from agent_crm.errors import NotFoundError
+        from agent_crm.skill_store import assign_skill, unassign_skill
+
+        agent = str(action.get("agent") or "").strip()
+        skill_id = str(action.get("skill_id") or "").strip()
+        if not skill_id:
+            return {
+                "type": action_type,
+                "ok": False,
+                "detail": "skill_id is required",
+            }
+        try:
+            if action_type == "assign_skill":
+                skills = assign_skill(agent, skill_id)
+            else:
+                skills = unassign_skill(agent, skill_id)
+        except NotFoundError as exc:
+            return {
+                "type": action_type,
+                "ok": False,
+                "agent": agent,
+                "skill_id": skill_id,
+                "detail": str(exc),
+            }
+        return {
+            "type": action_type,
+            "ok": True,
+            "agent": agent,
+            "skill_id": skill_id,
+            "skills": skills,
         }
 
     owner = ENQUEUE_ACTION_AGENTS.get(action_type)
@@ -428,11 +470,14 @@ def execute_action(action: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_CONTROL_ACTIONS = frozenset({"set_agent_enabled", "assign_skill", "unassign_skill"})
+
+
 def execute_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Apply enable/disable toggles first so a batch can enable then enqueue."""
+    """Apply enable/disable and skill edits first so a batch can enable then enqueue."""
     results: list[dict[str, Any] | None] = [None] * len(actions)
     for index, action in enumerate(actions):
-        if str(action.get("type") or "").strip() == "set_agent_enabled":
+        if str(action.get("type") or "").strip() in _CONTROL_ACTIONS:
             results[index] = execute_action(action)
     for index, action in enumerate(actions):
         if results[index] is None:

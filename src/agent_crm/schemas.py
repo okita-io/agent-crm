@@ -542,6 +542,35 @@ class AgentObserverOut(BaseModel):
     saved_usd: float = 0.0
     tokens_per_hour: float = 0.0
     enabled: bool = True
+    placeholder: bool = False
+    toggleable: bool = False
+    skills: list[str] = []
+
+
+class SkillCatalogItemOut(BaseModel):
+    id: str
+    pack: str
+    module: str | None = None
+    label: str
+    summary: str = ""
+    kind: str
+    builtin: bool = True
+    virtual: bool = False
+    agent_count: int = 0
+    agents: list[str] = []
+
+
+class SkillsOut(BaseModel):
+    skills: list[SkillCatalogItemOut]
+
+
+class AgentSkillsOut(BaseModel):
+    name: str
+    skills: list[str]
+
+
+class AgentSkillIn(BaseModel):
+    skill_id: str = Field(min_length=1, max_length=128)
 
 
 class AgentEnabledIn(BaseModel):
@@ -550,6 +579,31 @@ class AgentEnabledIn(BaseModel):
 
 class AgencyRequestIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+
+
+class QueueLaneOut(BaseModel):
+    id: str
+    name: str
+    agent_name: str
+    pending: int
+    prompts: list[str] = []
+
+
+class QueuesOut(BaseModel):
+    waiting: int
+    lanes: list[QueueLaneOut]
+
+
+class SparkSlotSummaryOut(BaseModel):
+    max_concurrency: int = 4
+    observed_upstream_in_flight: int = 0
+    local_in_flight: int = 0
+    waiting: int = 0
+    external_upstream_slots: int = 0
+    model: str | None = None
+    waiters: list[str] = []
+    in_flight: list[str] = []
+    token_usage: dict | None = None
 
 
 class AgencyRequestOut(ORMModel):

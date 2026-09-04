@@ -21,10 +21,10 @@ from agent_crm.hunt.store import HuntStore
 from agent_crm.hunt.utils import classify_resource_detailed
 from agent_crm.llm_client import chat_completions
 from agent_crm.llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
-from agent_crm.marketing_skill import (
-    ad_placement_summarizer_guidance,
-    brand_context_snippet,
-    competitor_summarizer_guidance,
+from agent_crm.skill_runtime import (
+    brand_context_for,
+    research_ad_placement_guidance,
+    research_competitor_guidance,
 )
 from .feedback import extract_research_follow_up_terms
 from .query_store import ResearchQueryStore
@@ -492,7 +492,7 @@ def _maybe_summarize(
     errors: list[str],
 ) -> tuple[str, dict[str, Any] | None]:
     brand_label = BRAND_DISPLAY.get(brand, brand.value)
-    brand_context = brand_context_snippet(brand)
+    brand_context = brand_context_for(ACTOR, brand)
     page_block = (
         f"{wrap_untrusted('url', hit.url, max_chars=500)}\n"
         f"{wrap_untrusted('title', page.title or hit.title, max_chars=300)}\n"
@@ -500,11 +500,12 @@ def _maybe_summarize(
         f"{wrap_untrusted('page_excerpt', page.markdown, max_chars=3500)}"
     )
     if kind == ResearchFindingKind.COMPETITOR:
+        competitor_guidance = research_competitor_guidance()
         system = (
             "You analyze competitor websites for a CRM research agent. "
             "Summarize positioning, audience, and product angle vs the target brand. "
             "Be factual; do not invent contact details, stats, or testimonials.\n\n"
-            f"{competitor_summarizer_guidance()}"
+            f"{competitor_guidance}"
             + UNTRUSTED_DATA_SYSTEM_SUFFIX
         )
         if brand_context:
@@ -535,7 +536,7 @@ def _maybe_summarize(
             "take sponsorships, or offer promo/sticky/banner/board placement. "
             "Discovery only — do not invent pricing or contact emails. "
             "Assess brand fit and brand safety honestly (imageboards like 4chan often warrant caution).\n\n"
-            f"{ad_placement_summarizer_guidance()}"
+            f"{research_ad_placement_guidance()}"
             + UNTRUSTED_DATA_SYSTEM_SUFFIX
         )
         if brand_context:

@@ -270,6 +270,29 @@ class AgentToggle(Base):
     )
 
 
+class AgentSkillProfile(Base):
+    """Marks that an agent's skill list has been initialized (including empty)."""
+
+    __tablename__ = "agent_skill_profiles"
+
+    agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    seeded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
+class AgentSkill(Base):
+    """One assigned skill (pack or module) for a roster agent."""
+
+    __tablename__ = "agent_skills"
+
+    agent_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    skill_id: Mapped[str] = mapped_column(String(128), primary_key=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
 class AgencyRequest(Base):
     """Operator message for the orchestrator to interpret and act on."""
 
