@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from agent_crm.agent_control import activate_queue_review
 from agent_crm.db import session_scope, with_row_lock
 from agent_crm.engagement.runner import engagement_payload, extract_engagement_signals
 from agent_crm.enums import AgentStatus, Brand, HuntPageType, HuntQueryStatus, HuntResourceKind
@@ -63,8 +64,9 @@ class HuntStore:
     ) -> bool:
         """Enqueue a query if not already present. Returns True if enqueued.
 
-        Hunter-added origins (branch, community, person, …) land in
-        ``pending_review`` until the queue-review agent keeps or tosses them.
+        Hunter-added origins (branch, community, person, …) and operator
+        Command enqueues land in ``pending_review`` until Queue Review keeps
+        or tosses them. Adding a row turns the queue-review agent on.
         Failed rows with the same dedupe_key are reset for retry.
         """
         dedupe_key = make_dedupe_key(query, params)
@@ -90,21 +92,26 @@ class HuntStore:
                         existing.origin = origin
                         if run_id is not None:
                             existing.run_id = run_id
-                        return True
-                    return False
-                session.add(
-                    HuntQuery(
-                        query=query.strip(),
-                        params=params,
-                        origin=origin,
-                        brand=brand,
-                        priority=priority,
-                        status=initial_status,
-                        dedupe_key=dedupe_key,
-                        run_id=run_id,
+                        added = True
+                    else:
+                        added = False
+                else:
+                    session.add(
+                        HuntQuery(
+                            query=query.strip(),
+                            params=params,
+                            origin=origin,
+                            brand=brand,
+                            priority=priority,
+                            status=initial_status,
+                            dedupe_key=dedupe_key,
+                            run_id=run_id,
+                        )
                     )
-                )
-                return True
+                    added = True
+            if added:
+                activate_queue_review()
+            return added
         except IntegrityError:
             return False
 

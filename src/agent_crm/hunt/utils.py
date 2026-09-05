@@ -85,7 +85,7 @@ ASTROLOGY_OUTLET_HOSTS: frozenset[str] = frozenset(
 )
 
 _TRUSTED_QUEUE_ORIGINS: frozenset[str] = frozenset(
-    {"seed", "seed_pack", "explicit"}
+    {"seed", "seed_pack"}
 )
 # Hunter-generated origin segments. Audience prefixes like ``marketing:`` may
 # wrap these (``marketing:community:reddit/foo``) and still need review.
@@ -114,7 +114,12 @@ _KIND_HINTS: list[tuple[HuntResourceKind, tuple[str, ...]]] = [
 
 
 def origin_needs_review(origin: str | None) -> bool:
-    """True when a hunter/research/engagement-added term should be reviewed first."""
+    """True when a queued search term should wait for Queue Review.
+
+    Seed packs and named venues skip review. Operator Command enqueues
+    (``explicit``), hunter-added branch/community/person terms, and anything
+    else wait in ``pending_review`` so off-topic topics can be tossed.
+    """
     value = (origin or "").strip().lower()
     if not value:
         return True
@@ -135,7 +140,7 @@ def origin_needs_review(origin: str | None) -> bool:
 
 
 def query_enqueue_status(origin: str | None) -> HuntQueryStatus:
-    """Trusted seeds go straight to PENDING; hunter-added terms wait for review."""
+    """Trusted seeds go straight to PENDING; everything else waits for review."""
     if origin_needs_review(origin):
         return HuntQueryStatus.PENDING_REVIEW
     return HuntQueryStatus.PENDING

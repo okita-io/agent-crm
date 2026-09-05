@@ -18,6 +18,7 @@ PAUSED_TASK = "paused"
 _POLL_SECONDS = 5.0
 
 DISPATCHER_AGENT = "job-dispatcher"
+QUEUE_REVIEW_AGENT = "queue-review"
 
 
 def is_agent_enabled(agent_name: str) -> bool:
@@ -67,6 +68,13 @@ def allowed_enqueue_actions(enabled: list[str] | None = None) -> list[str]:
 def dispatcher_work_allowed() -> bool:
     """True when the job dispatcher may be assigned verify/enrich/qualify work."""
     return is_agent_enabled(DISPATCHER_AGENT)
+
+
+def activate_queue_review() -> bool:
+    """Turn Queue Review on so it can keep or toss newly queued search terms."""
+    if is_agent_enabled(QUEUE_REVIEW_AGENT):
+        return True
+    return set_agent_enabled(QUEUE_REVIEW_AGENT, True)
 
 
 def set_agent_enabled(agent_name: str, enabled: bool) -> bool:

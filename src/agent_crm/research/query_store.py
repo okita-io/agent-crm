@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from agent_crm.agent_control import activate_queue_review
 from agent_crm.db import session_scope, with_row_lock
 from agent_crm.enums import Brand, ResearchFindingKind, ResearchQueryStatus
 from agent_crm.hunt.utils import normalize_query, origin_needs_review
@@ -57,19 +58,24 @@ class ResearchQueryStore:
                         existing.error_message = None
                         existing.completed_at = None
                         existing.origin = origin
-                        return True
-                    return False
-                session.add(
-                    ResearchQuery(
-                        query=cleaned,
-                        origin=origin[:128],
-                        brand=brand,
-                        kind=kind,
-                        status=initial,
-                        dedupe_key=dedupe_key,
+                        added = True
+                    else:
+                        added = False
+                else:
+                    session.add(
+                        ResearchQuery(
+                            query=cleaned,
+                            origin=origin[:128],
+                            brand=brand,
+                            kind=kind,
+                            status=initial,
+                            dedupe_key=dedupe_key,
+                        )
                     )
-                )
-                return True
+                    added = True
+            if added:
+                activate_queue_review()
+            return added
         except IntegrityError:
             return False
 

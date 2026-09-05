@@ -408,13 +408,15 @@ def _llm_research_follow_up_terms(
             f"Suggest up to {max_terms} NEW search queries for more named retail, "
             "grocery, food & beverage, CPG, restaurant, or convenience-store companies "
             "over $10 million revenue. Prefer lists, directories, and rankings. "
-            "Do NOT invent company names, emails, or URLs.\n"
+            "Do NOT invent company names, emails, or URLs. Skip news headlines, "
+        "product recalls, sports, and weather — they are off-topic.\n"
             if kind == ResearchFindingKind.TARGET_COMPANY
             else (
                 f"Suggest up to {max_terms} NEW search queries to find more relevant "
                 "competitors, partners, ad surfaces, or topic variants mentioned in the sources. "
                 "Use concrete product, community, or divination/AR/nonprofit terms from the pages. "
-                "Do NOT invent emails, person names, or URLs.\n"
+                "Do NOT invent emails, person names, or URLs. Skip news headlines, "
+                "product recalls, sports, and weather — they are off-topic.\n"
             )
         )
         + 'Respond with JSON only: {"terms": ["query one", "query two"]}'

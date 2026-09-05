@@ -1,22 +1,23 @@
-"""Queue-review agent: keep or toss hunter-added search terms before they run.
+"""Queue-review agent: keep or toss queued search terms before they run.
 
-Seed packs and named venues go straight to PENDING. Hunter-added branch,
-community, person, handle, and follow-up terms land in PENDING_REVIEW. This
-loop drains that backlog with a cheap deterministic gate, then Spark only
-for ambiguous terms.
+Seed packs and named venues go straight to PENDING. Operator Command
+enqueues, hunter-added branch/community/person terms, and other follow-ups
+land in PENDING_REVIEW. Adding any hunt, research, or engagement query
+turns this agent on. The loop also sweeps PENDING for off-topic news
+(e.g. egg recalls) that skipped review.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
-from .agent_control import stop_if_disabled, wait_while_disabled
-from .config import get_settings
+from sqlalchemy import select
+
 from agent_crm.engagement.query_store import EngagementQueryStore
-from .enums import AgentStatus, Brand, ImprovementSourceAgent
-from .heartbeat import record_heartbeat
 from agent_crm.hunt.relevance import BRAND_ON_TOPIC_KEYWORDS, BRAND_TOPIC_SUMMARIES
 from agent_crm.hunt.store import HuntStore
 from agent_crm.hunt.utils import (
@@ -25,9 +26,23 @@ from agent_crm.hunt.utils import (
     normalize_query,
     origin_needs_review,
 )
+from agent_crm.research.query_store import ResearchQueryStore
+
+from .agent_control import stop_if_disabled, wait_while_disabled
+from .config import get_settings
+from .db import session_scope
+from .enums import (
+    AgentStatus,
+    Brand,
+    EngagementQueryStatus,
+    HuntQueryStatus,
+    ImprovementSourceAgent,
+    ResearchQueryStatus,
+)
+from .heartbeat import record_heartbeat
 from .llm_client import chat_completions
 from .llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
-from agent_crm.research.query_store import ResearchQueryStore
+from .models import EngagementQuery, HuntQuery, ResearchQuery
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +81,26 @@ _GENERIC_DISCOVERY_TOKENS: tuple[str, ...] = (
     "subreddit",
     "blog",
     "podcast",
+)
+
+# News/commodity queries that are off-topic for every CRM brand (romance,
+# astrology, companion wellness, retail/F&B marketing + WebAR).
+_OFF_TOPIC_NEWS_RE = re.compile(
+    r"\b("
+    r"egg recalls?|"
+    r"food recalls?|"
+    r"product recalls?|"
+    r"fda recalls?|"
+    r"usda recalls?|"
+    r"salmonella|"
+    r"listeria|"
+    r"e-?coli outbreak|"
+    r"lottery (winners?|jackpot)|"
+    r"(nfl|nba|mlb|nhl) scores?|"
+    r"weather (forecast|alert|warning)|"
+    r"stock (price|market)s?"
+    r")\b",
+    re.IGNORECASE,
 )
 
 _VERTICAL_HOST_HINTS: dict[Brand, frozenset[str]] = {
@@ -109,6 +144,11 @@ class QueueReviewResult:
     errors: list[str] = field(default_factory=list)
 
 
+def is_off_topic_news_query(query: str) -> bool:
+    """True for news/commodity search terms that never belong on a CRM queue."""
+    return bool(_OFF_TOPIC_NEWS_RE.search(normalize_query(query)))
+
+
 def assess_search_query(
     *,
     brand: Brand,
@@ -123,6 +163,12 @@ def assess_search_query(
 
     if any(fragment in cleaned for fragment in _NOISE_QUERY_FRAGMENTS):
         return QueueReviewDecision(keep=False, reason="noise host or docs token in query")
+
+    if is_off_topic_news_query(cleaned):
+        return QueueReviewDecision(
+            keep=False,
+            reason="off-topic news or commodity query",
+        )
 
     if not origin_needs_review(origin):
         return QueueReviewDecision(keep=True, reason="trusted seed origin")
@@ -160,7 +206,8 @@ def _spark_query_assessment(
     prompt = (
         "Decide if this search query is worth running for a CRM hunter that "
         "collects outreach targets (outlets, communities, creators) — not docs, "
-        "dev tooling, aggregators, or random profiles.\n"
+        "dev tooling, aggregators, news headlines, product recalls, sports, "
+        "weather, or random profiles.\n"
         f"Brand topic: {topic}\n"
         f"Origin: {origin or 'n/a'}\n"
         f"{wrap_untrusted('query', query, max_chars=400)}\n"
@@ -189,7 +236,7 @@ def _spark_query_assessment(
             task=f"queue review {brand.value}",
         )
         content = response["choices"][0]["message"]["content"]
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Spark queue review failed for %r", query)
         return None
 
@@ -205,7 +252,7 @@ def run_queue_review(
     *,
     budget: QueueReviewBudget | None = None,
 ) -> QueueReviewResult:
-    """Review pending_review rows on hunt, research, and engagement queues."""
+    """Review pending_review rows and toss off-topic news already on PENDING."""
     budget = budget or QueueReviewBudget()
     result = QueueReviewResult()
     if stop_if_disabled(ACTOR):
@@ -221,6 +268,8 @@ def run_queue_review(
     engagement = EngagementQueryStore()
 
     record_heartbeat(ACTOR, status=AgentStatus.THINKING, task="reviewing search queues")
+
+    _toss_off_topic_pending(result=result, budget=budget, deadline=deadline)
 
     while result.reviewed < budget.max_queries or budget.max_queries <= 0:
         if stop_if_disabled(ACTOR):
@@ -299,11 +348,66 @@ def run_queue_review_watch(*, budget: QueueReviewBudget | None = None) -> None:
             record_heartbeat(
                 ACTOR,
                 status=AgentStatus.IDLE,
-                task="search queues clean; waiting for hunter-added terms",
+                task="search queues clean; waiting for new terms",
             )
             time.sleep(poll)
             continue
         time.sleep(1.0)
+
+
+_PENDING_SWEEP_SCAN = 80
+
+_PENDING_MODELS: tuple[tuple[type, object, object], ...] = (
+    (HuntQuery, HuntQueryStatus.PENDING, HuntQueryStatus.REJECTED),
+    (ResearchQuery, ResearchQueryStatus.PENDING, ResearchQueryStatus.REJECTED),
+    (EngagementQuery, EngagementQueryStatus.PENDING, EngagementQueryStatus.REJECTED),
+)
+
+
+def _toss_off_topic_pending(
+    *,
+    result: QueueReviewResult,
+    budget: QueueReviewBudget,
+    deadline: float | None,
+) -> None:
+    """Reject PENDING news/commodity queries that skipped pending_review."""
+    if budget.max_queries > 0 and result.reviewed >= budget.max_queries:
+        return
+    if deadline is not None and time.monotonic() >= deadline:
+        return
+    now = datetime.now(UTC)
+    tossed_labels: list[str] = []
+    with session_scope() as session:
+        for model, pending_status, rejected_status in _PENDING_MODELS:
+            if budget.max_queries > 0 and result.reviewed >= budget.max_queries:
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            rows = list(
+                session.scalars(
+                    select(model)
+                    .where(model.status == pending_status)
+                    .order_by(model.id.asc())
+                    .limit(_PENDING_SWEEP_SCAN)
+                )
+            )
+            for row in rows:
+                if budget.max_queries > 0 and result.reviewed >= budget.max_queries:
+                    break
+                if not is_off_topic_news_query(row.query):
+                    continue
+                row.status = rejected_status
+                row.error_message = "off-topic news or commodity query"
+                row.completed_at = now
+                result.reviewed += 1
+                result.tossed += 1
+                tossed_labels.append(str(row.query)[:80])
+    if tossed_labels:
+        record_heartbeat(
+            ACTOR,
+            status=AgentStatus.WORKING,
+            task=f"tossed {len(tossed_labels)} off-topic pending: {tossed_labels[0]}",
+        )
 
 
 def _claim_any(

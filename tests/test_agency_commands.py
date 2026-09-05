@@ -6,7 +6,7 @@ import httpx
 
 from agent_crm.agency.commands import execute_action, execute_actions
 from agent_crm.agent_control import is_agent_enabled, set_agent_enabled
-from agent_crm.enums import Brand
+from agent_crm.enums import Brand, HuntQueryStatus
 from agent_crm.hunt.store import HuntStore
 
 
@@ -29,7 +29,10 @@ def test_execute_enqueue_hunt(db_url) -> None:
     )
     assert result["ok"] is True
     assert result["enqueued"] is True
-    assert HuntStore().count_pending() >= 1
+    status = HuntStore().queue_status()
+    assert status["by_status"].get(HuntQueryStatus.PENDING_REVIEW.value, 0) >= 1
+    assert HuntStore().count_pending() == 0
+    assert is_agent_enabled("queue-review") is True
 
 
 def test_execute_unknown_agent_fails(db_url) -> None:

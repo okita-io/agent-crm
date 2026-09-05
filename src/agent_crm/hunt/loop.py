@@ -635,7 +635,8 @@ def _llm_branch_terms(
             "brand managers, marketing managers, and brand-management leadership "
             "directories, team pages, and press bios at those companies. "
             "Prefer company about/leadership pages over XR communities. "
-            "Do NOT invent emails or person names.\n"
+            "Do NOT invent emails or person names. Skip news headlines, "
+            "product recalls, sports, and weather — they are off-topic.\n"
             'Respond with JSON only: {"terms": ["query one", "query two"]}'
         )
     else:
@@ -648,7 +649,8 @@ def _llm_branch_terms(
             + "\n\n"
             f"Suggest up to {max_terms} NEW search queries to find more such resources. "
             "Focus on communities, directories, newsletters, forums — not individual people. "
-            "Do NOT invent emails or person names.\n"
+            "Do NOT invent emails or person names. Skip news headlines, "
+            "product recalls, sports, and weather — they are off-topic.\n"
             'Respond with JSON only: {"terms": ["query one", "query two"]}'
         )
     try:
