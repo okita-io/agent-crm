@@ -184,3 +184,41 @@ def test_dispatcher_executes_topical_relevance_job() -> None:
         )
         assert row is not None
         assert row.verdict == TopicalRelevanceVerdict.OFF_TOPIC
+
+
+def test_upsert_url_topic_relevance_strips_nul_bytes() -> None:
+    url = "https://romanceblog.example/nul-test"
+    assessment = RelevanceAssessment(
+        verdict=TopicalRelevanceVerdict.ON_TOPIC,
+        reason="on-topic\x00 keywords matched",
+    )
+    row = upsert_url_topic_relevance(
+        url=url,
+        brand=Brand.MIDNIGHTSATIN,
+        assessment=assessment,
+        source_kind="test\x00kind",
+        page_title="Dark\x00 Romance",
+        page_excerpt="spicy\x00 romance readers",
+    )
+    assert row.reason == "on-topic keywords matched"
+    assert row.page_title == "Dark Romance"
+    assert row.page_excerpt == "spicy romance readers"
+    assert row.source_kind == "testkind"
+    assert "\x00" not in row.reason
+    assert "\x00" not in (row.page_excerpt or "")
+
+
+def test_upsert_url_topic_relevance_all_nul_reason_becomes_uncertain() -> None:
+    url = "https://romanceblog.example/empty-reason"
+    assessment = RelevanceAssessment(
+        verdict=TopicalRelevanceVerdict.ON_TOPIC,
+        reason="\x00\x01",
+    )
+    row = upsert_url_topic_relevance(
+        url=url,
+        brand=Brand.MIDNIGHTSATIN,
+        assessment=assessment,
+    )
+    assert row.verdict == TopicalRelevanceVerdict.UNCERTAIN
+    assert row.reason
+    assert "\x00" not in row.reason

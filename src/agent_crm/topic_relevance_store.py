@@ -17,6 +17,7 @@ from agent_crm.hunt.relevance import (
     assess_topical_relevance,
     fetch_public_page_excerpt,
 )
+from .llm_text import sanitize_postgres_text
 from .models import (
     CommentPerson,
     ContactProfile,
@@ -37,6 +38,24 @@ def normalize_url(url: str) -> str:
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}"
 
 
+def _assessment_for_persist(assessment: RelevanceAssessment) -> RelevanceAssessment:
+    """Sanitize LLM/page text before persisting to PostgreSQL text columns."""
+    reason = sanitize_postgres_text(assessment.reason)
+    if not reason:
+        return RelevanceAssessment(
+            verdict=TopicalRelevanceVerdict.UNCERTAIN,
+            reason="insufficient classification detail after sanitization",
+            spark_used=assessment.spark_used,
+        )
+    if reason == assessment.reason:
+        return assessment
+    return RelevanceAssessment(
+        verdict=assessment.verdict,
+        reason=reason,
+        spark_used=assessment.spark_used,
+    )
+
+
 def upsert_url_topic_relevance(
     *,
     url: str,
@@ -48,6 +67,12 @@ def upsert_url_topic_relevance(
     page_excerpt: str | None = None,
 ) -> UrlTopicRelevance:
     normalized = normalize_url(url)
+    assessment = _assessment_for_persist(assessment)
+    safe_source_kind = sanitize_postgres_text(source_kind)
+    safe_page_title = sanitize_postgres_text(page_title)
+    safe_page_excerpt = sanitize_postgres_text(page_excerpt)
+    if safe_page_excerpt:
+        safe_page_excerpt = safe_page_excerpt[:4000]
     checked_at = datetime.now(UTC)
     with session_scope() as session:
         row = session.scalar(
@@ -63,24 +88,24 @@ def upsert_url_topic_relevance(
                 verdict=assessment.verdict,
                 reason=assessment.reason,
                 checked_at=checked_at,
-                source_kind=source_kind,
+                source_kind=safe_source_kind,
                 source_id=source_id,
-                page_title=page_title,
-                page_excerpt=(page_excerpt or "")[:4000] or None,
+                page_title=safe_page_title,
+                page_excerpt=safe_page_excerpt,
             )
             session.add(row)
         else:
             row.verdict = assessment.verdict
             row.reason = assessment.reason
             row.checked_at = checked_at
-            if source_kind:
-                row.source_kind = source_kind
+            if safe_source_kind:
+                row.source_kind = safe_source_kind
             if source_id is not None:
                 row.source_id = source_id
-            if page_title:
-                row.page_title = page_title
-            if page_excerpt:
-                row.page_excerpt = page_excerpt[:4000]
+            if safe_page_title:
+                row.page_title = safe_page_title
+            if safe_page_excerpt:
+                row.page_excerpt = safe_page_excerpt
         session.flush()
         return row
 
