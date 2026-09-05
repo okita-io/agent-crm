@@ -1,0 +1,41 @@
+slug: midnightsatin
+name: MidnightSatin
+status: live
+enabled: true
+site: https://midnightsatin.app
+alias: null
+context_file: brand-context.midnightsatin.md
+origin_prompt: |
+  MidnightSatin (midnightSatin.app) is a romance reading app for AI-authored
+  long-form serial fiction via the Romance Factory pipeline. Audience: BookTok
+  and spicy-romance communities. Not a Kindle clone, not Wattpad, not KU framing.
+channels:
+  research:
+    armed: true
+    prompt: |
+      Competitor and ad-placement landscape for serialized romance apps.
+      Never invent download counts, star ratings, or testimonials.
+  hunter:
+    armed: true
+    prompt: |
+      BookTok, romance forums, serial-fiction communities, and AI-authored
+      romance promoters. Do not invent person names or emails.
+  seo:
+    armed: true
+    prompt: |
+      Owned site https://midnightsatin.app. Site-audit reviews and plans for
+      humans. Never patch live pages.
+  aeo_geo:
+    armed: true
+    prompt: |
+      Extractable answers and GEO citation readiness for MidnightSatin.
+      Never invent citation counts.
+  engage:
+    armed: true
+    prompt: |
+      Romance and BookTok venues. Warm, reader-first voice. Helpful-first drafts.
+      Never publish from draft agents.
+  publish:
+    armed: true
+    prompt: |
+      Human-scheduled publish_jobs only. Dry-run until CRM_PUBLISH_DRY_RUN=false.

@@ -68,6 +68,15 @@ AGENT_SPECS: tuple[AgentSpec, ...] = (
         spark_required=True,
     ),
     AgentSpec(
+        name="publisher",
+        display_name="Publisher",
+        compose_service="publish-loop",
+        cli="publish-loop",
+        work_agent=True,
+        health_watch=True,
+        spark_required=False,
+    ),
+    AgentSpec(
         name="seo",
         display_name="SEO Documents",
         compose_service="seo-loop",

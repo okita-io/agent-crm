@@ -8,8 +8,17 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(rootDir, ".."), "")
-  const apiTarget = env.CRM_API_BASE_URL?.replace(/\/$/, "") || "http://127.0.0.1:8000"
-  const apiToken = env.CRM_API_TOKEN || env.VITE_CRM_API_TOKEN || ""
+  const apiTarget = (
+    process.env.CRM_API_BASE_URL ||
+    env.CRM_API_BASE_URL ||
+    "http://127.0.0.1:8000"
+  ).replace(/\/$/, "")
+  const apiToken =
+    process.env.CRM_API_TOKEN ||
+    process.env.VITE_CRM_API_TOKEN ||
+    env.CRM_API_TOKEN ||
+    env.VITE_CRM_API_TOKEN ||
+    ""
 
   return {
     plugins: [react(), tailwindcss()],
@@ -19,6 +28,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      host: "0.0.0.0",
       port: 5173,
       proxy: {
         "/api": {

@@ -55,8 +55,9 @@ def engagement_draft_guidance() -> str:
     parts = [
         "Forum replies are not owned-social posts. Helpful first; mention the product "
         "only when it naturally answers the thread.",
-        "Never claim the comment was posted. No emails, no login-wall URLs, no "
-        "immediate buy CTAs, no Charlie Hills pinned-comment meme format.",
+        "Never claim the comment was posted from this draft agent. Publish only "
+        "via the publisher after human schedule. No emails, no login-wall URLs, "
+        "no immediate buy CTAs, no Charlie Hills pinned-comment meme format.",
         "Do not paste a first-comment resource CTA onto someone else's thread.",
         "Never invent proof; use [NEED: x] only in internal notes, not in the public draft.",
     ]
@@ -77,7 +78,8 @@ def post_package_guidance() -> str:
         max_chars=700,
     )
     parts = [
-        "Write a content-package document. Do not post, schedule, or send.",
+        "Write a content-package document. Do not post from this skill; "
+        "publisher sends only after human schedule.",
         "Links belong in the first comment, not the post body.",
         "Never invent proof. Flag unverified claims.",
     ]

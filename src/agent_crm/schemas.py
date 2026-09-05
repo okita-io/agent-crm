@@ -31,12 +31,15 @@ from .enums import (
     LeadSource,
     LeadStatus,
     Priority,
+    PublishJobStatus,
+    PublishSourceKind,
     ResearchFindingKind,
     SeoPlanKind,
     SeoPlanStatus,
     SeoReviewKind,
     SeoReviewStatus,
     SeoTargetRole,
+    SocialPlatform,
     Stage,
 )
 
@@ -220,7 +223,7 @@ class HuntStatusOut(BaseModel):
 
 
 class EngagementLoopRequest(BaseModel):
-    """Rescan catalogued forums and draft comment replies (never posts)."""
+    """Rescan catalogued forums and draft comment replies (does not publish)."""
 
     brand: Brand | None = None
     max_venues: int = Field(default=10, ge=1, le=50)
@@ -268,6 +271,93 @@ class EngagementDraftOut(ORMModel):
     status: EngagementDraftStatus
     created_at: datetime
     updated_at: datetime
+
+
+class SocialAccountCreate(BaseModel):
+    brand: Brand
+    platform: SocialPlatform
+    handle: str = Field(min_length=1, max_length=128)
+    postiz_integration_id: str | None = None
+    credential_key: str | None = None
+    enabled: bool = True
+    daily_cap: int = Field(default=3, ge=1, le=50)
+    min_interval_minutes: int = Field(default=240, ge=1, le=10080)
+
+
+class SocialAccountOut(ORMModel):
+    id: int
+    brand: Brand
+    platform: SocialPlatform
+    handle: str
+    postiz_integration_id: str | None
+    credential_key: str | None
+    enabled: bool
+    daily_cap: int
+    min_interval_minutes: int
+    last_posted_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PublishScheduleRequest(BaseModel):
+    """Approve engagement drafts and enqueue scheduled publish jobs."""
+
+    draft_ids: list[int] = Field(min_length=1, max_length=50)
+    account_id: int
+    scheduled_at: datetime | None = None
+    use_next_slot: bool = True
+    pete_override: bool = False
+    dry_run: bool | None = None
+
+
+class PublishJobOut(ORMModel):
+    id: int
+    source_kind: PublishSourceKind
+    source_id: int
+    brand: Brand
+    platform: SocialPlatform
+    account_id: int
+    body: str
+    target_url: str | None
+    payload_json: dict | None = None
+    scheduled_at: datetime
+    status: PublishJobStatus
+    posted_url: str | None
+    platform_post_id: str | None
+    error: str | None
+    attempt_count: int
+    pete_override: bool
+    dry_run: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class PublishLoopRequest(BaseModel):
+    max_jobs: int = Field(default=5, ge=1, le=50)
+
+
+class PublishLoopResultOut(BaseModel):
+    claimed: int
+    posted: int
+    failed: int
+    rescheduled: int
+    skipped: int = 0
+    errors: list[str]
+    stop_reason: str
+
+
+class ContentPackageScheduleRequest(BaseModel):
+    """Schedule an owned-feed package via Postiz (content-loop / manual)."""
+
+    source_id: int = Field(ge=1)
+    brand: Brand
+    account_id: int
+    body: str = Field(min_length=1)
+    scheduled_at: datetime | None = None
+    use_next_slot: bool = True
+    payload_json: dict | None = None
+    pete_override: bool = False
+    dry_run: bool | None = None
 
 
 class SeoLoopRequest(BaseModel):
@@ -586,7 +676,9 @@ class QueueLaneOut(BaseModel):
     name: str
     agent_name: str
     pending: int
+    running: int = 0
     prompts: list[str] = []
+    oldest_wait_seconds: int | None = None
 
 
 class QueuesOut(BaseModel):
@@ -820,3 +912,73 @@ class AgentSearchHitOut(BaseModel):
 class AgentSearchOut(BaseModel):
     q: str
     hits: list[AgentSearchHitOut]
+
+
+class ProjectChannelOut(BaseModel):
+    armed: bool
+    prompt: str = ""
+
+
+class ProjectOut(BaseModel):
+    slug: str
+    name: str
+    status: str
+    enabled: bool
+    site: str | None = None
+    alias: str | None = None
+    context_file: str | None = None
+    context_exists: bool = False
+    origin_prompt: str = ""
+    summary: str = ""
+    brand: Brand | None = None
+    channels: dict[str, ProjectChannelOut]
+    armed_count: int = 0
+    channel_count: int = 6
+    seeded_loops: list[str] = []
+
+
+class ProjectStatsOut(BaseModel):
+    projects: int
+    live_sites: int
+    pre_launch: int
+    channels_armed: int
+    channels_total: int
+
+
+class ProjectsListOut(BaseModel):
+    projects: list[ProjectOut]
+    stats: ProjectStatsOut
+
+
+class ProjectCreateIn(BaseModel):
+    slug: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=128)
+    site: str | None = None
+    origin_prompt: str = ""
+    alias: str | None = None
+    status: str = "live"
+    enabled: bool = True
+
+
+class ProjectPatchIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    site: str | None = None
+    alias: str | None = None
+    status: str | None = None
+    origin_prompt: str | None = None
+    enabled: bool | None = None
+    context_file: str | None = None
+
+
+class ProjectChannelsIn(BaseModel):
+    research: bool | None = None
+    hunter: bool | None = None
+    seo: bool | None = None
+    aeo_geo: bool | None = None
+    engage: bool | None = None
+    publish: bool | None = None
+
+
+class ProjectPromptsIn(BaseModel):
+    origin_prompt: str | None = None
+    channels: dict[str, str] | None = None

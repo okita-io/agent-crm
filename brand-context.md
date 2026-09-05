@@ -19,7 +19,7 @@ Read the per-brand file for product, audience, positioning, and voice. This file
 - **No live ad accounts.** Discovery and briefs only — never log into, spend on, or modify ad platforms.
 - **No outbound send.** tactic.studio email/DM is gated: Pete (`pete@tactic.studio`) + naming-rights required. Never send.
 - **No live SEO deploys.** The SEO agent writes review and plan documents only. Humans implement on the target sites.
-- **No social posting.** Content packages and engagement drafts are for human review. Never publish, schedule, or pin.
+- **No direct social posting from draft agents.** Content packages and engagement drafts are for human review. Live publish happens only via the `publisher` worker after a human batch-approves and schedules a job. tactic.studio stays Pete-gated.
 - **Verifier scope.** DNS, MX, and HTTP only — no social login scraping (Facebook, LinkedIn, etc.).
 - **Spark routing.** All LLM calls go through spark-queue (cap 4 concurrent). Never point agents at SGLang directly.
 - **Epistemic honesty.** Label inference as inference. State gaps explicitly.
@@ -28,4 +28,4 @@ Read the per-brand file for product, audience, positioning, and voice. This file
 
 Progressive disclosure: start at `skills/marketing-agi/SKILL.md` (router). Load only the `references/*.md` module needed for the task — do not concatenate all modules into one prompt.
 
-Owned-social production (weekly matrix, post packages, newsletter drafts, visual briefs) starts at `skills/social-media/SKILL.md`. Documents only — never post. Do not concatenate that pack either. For hooks, copy frameworks, and slop removal, keep using marketing-agi.
+Owned-social production (weekly matrix, post packages, newsletter drafts, visual briefs) starts at `skills/social-media/SKILL.md`. Documents only from that skill — live publish is the `publisher` worker after human schedule. Do not concatenate that pack either. For hooks, copy frameworks, and slop removal, keep using marketing-agi.

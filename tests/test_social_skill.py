@@ -37,6 +37,7 @@ def test_engagement_draft_guidance_is_helpful_first_not_persona() -> None:
     lowered = guidance.lower()
     assert "helpful first" in lowered
     assert "never claim the comment was posted" in lowered
+    assert "publisher" in lowered or "human schedule" in lowered
     assert "charlie hills" in lowered
     assert "pinned-comment meme" in lowered
     assert "slop-patterns" in lowered
@@ -49,6 +50,7 @@ def test_post_package_guidance_keeps_links_in_first_comment() -> None:
     assert "first comment" in lowered
     assert "do not post" in lowered
     assert "never invent proof" in lowered
+    assert "publisher" in lowered or "human schedule" in lowered
 
 
 def test_content_matrix_and_niche_pulse_guidance_load() -> None:

@@ -36,6 +36,7 @@ def brand_context_path(brand: Brand | None = None) -> Path | None:
         Brand.CELESTIAL_NEXUS: "brand-context.celestial-nexus.md",
         Brand.HEYBUDDY: "brand-context.heybuddy.md",
         Brand.TACTIC_STUDIO: "brand-context.tactic-studio.md",
+        Brand.BEST_BIRYANI: "brand-context.best-biryani.md",
     }
     filename = slug_map.get(brand)
     if not filename:

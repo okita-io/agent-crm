@@ -1,0 +1,46 @@
+slug: heybuddy
+name: HeyBuddy
+status: pre_launch
+enabled: true
+site: null
+alias: hey-buddy
+context_file: brand-context.heybuddy.md
+origin_prompt: |
+  HeyBuddy is an AI companion for loneliness and mental wellness.
+  Offer conversational companionship and check-ins. It is not licensed
+  therapy, crisis intervention, or a 501(c)(3). Never claim nonprofit status.
+  Partnership research targets external 501(c)(3) orgs in loneliness, elder
+  care, veterans, and youth digital wellbeing.
+channels:
+  research:
+    armed: true
+    prompt: |
+      Default kind: nonprofit. Hunt 501(c)(3) partners in loneliness, elder
+      care, veterans, and youth digital wellbeing. Ad-placement is discovery
+      only. Never invent EINs. Never claim HeyBuddy is a nonprofit.
+  hunter:
+    armed: true
+    prompt: |
+      Catalog loneliness, veteran, elder, and caregiver communities.
+      Do not invent person names or emails. No outbound send from this stack.
+  seo:
+    armed: false
+    prompt: |
+      Write site-audit reviews and implementation plans for humans.
+      Do not patch live pages. No owned URL yet — seo-loop must skip this origin.
+  aeo_geo:
+    armed: false
+    prompt: |
+      Document extractable answers and GEO citation readiness.
+      Never invent citation counts. Skipped until HeyBuddy has quotable owned pages.
+  engage:
+    armed: true
+    prompt: |
+      Rescan catalogued venues. Draft helpful-first replies.
+      Voice: warm, present, non-clinical. Never position HeyBuddy as therapy,
+      a crisis hotline, or a cure.
+  publish:
+    armed: false
+    prompt: |
+      No owned feeds yet. Keep this origin out of the publisher drain.
+      Drafts stay in review.

@@ -26,17 +26,18 @@ docker compose up -d --build
 | Service | Port | Role |
 |---------|------|------|
 | `api` | 8000 | FastAPI — runs `alembic upgrade head` on boot, then serves |
-| `web` | 3000 | Vite/React Live Agents dashboard (Pencil floor view) |
+| `web` | 3000 | Vite/React Live Agents dashboard (Pencil floor view; LAN `0.0.0.0`) |
 | `dashboard` | 8501 | Streamlit observer + pipeline/hunter/research/contacts/verifier |
-| `db` | 5432 | Postgres 16 |
-| `spark-queue` | 8088 | GPU-aware LLM queue proxy |
+| `db` | 5432 | Postgres 16 (loopback only) |
+| `spark-queue` | 8088 | GPU-aware LLM queue proxy (loopback only) |
 | `contact-worker` | — | Job dispatcher — enrich + verify (`agent-crm jobs`) |
 | `hunt-loop` | — | Standing outbound hunter (`agent-crm hunt-loop`, global priority queue) |
 | `research-loop` | — | Standing research queue drain (20 queries / 60 min / 200 pages per cycle; queue only grows) |
-| `engagement-loop` | — | Standing forum rescan + comment drafts (never posts) |
+| `engagement-loop` | — | Standing forum rescan + comment drafts (publish via `publisher` after human schedule) |
+| `publish-loop` | — | Drains approved `publish_jobs` (dry-run by default; Reddit comments / Postiz owned feeds) |
 | `seo-loop` | — | Standing SEO reviews + implementation plans (never patches sites) |
 | `aeo-geo-loop` | — | Standing AEO/GEO reviews + plans (never patches sites) |
-| `queue-review` | — | Keeps or tosses hunter-added search-queue terms before they run |
+| `queue-review` | — | Keeps or tosses queued search terms (including off-topic news) before they run |
 | `orchestrator` | — | Self-learning stack inspector (`agent-crm orchestrate`) — writes improvement notes |
 
 API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -96,7 +97,7 @@ Vendored MIT **marketing-agi** skill at [`skills/marketing-agi/`](skills/marketi
 
 Vendored **OpenSEO concepts** (not the hosted app) at [`skills/open-seo/`](skills/open-seo/). Upstream: [every-app/open-seo](https://github.com/every-app/open-seo) — see `skills/open-seo/SOURCE`. The CRM agent writes review/plan documents; it does not run OpenSEO MCP or spend DataForSEO credits.
 
-Vendored **social-media content factory** (concepts, not the Cowork plugin) at [`skills/social-media/`](skills/social-media/). Upstream: [charlie947/social-media-skills](https://github.com/charlie947/social-media-skills) — see `skills/social-media/SOURCE`. Weekly matrices, post packages, newsletter drafts, niche pulses, and visual briefs as documents. **This stack never posts.** No Apify, no Gemini API, no Claude for Chrome. Engagement drafts pull first-comment / helpful-first rules from this pack. A standing `content-loop` (owned-social packages in Postgres) is not implemented yet.
+Vendored **social-media content factory** (concepts, not the Cowork plugin) at [`skills/social-media/`](skills/social-media/). Upstream: [charlie947/social-media-skills](https://github.com/charlie947/social-media-skills) — see `skills/social-media/SOURCE`. Weekly matrices, post packages, newsletter drafts, niche pulses, and visual briefs as documents. Draft agents do not publish; the standing `publisher` worker sends only after a human schedules a job. No Apify, no Gemini API, no Claude for Chrome. Engagement drafts pull first-comment / helpful-first rules from this pack. A standing `content-loop` (owned-social packages in Postgres) is not implemented yet.
 
 **Brand context** for Research, Hunter, and dashboard agents:
 
@@ -108,7 +109,7 @@ Vendored **social-media content factory** (concepts, not the Cowork plugin) at [
 | `brand-context.heybuddy.md` | HeyBuddy (not a nonprofit — hunts partner orgs) |
 | `brand-context.tactic-studio.md` | tactic.studio |
 
-Research competitor summaries load bounded slices of `references/competitive.md` (+ positioning) into the Spark summarizer. Ad-placement runs pull short `paid-ads` / `hooks` excerpts for discovery briefs. SEO reviews/plans pull `skills/open-seo/references/site-audit.md` and `seo-plan.md`. Engagement comment drafts pull a bounded slice of `skills/social-media/references/post-package.md` plus slop-patterns. Shared rules: never invent proof (`[NEED: x]`), no live ad accounts, no outbound send, **no live SEO deploys**, **no social posting**. **tactic.studio outbound remains gated** by Pete (`pete@tactic.studio`) + naming-rights — this stack never sends.
+Research competitor summaries load bounded slices of `references/competitive.md` (+ positioning) into the Spark summarizer. Ad-placement runs pull short `paid-ads` / `hooks` excerpts for discovery briefs. SEO reviews/plans pull `skills/open-seo/references/site-audit.md` and `seo-plan.md`. Engagement comment drafts pull a bounded slice of `skills/social-media/references/post-package.md` plus slop-patterns. Shared rules: never invent proof (`[NEED: x]`), no live ad accounts, no outbound send, **no live SEO deploys**, **no social publish except via `publisher` after human schedule**. **tactic.studio outbound remains gated** by Pete (`pete@tactic.studio`) + naming-rights — this stack never sends without that gate.
 
 ---
 
@@ -132,7 +133,7 @@ Each search hit can be scraped to markdown via the host Firecrawl API. Hunter de
 
 - **Priority queue** (`hunt_queries.priority`, higher number runs first) with composite index `(status, priority, id)`. tactic.studio marketing/influencer/user seeds dequeue ahead of older MidnightSatin rows. Unlisted origins (generic seeds, branch terms) use priority **30** and still run, but never block tactic marketing.
 - SearXNG param rotation (general + social media for consumer brands; news/IT only for tactic.studio)
-- LLM branch-term extraction to enqueue new queries (those terms wait in `pending_review` until `queue-review` keeps or tosses them)
+- LLM branch-term extraction to enqueue new queries (Command enqueues and hunter/research/engagement follow-ups wait in `pending_review` until `queue-review` keeps or tosses them; off-topic news such as egg recalls is rejected)
 - **Community/person feedback**: newly catalogued communities and extracted contact names enqueue deterministic follow-up queries (`origin` prefix `marketing:` / `influencer:` / `user:` plus `community:` / `person:` when applicable)
 - Defaults: **unlimited queries**, **unlimited wall clock**, **50 pages per query** (still capped by community/person term limits per run)
 - Per-brand **seed packs** include AI-generated-content readers and promoters (communities, BookTok/TikTok creators, influencers) in addition to generic discovery terms; tactic.studio packs are split by audience intent, with marketing seeds aimed at VPs / brand and marketing managers at $10M+ retail and food & beverage companies.
@@ -186,7 +187,7 @@ After each SearXNG search + Firecrawl scrape, the agent extracts new search term
 
 The comment-reply arm of ad-placement. The hunter (and ad-placement research) catalogs high-traffic forums, communities, and social networks. The engagement agent later rescans those venues for popular threads, stores them in `engagement_threads`, and drafts product-related replies in `engagement_drafts`.
 
-**This stack never posts.** Drafts are for human review only.
+**Draft agents never publish.** Humans batch-approve drafts and schedule `publish_jobs`; the standing `publisher` worker sends via official OAuth (Reddit comments) or Postiz (owned feeds). tactic.studio stays Pete-gated.
 
 | Entry | Command / API |
 |-------|---------------|
@@ -305,7 +306,9 @@ Compose runs `aeo-geo-loop --watch` on the same noon schedule as SEO. The dashbo
 | `hunt_queries` | Hunt-loop search queue |
 | `hunt_resources` | Discovered **sites** (directories, communities, newsletters) plus engagement scores |
 | `engagement_threads` | Popular posts/threads on catalogued forums for later scans |
-| `engagement_drafts` | Comment drafts for human review (never posted) |
+| `engagement_drafts` | Comment drafts for human review (publish via `publisher` after schedule) |
+| `social_accounts` | Per-brand OAuth / Postiz integration pointers (secrets stay in env) |
+| `publish_jobs` | Approved, scheduled outbound posts/comments for the publisher worker |
 | `research_findings` | Research agent output |
 | `contact_profiles` | **People** keyed by email — name, socials, source pages |
 | `contact_verifications` | Verifier results per lead contact |
@@ -390,7 +393,8 @@ Post heartbeats via `POST /agents/{agent_name}/heartbeat`. The **Vite Live Agent
 | Brand Router | `brand_router` | Assign brand |
 | Research | `research` | Competitor / nonprofit / ad-placement runs → `research_findings` |
 | Outbound Hunter | `outbound_hunter` | Hunt + hunt-loop → sites and page leads |
-| Agent Engagement | `engagement` | Rescan forums → threads + comment drafts (never posts) |
+| Agent Engagement | `engagement` | Rescan forums → threads + comment drafts (does not publish) |
+| Publisher | `publisher` | Drain `publish_jobs` after human schedule (dry-run default) |
 | SEO Documents | `seo` | Site audits + implementation plans (never patches sites) |
 | AEO / GEO Documents | `aeo-geo` | Answer-engine and citation documents (never patches sites) |
 | Lead Verifier | `lead_verifier` | DNS/MX/HTTP checks (auto via `contact-worker`) |
@@ -433,10 +437,11 @@ agent-crm research-loop \
   [--max-queries 0] [--max-pages 0] [--max-minutes 0] \
   [--search-limit 50] [--no-summarize] [--no-accounts]
 
-# Engagement (never posts)
+# Engagement (drafts only; publish via publish-loop)
 agent-crm engagement-loop \
   [--brand midnightsatin] [--max-venues 10] \
-  [--max-pages-per-venue 15] [--max-minutes 45] [--no-summarize]
+  [--max-pages-per-venue 15] [--max-minutes 45] [--watch] [--no-summarize]
+agent-crm publish-loop [--watch] [--max-jobs 5]
 
 # SEO documents (never implements on live sites)
 agent-crm seo-loop \
@@ -490,9 +495,13 @@ streamlit run src/agent_crm/dashboard.py
 | GET | `/hunt/queue` | Hunt queue status |
 | POST | `/research` | Research run |
 | GET | `/research/findings` | List findings |
-| POST | `/engagement/loop` | Rescan forums and draft replies (never posts) |
+| POST | `/engagement/loop` | Rescan forums and draft replies (does not publish) |
 | GET | `/engagement/threads` | List catalogued threads |
 | GET | `/engagement/drafts` | List comment drafts |
+| POST | `/publish/schedule` | Approve drafts → scheduled `publish_jobs` |
+| GET | `/publish/jobs` | List publish jobs |
+| GET | `/publish/accounts` | List social accounts |
+| POST | `/publish/loop` | Run one publisher cycle |
 | POST | `/seo/loop` | Write SEO reviews and plans (never implements) |
 | GET | `/seo/targets` | List SEO target sites |
 | GET | `/seo/reviews` | List SEO review documents |
@@ -541,6 +550,13 @@ Copy `.env.example` to `.env`. Key settings:
 | `CRM_ENGAGEMENT_MAX_PAGES_PER_VENUE` | Pages scraped per venue (15) |
 | `CRM_ENGAGEMENT_MAX_MINUTES_DEFAULT` | Engagement-loop wall clock (45) |
 | `CRM_ENGAGEMENT_MAX_BRANCH_TERMS` | Follow-up community/thread terms enqueued per query (8) |
+| `CRM_PUBLISH_DRY_RUN` | Publisher logs would-post without live send (`true`) |
+| `CRM_PUBLISH_POLL_SECONDS` | Publish-loop idle poll (30) |
+| `CRM_PUBLISH_MAX_JOBS_PER_CYCLE` | Jobs claimed per publisher cycle (5) |
+| `CRM_PUBLISH_REDDIT_DAILY_CAP` | Max Reddit comments per account per day (3) |
+| `CRM_PUBLISH_ALLOW_TACTIC_STUDIO` | Allow tactic.studio publish jobs (`false`; Pete gate) |
+| `CRM_POSTIZ_BASE_URL` | Self-hosted Postiz API base (owned feeds) |
+| `CRM_POSTIZ_API_KEY` | Postiz public API key |
 | `CRM_SEO_MAX_TARGETS_PER_RUN` | Sites processed per SEO cycle (8; `0` = unlimited) |
 | `CRM_SEO_MAX_PAGES_PER_TARGET` | Pages scraped per target (4) |
 | `CRM_SEO_MAX_MINUTES_DEFAULT` | SEO-loop wall clock (45; `0` = unlimited) |
@@ -585,4 +601,4 @@ alembic upgrade head      # apply all revisions
 alembic current           # show head
 ```
 
-Current chain includes `s4t5u6v7w8x9` (queue review, page type, and ingest deny-list, after `r3s4t5u6v7w8` target_company). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.
+Current chain includes `z1a2b3c4d5e6` (publish_jobs + social_accounts, after `y0z1a2b3c4d5` agent_skills). Do not use `create_all` on Postgres — the API entrypoint and `docker compose` api service run Alembic automatically.

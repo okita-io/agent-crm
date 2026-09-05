@@ -45,8 +45,11 @@ services:
 
   api:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command: ["api"]
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_API_HOST: 0.0.0.0
       CRM_API_PORT: "8000"
@@ -67,7 +70,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "0.0.0.0:8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -76,8 +79,11 @@ services:
 
   dashboard:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command: ["dashboard"]
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_DASHBOARD_PORT: "8501"
       CRM_DASHBOARD_PASSWORD: ${CRM_DASHBOARD_PASSWORD:-}
@@ -89,7 +95,7 @@ services:
       CRM_OBSERVER_REFRESH_SECONDS: "600"
       TREG_API_TOKEN: ${TREG_API_TOKEN:-}
     ports:
-      - "127.0.0.1:8501:8501"
+      - "0.0.0.0:8501:8501"
     depends_on:
       db:
         condition: service_healthy
@@ -104,15 +110,18 @@ services:
     environment:
       CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}
     ports:
-      - "127.0.0.1:3000:80"
+      - "0.0.0.0:3000:80"
     depends_on:
       api:
         condition: service_started
 
   contact-worker:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command: ["agent-crm", "jobs"]
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
@@ -130,11 +139,14 @@ services:
 
   hunt-loop:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command:
       - agent-crm
       - hunt-loop
       - --watch
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
@@ -156,6 +168,8 @@ services:
 
   research-loop:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command:
       - agent-crm
       - research-loop
@@ -167,6 +181,7 @@ services:
       - --max-minutes
       - "60"
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
@@ -189,6 +204,8 @@ services:
 
   engagement-loop:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command:
       - agent-crm
       - engagement-loop
@@ -200,6 +217,7 @@ services:
       - --max-minutes
       - "45"
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
@@ -220,8 +238,41 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  publish-loop:
+    build: .
+    volumes:
+      - ./projects:/app/projects
+    command:
+      - agent-crm
+      - publish-loop
+      - --watch
+      - --max-jobs
+      - "5"
+    environment:
+      CRM_PROJECTS_DIR: /app/projects
+      CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
+      CRM_PUBLISH_DRY_RUN: ${CRM_PUBLISH_DRY_RUN:-true}
+      CRM_PUBLISH_POLL_SECONDS: "30"
+      CRM_PUBLISH_MAX_JOBS_PER_CYCLE: "5"
+      CRM_PUBLISH_ALLOW_TACTIC_STUDIO: ${CRM_PUBLISH_ALLOW_TACTIC_STUDIO:-false}
+      CRM_POSTIZ_BASE_URL: ${CRM_POSTIZ_BASE_URL:-}
+      CRM_POSTIZ_API_KEY: ${CRM_POSTIZ_API_KEY:-}
+      CRM_REDDIT_CLIENT_ID: ${CRM_REDDIT_CLIENT_ID:-}
+      CRM_REDDIT_CLIENT_SECRET: ${CRM_REDDIT_CLIENT_SECRET:-}
+      CRM_REDDIT_USERNAME: ${CRM_REDDIT_USERNAME:-}
+      CRM_REDDIT_PASSWORD: ${CRM_REDDIT_PASSWORD:-}
+      CRM_REDDIT_USER_AGENT: ${CRM_REDDIT_USER_AGENT:-agent-crm/publisher}
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
   seo-loop:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command:
       - agent-crm
       - seo-loop
@@ -233,6 +284,7 @@ services:
       - --max-minutes
       - "0"
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
@@ -256,6 +308,8 @@ services:
 
   aeo-geo-loop:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command:
       - agent-crm
       - aeo-geo-loop
@@ -267,6 +321,7 @@ services:
       - --max-minutes
       - "0"
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
@@ -289,6 +344,8 @@ services:
 
   queue-review:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command:
       - agent-crm
       - queue-review
@@ -298,6 +355,7 @@ services:
       - --max-minutes
       - "0"
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}
@@ -317,8 +375,11 @@ services:
 
   orchestrator:
     build: .
+    volumes:
+      - ./projects:/app/projects
     command: ["agent-crm", "orchestrate"]
     environment:
+      CRM_PROJECTS_DIR: /app/projects
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD:-crm}@db:5432/agent_crm
       CRM_LLM_BASE_URL: http://spark-queue:8088/v1
       CRM_LLM_QUEUE_TOKEN: ${SPARK_LLM_QUEUE_TOKEN:-}

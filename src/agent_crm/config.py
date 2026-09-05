@@ -7,6 +7,7 @@ settings object so they agree on which store to talk to.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,6 +27,9 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///./data/agent_crm.db"
     sql_echo: bool = False
+
+    # Project YAML catalog (prompt origins + channel switches). Empty = repo projects/.
+    projects_dir: str = ""
 
     # API service
     api_host: str = "0.0.0.0"
@@ -73,7 +77,7 @@ class Settings(BaseSettings):
     hunter_engagement_terms_per_run: int = 20
     hunter_request_timeout: float = 60.0
 
-    # Agent engagement (comment-draft arm of ad-placement; never posts)
+    # Agent engagement (comment-draft arm; publish via publisher after schedule)
     engagement_max_venues_per_run: int = 10
     engagement_max_pages_per_venue: int = 15
     engagement_max_minutes_default: int = 45
@@ -81,6 +85,22 @@ class Settings(BaseSettings):
     engagement_popularity_threshold: int = 40
     engagement_draft_threshold: int = 55
     engagement_max_branch_terms: int = 8
+
+    # Publisher (human-scheduled outbound; dry-run by default)
+    publish_dry_run: bool = True
+    publish_poll_seconds: int = 30
+    publish_max_jobs_per_cycle: int = 5
+    publish_reddit_daily_cap: int = 3
+    publish_reddit_min_interval_minutes: int = 240
+    publish_allow_tactic_studio: bool = False
+    postiz_base_url: str = ""
+    postiz_api_key: str = ""
+    # Default Reddit script app (override per account via CRM_SOCIAL_{KEY}_*)
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    reddit_username: str = ""
+    reddit_password: str = ""
+    reddit_user_agent: str = "agent-crm/publisher"
 
     # SEO documents (reviews + plans for humans; never applied to live sites)
     seo_max_targets_per_run: int = 8
@@ -127,7 +147,7 @@ class Settings(BaseSettings):
     # Orchestrator self-learning loop
     orchestrator_poll_seconds: int = 180
 
-    # Queue-review agent (keep/toss hunter-added search terms)
+    # Queue-review agent (keep/toss queued search terms; auto-on when queues grow)
     queue_review_poll_seconds: int = 20
     queue_review_max_queries: int = 40
     queue_review_spark_per_cycle: int = 8
@@ -135,6 +155,17 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def resolved_projects_dir(self) -> Path:
+        """Directory of ``{slug}.yaml`` project origins."""
+        if self.projects_dir.strip():
+            return Path(self.projects_dir).expanduser().resolve()
+        docker = Path("/app/projects")
+        if docker.is_dir():
+            return docker
+        repo_root = Path(__file__).resolve().parents[2]
+        return repo_root / "projects"
 
     @property
     def resolved_treg_api_token(self) -> str:

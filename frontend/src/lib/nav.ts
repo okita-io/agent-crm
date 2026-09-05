@@ -1,5 +1,6 @@
 import {
   FileSearch,
+  FolderKanban,
   GitBranch,
   LayoutGrid,
   Search,
@@ -19,6 +20,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Live Agents", icon: LayoutGrid, ready: true },
+  { to: "/projects", label: "Projects", icon: FolderKanban, ready: true },
   { to: "/command", label: "Command", icon: Terminal, ready: false },
   { to: "/pipeline", label: "Pipeline", icon: GitBranch, ready: false },
   { to: "/contacts", label: "Contacts", icon: Users, ready: false },

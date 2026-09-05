@@ -23,6 +23,12 @@ _WORK_BRANDS: tuple[Brand, ...] = (
     Brand.HEYBUDDY,
 )
 
+
+def _work_brands() -> tuple[Brand, ...]:
+    from agent_crm.projects.channel_flags import active_brands_for
+
+    return active_brands_for("hunter") or _WORK_BRANDS
+
 _SEARCH_PARAM_NAMES = {
     "q",
     "query",
@@ -140,7 +146,7 @@ def _enqueue_tool(
     accepts_person = endpoint_accepts_person(tool.input_schema)
 
     if tool.queue_as == "research" or (tool.queue_as == "hunter" and accepts_search):
-        for brand in _WORK_BRANDS:
+        for brand in _work_brands():
             query = _seed_query_for(brand, tool.queue_as)
             if not query:
                 continue
@@ -215,7 +221,7 @@ def _person_followups(*, brand_limit: int) -> list[tuple[Brand, str, dict]]:
                 select(ContactProfile)
                 .where(ContactProfile.name.is_not(None))
                 .order_by(ContactProfile.updated_at.desc())
-                .limit(brand_limit * len(_WORK_BRANDS))
+                .limit(brand_limit * len(_work_brands()))
             )
         )
         for profile in profiles:

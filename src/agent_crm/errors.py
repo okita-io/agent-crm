@@ -15,5 +15,13 @@ class NotFoundError(CRMError):
     """A referenced record does not exist."""
 
 
+class ConflictError(CRMError):
+    """The request conflicts with current state (e.g. duplicate slug)."""
+
+
+class ValidationAppError(CRMError):
+    """Caller-supplied data failed domain validation."""
+
+
 class InvalidStageTransition(CRMError):
     """A requested pipeline stage change is not allowed from the current stage."""

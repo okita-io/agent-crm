@@ -58,6 +58,8 @@ from .enums import (
     LeadSource,
     LeadStatus,
     Priority,
+    PublishJobStatus,
+    PublishSourceKind,
     ResearchFindingKind,
     ResearchQueryStatus,
     SeoPlanKind,
@@ -67,6 +69,7 @@ from .enums import (
     SeoReviewKind,
     SeoReviewStatus,
     SeoTargetRole,
+    SocialPlatform,
     Stage,
     TopicalRelevanceVerdict,
 )
@@ -473,7 +476,7 @@ class EngagementThread(Base, TimestampMixin):
 
 
 class EngagementDraft(Base, TimestampMixin):
-    """A product-related comment draft. Discovery only — never posted by this stack."""
+    """A product-related comment draft. Publish only via scheduled publish_jobs."""
 
     __tablename__ = "engagement_drafts"
     __table_args__ = (
@@ -499,6 +502,83 @@ class EngagementDraft(Base, TimestampMixin):
     )
 
     thread: Mapped[EngagementThread] = relationship(back_populates="drafts")
+
+
+class SocialAccount(Base, TimestampMixin):
+    """Per-brand social identity. Secrets live in env / Postiz, not here."""
+
+    __tablename__ = "social_accounts"
+    __table_args__ = (
+        UniqueConstraint(
+            "brand", "platform", "handle", name="uq_social_accounts_brand_platform_handle"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    brand: Mapped[Brand] = mapped_column(
+        existing_brand_enum(), nullable=False, index=True
+    )
+    platform: Mapped[SocialPlatform] = mapped_column(
+        str_enum(SocialPlatform), nullable=False, index=True
+    )
+    handle: Mapped[str] = mapped_column(String(128), nullable=False)
+    postiz_integration_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    credential_key: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        doc="Looks up CRM_SOCIAL_{KEY}_* env vars for Reddit script OAuth.",
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    daily_cap: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    min_interval_minutes: Mapped[int] = mapped_column(Integer, default=240, nullable=False)
+    last_posted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    jobs: Mapped[list[PublishJob]] = relationship(back_populates="account")
+
+
+class PublishJob(Base, TimestampMixin):
+    """Human-scheduled outbound post or comment for the publisher worker."""
+
+    __tablename__ = "publish_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_kind: Mapped[PublishSourceKind] = mapped_column(
+        str_enum(PublishSourceKind), nullable=False, index=True
+    )
+    source_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    brand: Mapped[Brand] = mapped_column(
+        existing_brand_enum(), nullable=False, index=True
+    )
+    platform: Mapped[SocialPlatform] = mapped_column(
+        str_enum(SocialPlatform), nullable=False, index=True
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("social_accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    target_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    status: Mapped[PublishJobStatus] = mapped_column(
+        str_enum(PublishJobStatus),
+        default=PublishJobStatus.SCHEDULED,
+        nullable=False,
+        index=True,
+    )
+    posted_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    platform_post_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pete_override: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    account: Mapped[SocialAccount] = relationship(back_populates="jobs")
 
 
 class ResearchQuery(Base, TimestampMixin):

@@ -285,6 +285,40 @@ def _cmd_engagement_loop(args: argparse.Namespace) -> int:
     return 0 if result.venues_scanned or result.threads_cataloged or not result.errors else 1
 
 
+def _cmd_publish_loop(args: argparse.Namespace) -> int:
+    from .agent_control import wait_while_disabled
+    from .db import init_db
+    from agent_crm.publish.loop import ACTOR as PUBLISH_ACTOR
+    from agent_crm.publish.loop import (
+        PublishBudget,
+        run_publish_loop,
+        run_publish_loop_watch,
+    )
+
+    init_db()
+    wait_while_disabled(PUBLISH_ACTOR)
+    budget = PublishBudget(max_jobs=args.max_jobs)
+    if args.watch:
+        run_publish_loop_watch(budget=budget)
+        return 0
+    result = run_publish_loop(budget=budget)
+    print(
+        json.dumps(
+            {
+                "claimed": result.claimed,
+                "posted": result.posted,
+                "failed": result.failed,
+                "rescheduled": result.rescheduled,
+                "skipped": result.skipped,
+                "stop_reason": result.stop_reason,
+                "errors": result.errors,
+            },
+            indent=2,
+        )
+    )
+    return 0 if result.failed == 0 else 1
+
+
 def _cmd_aeo_geo_loop(args: argparse.Namespace) -> int:
     from agent_crm.aeo_geo.loop import ACTOR as AEO_GEO_ACTOR
     from agent_crm.aeo_geo.loop import run_aeo_geo_loop, run_aeo_geo_loop_watch
@@ -750,7 +784,7 @@ def main(argv: list[str] | None = None) -> int:
 
     engagement_loop = sub.add_parser(
         "engagement-loop",
-        help="Drain the append-only engagement queue and draft comment replies (never posts)",
+        help="Drain the append-only engagement queue and draft comment replies (does not publish)",
     )
     engagement_loop.add_argument(
         "--brand",
@@ -786,6 +820,23 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip Spark LLM comment drafts",
     )
     engagement_loop.set_defaults(func=_cmd_engagement_loop)
+
+    publish_loop = sub.add_parser(
+        "publish-loop",
+        help="Drain scheduled publish_jobs (dry-run by default; Reddit / Postiz adapters)",
+    )
+    publish_loop.add_argument(
+        "--max-jobs",
+        type=int,
+        default=5,
+        help="Max due jobs to claim this cycle",
+    )
+    publish_loop.add_argument(
+        "--watch",
+        action="store_true",
+        help="Stay running and poll for due publish jobs",
+    )
+    publish_loop.set_defaults(func=_cmd_publish_loop)
 
     seo_loop = sub.add_parser(
         "seo-loop",
@@ -948,12 +999,12 @@ def main(argv: list[str] | None = None) -> int:
 
     queue_review = sub.add_parser(
         "queue-review",
-        help="Keep or toss hunter-added search-queue terms before they run",
+        help="Keep or toss queued search terms before they run",
     )
     queue_review.add_argument(
         "--watch",
         action="store_true",
-        help="Keep reviewing as the hunter enqueues new terms",
+        help="Keep reviewing as hunt/research/engagement queues grow",
     )
     queue_review.add_argument(
         "--max-queries",

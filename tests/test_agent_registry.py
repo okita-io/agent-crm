@@ -49,6 +49,7 @@ def test_standing_workers_include_real_loops() -> None:
         "outbound_hunter",
         "research",
         "engagement",
+        "publisher",
         "seo",
         "aeo-geo",
         "queue-review",

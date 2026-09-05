@@ -1,0 +1,44 @@
+slug: tactic-studio
+name: tactic.studio
+status: live
+enabled: true
+site: https://tactic.studio
+alias: null
+context_file: brand-context.tactic-studio.md
+origin_prompt: |
+  tactic.studio is a WebAR / industrial AR training vendor built on 8th Wall
+  and related immersive stack. Direct-to-brand BD for retail and food & beverage
+  companies over $10M annual revenue. Outbound email/DM is Pete-gated
+  (pete@tactic.studio + naming-rights). This stack collects and categorizes only.
+channels:
+  research:
+    armed: true
+    prompt: |
+      Default kinds: target_company, competitor, ad_placement.
+      Scrape grocery/retail/F&B rankings for $10M+ companies. Competitor seeds
+      cover industrial visualization AR and industrial training aids.
+  hunter:
+    armed: true
+    prompt: |
+      Priority: marketing leadership at retail/F&B, then XR influencers, then users.
+      Audience-tagged seeds. Never invent emails. No outbound send.
+  seo:
+    armed: true
+    prompt: |
+      Owned site https://tactic.studio. Write review and plan documents only.
+      Never patch live pages or deploy markup.
+  aeo_geo:
+    armed: true
+    prompt: |
+      Document extractable answers and citation readiness for tactic.studio.
+      Outreach steps stay research/docs only — Pete + naming-rights gate.
+  engage:
+    armed: true
+    prompt: |
+      Industrial AR / retail / F&B marketing venues. Helpful-first drafts.
+      Conversion CTAs stay human-gated. Never publish from draft agents.
+  publish:
+    armed: false
+    prompt: |
+      Pete-gated. Keep publish off unless CRM_PUBLISH_ALLOW_TACTIC_STUDIO and
+      an explicit Pete override are set on the schedule path.

@@ -1,7 +1,7 @@
 import { AgentCard } from "@/components/agents/agent-card"
 import { LeadChart } from "@/components/agents/lead-chart"
-import { QueueLaneCard } from "@/components/agents/queue-lane"
 import { SparkSlot, type SparkSlotModel } from "@/components/agents/spark-slot"
+import { TaskQueueRail } from "@/components/agents/task-queue"
 import { TokenStrip } from "@/components/agents/token-strip"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -197,49 +197,26 @@ export function LiveAgentsPage() {
               ))}
             </div>
           )}
+
+          <div className="xl:hidden">
+            <TaskQueueRail
+              waiting={floor.queues?.waiting ?? 0}
+              lanes={floor.queues?.lanes ?? []}
+              agentsByName={agentByName}
+              onResume={(name) => void floor.setEnabled(name, true)}
+              variant="inline"
+            />
+          </div>
         </div>
       </ScrollArea>
 
-      <aside className="hidden h-full w-[332px] shrink-0 flex-col gap-2 border-l border-sidebar-border bg-sidebar p-3.5 xl:flex">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-foreground">Task Queue</h2>
-          <span className="font-mono text-[11px] text-blocked">
-            {floor.queues?.waiting ?? 0} waiting
-          </span>
-        </div>
-        <p className="text-[11px] leading-[1.35] text-muted-foreground">
-          Prompt titles waiting to be claimed. Most backlogged first. Empty lanes that should be
-          filled get an agent assigned to seed them.
-        </p>
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1">
-            <span className="size-2 rounded-px bg-blocked" />
-            <span className="font-mono text-[9px] font-medium tracking-[0.8px] text-muted-foreground">
-              BACKLOGGED
-            </span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="size-2 rounded-px bg-primary" />
-            <span className="font-mono text-[9px] font-medium tracking-[0.8px] text-muted-foreground">
-              UNDERSTAFFED
-            </span>
-          </span>
-        </div>
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-2 pr-2">
-            {(floor.queues?.lanes ?? []).map((lane) => {
-              const agent = agentByName[lane.agent_name]
-              return (
-                <QueueLaneCard
-                  key={lane.id}
-                  lane={lane}
-                  staffedName={agent?.display_name ?? null}
-                  enabled={agent?.enabled ?? true}
-                />
-              )
-            })}
-          </div>
-        </ScrollArea>
+      <aside className="hidden h-full min-h-0 w-[332px] shrink-0 flex-col border-l border-sidebar-border bg-sidebar p-3.5 xl:flex">
+        <TaskQueueRail
+          waiting={floor.queues?.waiting ?? 0}
+          lanes={floor.queues?.lanes ?? []}
+          agentsByName={agentByName}
+          onResume={(name) => void floor.setEnabled(name, true)}
+        />
       </aside>
     </div>
   )

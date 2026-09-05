@@ -10,7 +10,6 @@ from .enums import Brand
 from .errors import NotFoundError
 from .marketing_skill import (
     ad_placement_summarizer_guidance,
-    brand_context_snippet,
     competitor_summarizer_guidance,
 )
 from .skill_catalog import BRAND_CONTEXT_ID
@@ -50,11 +49,22 @@ def has_skill(agent_name: str, skill_id: str) -> bool:
     return uses_skill(assigned, skill_id)
 
 
-def brand_context_for(agent_name: str, brand: Brand, *, max_chars: int = 600) -> str:
-    """Brand excerpt when the agent still has the virtual ``brand-context`` skill."""
+def brand_context_for(
+    agent_name: str,
+    brand: Brand,
+    *,
+    max_chars: int = 600,
+    channel: str | None = None,
+) -> str:
+    """Brand excerpt when the agent still has the virtual ``brand-context`` skill.
+
+    Prefers the project YAML origin + task prompt when present.
+    """
     if not has_skill(agent_name, BRAND_CONTEXT_ID):
         return ""
-    return brand_context_snippet(brand, max_chars=max_chars)
+    from agent_crm.projects.channel_flags import project_prompt_for
+
+    return project_prompt_for(brand, channel, max_chars=max_chars)  # type: ignore[arg-type]
 
 
 def research_competitor_guidance() -> str:

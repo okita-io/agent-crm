@@ -5,6 +5,7 @@ import { FloorProvider, useFloorContext } from "@/hooks/floor-context"
 import { isPlaceholder } from "@/lib/roster"
 import { ComingSoonPage } from "@/pages/coming-soon"
 import { LiveAgentsPage } from "@/pages/live-agents"
+import { ProjectsPage } from "@/pages/projects"
 import { SkillsPage } from "@/pages/skills"
 
 function ShellLayout() {
@@ -32,6 +33,7 @@ export default function App() {
         <Routes>
           <Route element={<ShellLayout />}>
             <Route path="/" element={<LiveAgentsPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/command" element={<ComingSoonPage />} />
             <Route path="/pipeline" element={<ComingSoonPage />} />
             <Route path="/contacts" element={<ComingSoonPage />} />

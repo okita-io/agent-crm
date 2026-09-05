@@ -22,7 +22,21 @@ logger = logging.getLogger(__name__)
 ACTOR = "research"
 WATCH_POLL_SECONDS = 60.0
 
-RESEARCH_LOOP_BRANDS: tuple[Brand, ...] = (
+
+def _research_loop_brands() -> tuple[Brand, ...]:
+    from agent_crm.projects.channel_flags import active_brands_for
+
+    brands = active_brands_for("research")
+    return brands or (
+        Brand.CELESTIAL_NEXUS,
+        Brand.MIDNIGHTSATIN,
+        Brand.HEYBUDDY,
+        Brand.TACTIC_STUDIO,
+    )
+
+
+# Back-compat alias for imports/tests that still reference the constant.
+RESEARCH_LOOP_BRANDS = (
     Brand.CELESTIAL_NEXUS,
     Brand.MIDNIGHTSATIN,
     Brand.HEYBUDDY,
@@ -108,6 +122,10 @@ def run_research_loop(
     started = time.monotonic()
     brand_cycle = 0
     idle_rounds = 0
+    brands = _research_loop_brands()
+    if not brands:
+        result.stop_reason = "queue_empty"
+        return result
 
     while True:
         if stop_if_disabled(ACTOR):
@@ -123,12 +141,16 @@ def run_research_loop(
             result.stop_reason = "time_budget"
             break
 
-        brand = RESEARCH_LOOP_BRANDS[brand_cycle % len(RESEARCH_LOOP_BRANDS)]
+        brands = _research_loop_brands()
+        if not brands:
+            result.stop_reason = "queue_empty"
+            break
+        brand = brands[brand_cycle % len(brands)]
         brand_cycle += 1
         claimed = store.claim_next_pending_query(brand=brand)
         if claimed is None:
             idle_rounds += 1
-            if idle_rounds >= len(RESEARCH_LOOP_BRANDS):
+            if idle_rounds >= len(brands):
                 result.stop_reason = "queue_empty"
                 break
             continue

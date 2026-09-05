@@ -17,6 +17,7 @@ class Brand(str, enum.Enum):
     CELESTIAL_NEXUS = "celestial-nexus"
     HEYBUDDY = "heybuddy"
     TACTIC_STUDIO = "tactic-studio"
+    BEST_BIRYANI = "best-biryani"
     UNASSIGNED = "unassigned"
 
 
@@ -244,6 +245,7 @@ class ImprovementSourceAgent(str, enum.Enum):
     SEO_LOOP = "seo-loop"
     AEO_GEO_LOOP = "aeo-geo-loop"
     QUEUE_REVIEW = "queue-review"
+    PUBLISH_LOOP = "publish-loop"
     LEAD_VERIFIER = "lead_verifier"
     SPARK_QUEUE = "spark-queue"
     ORCHESTRATOR = "orchestrator"
@@ -283,11 +285,46 @@ class EngagementThreadStatus(str, enum.Enum):
 
 
 class EngagementDraftStatus(str, enum.Enum):
-    """Human-review state for a comment draft. This stack never posts."""
+    """Human-review state for a comment draft.
+
+    Draft agents never publish. ``approved`` / ``scheduled`` / ``posted`` are
+    set when a human schedules via the publisher layer.
+    """
 
     DRAFT = "draft"
     REVIEW = "review"
+    APPROVED = "approved"
+    SCHEDULED = "scheduled"
+    POSTED = "posted"
     REJECTED = "rejected"
+
+
+class PublishSourceKind(str, enum.Enum):
+    """Origin row that produced a publish job."""
+
+    ENGAGEMENT_DRAFT = "engagement_draft"
+    CONTENT_PACKAGE = "content_package"
+
+
+class PublishJobStatus(str, enum.Enum):
+    """Lifecycle of a scheduled outbound publish job."""
+
+    SCHEDULED = "scheduled"
+    SENDING = "sending"
+    POSTED = "posted"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class SocialPlatform(str, enum.Enum):
+    """Supported outbound platforms for the publisher."""
+
+    REDDIT = "reddit"
+    X = "x"
+    LINKEDIN = "linkedin"
+    INSTAGRAM = "instagram"
+    THREADS = "threads"
+    OTHER = "other"
 
 
 class ResearchFindingKind(str, enum.Enum):

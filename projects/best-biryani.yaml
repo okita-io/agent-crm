@@ -1,0 +1,40 @@
+slug: best-biryani
+name: Best Biryani
+status: live
+enabled: true
+site: https://bestbiryanisiliconvalley.com
+alias: null
+context_file: null
+origin_prompt: |
+  Best Biryani Silicon Valley (bestbiryanisiliconvalley.com) is a local restaurant
+  destination. Brand context is not vendored yet — fill product, audience, and
+  voice as the origin matures. Focus on local discovery, menus, and restaurant SEO.
+channels:
+  research:
+    armed: true
+    prompt: |
+      Local restaurant / biryani / Silicon Valley food landscape and ad-placement
+      discovery. Never invent reviews or ratings.
+  hunter:
+    armed: true
+    prompt: |
+      Local food blogs, Bay Area restaurant directories, and community forums.
+      Do not invent person names or emails.
+  seo:
+    armed: true
+    prompt: |
+      Owned site https://bestbiryanisiliconvalley.com. Document-only audits and
+      plans. Never patch live pages.
+  aeo_geo:
+    armed: true
+    prompt: |
+      Extractable answers for menu, location, and cuisine queries.
+      Never invent citation counts.
+  engage:
+    armed: false
+    prompt: |
+      Engagement waits until brand voice and community venues are defined.
+  publish:
+    armed: false
+    prompt: |
+      No owned social publish schedule yet.

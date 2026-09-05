@@ -16,6 +16,21 @@ HUNT_LOOP_BRANDS: tuple[Brand, ...] = (
     Brand.TACTIC_STUDIO,
 )
 
+
+def hunt_loop_brands() -> tuple[Brand, ...]:
+    from agent_crm.projects.channel_flags import active_brands_for
+
+    return active_brands_for("hunter") or HUNT_LOOP_BRANDS
+
+
+def loop_seed_entries() -> list[tuple[Brand, str, str]]:
+    """Flatten seed packs the standing hunt-loop should enqueue (append-only)."""
+    entries: list[tuple[Brand, str, str]] = []
+    for brand in hunt_loop_brands():
+        for query, origin in seed_query_entries(brand):
+            entries.append((brand, query, origin))
+    return entries
+
 SEED_PACKS: dict[str, list[str]] = {
     Brand.MIDNIGHTSATIN.value: [
         "romance booktok communities",
@@ -76,6 +91,13 @@ SEED_PACKS: dict[str, list[str]] = {
         "most active loneliness support forums high traffic",
         "high engagement mental wellness reddit communities",
         "busiest veteran peer support forums",
+    ],
+    Brand.BEST_BIRYANI.value: [
+        "best biryani Silicon Valley restaurant reviews",
+        "Bay Area biryani food blogs",
+        "Indian restaurant Sunnyvale community forums",
+        "site:yelp.com biryani Silicon Valley",
+        "reddit.com/r/bayarea biryani",
     ],
 }
 
@@ -159,15 +181,6 @@ def origin_with_audience(base_origin: str, audience: ContactAudience | None) -> 
     if base_origin.startswith(f"{audience.value}:"):
         return base_origin
     return f"{audience.value}:{base_origin}"
-
-
-def loop_seed_entries() -> list[tuple[Brand, str, str]]:
-    """Flatten seed packs the standing hunt-loop should enqueue (append-only)."""
-    entries: list[tuple[Brand, str, str]] = []
-    for brand in HUNT_LOOP_BRANDS:
-        for query, origin in seed_query_entries(brand):
-            entries.append((brand, query, origin))
-    return entries
 
 
 def seed_query_entries(brand: Brand) -> list[tuple[str, str]]:

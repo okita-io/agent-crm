@@ -494,7 +494,7 @@ def _maybe_summarize(
     errors: list[str],
 ) -> tuple[str, dict[str, Any] | None]:
     brand_label = BRAND_DISPLAY.get(brand, brand.value)
-    brand_context = brand_context_for(ACTOR, brand)
+    brand_context = brand_context_for(ACTOR, brand, channel="research")
     page_block = (
         f"{wrap_untrusted('url', hit.url, max_chars=500)}\n"
         f"{wrap_untrusted('title', page.title or hit.title, max_chars=300)}\n"

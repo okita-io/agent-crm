@@ -1,6 +1,7 @@
 """Agent engagement loop: drain an append-only query queue and draft comment replies.
 
-Discovery only. This agent never posts, creates accounts, or sends mail.
+Discovery only. This agent never publishes — the publisher worker sends after
+a human schedules a publish_job.
 """
 
 from __future__ import annotations
@@ -56,6 +57,12 @@ ENGAGEMENT_LOOP_BRANDS: tuple[Brand, ...] = (
 )
 
 
+def engagement_loop_brands() -> tuple[Brand, ...]:
+    from agent_crm.projects.channel_flags import active_brands_for
+
+    return active_brands_for("engage") or ENGAGEMENT_LOOP_BRANDS
+
+
 @dataclass
 class EngagementBudget:
     max_venues: int = 10
@@ -108,7 +115,7 @@ def run_engagement_loop(
     searx_client: httpx.Client | None = None,
     firecrawl_client: httpx.Client | None = None,
 ) -> EngagementLoopResult:
-    """Drain the append-only engagement queue and draft replies (never post)."""
+    """Drain the append-only engagement queue and draft replies (does not publish)."""
     settings = get_settings()
     budget = budget or EngagementBudget(
         max_venues=settings.engagement_max_venues_per_run,
@@ -140,7 +147,7 @@ def run_engagement_loop(
     queries_run = 0
     brand_cycle = 0
     idle_rounds = 0
-    brands = (brand,) if brand is not None else ENGAGEMENT_LOOP_BRANDS
+    brands = (brand,) if brand is not None else engagement_loop_brands()
 
     while True:
         if stop_if_disabled(ACTOR):
@@ -478,7 +485,8 @@ def _llm_engagement_follow_up_terms(
         + "\n\n"
         f"Suggest up to {max_terms} NEW search queries to find more communities or "
         "popular threads mentioned in the sources. Focus on venues, not people. "
-        "Do NOT invent emails, person names, or URLs.\n"
+        "Do NOT invent emails, person names, or URLs. Skip news headlines, "
+        "product recalls, sports, and weather — they are off-topic.\n"
         'Respond with JSON only: {"terms": ["query one", "query two"]}'
     )
     try:
@@ -523,7 +531,7 @@ def _maybe_draft_reply(
 ) -> bool:
     """Draft a helpful product-related comment. Never posts."""
     settings = get_settings()
-    brand_context = brand_context_for(ACTOR, brand)
+    brand_context = brand_context_for(ACTOR, brand, channel="engage")
     system = (
         "You draft a single public forum comment for a CRM agent. "
         "Discovery only — do not claim the comment was posted, do not invent proof, "

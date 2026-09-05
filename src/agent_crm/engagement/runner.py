@@ -1,6 +1,6 @@
 """Heuristics for high-engagement venues, popular threads, and rescan queries.
 
-Discovery only: these helpers score and catalog. They never post comments.
+Discovery only: these helpers score and catalog. They never publish comments.
 """
 
 from __future__ import annotations

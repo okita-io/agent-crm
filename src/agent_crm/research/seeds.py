@@ -75,6 +75,12 @@ COMPETITOR_QUERIES: dict[Brand, list[str]] = {
         "enterprise industrial training aid AR overlay",
         "assembly line AR training aid experience",
     ],
+    Brand.BEST_BIRYANI: [
+        "best biryani Silicon Valley restaurant",
+        "biryani restaurant Bay Area competitors",
+        "Indian restaurant Sunnyvale Cupertino",
+        "Hyderabadi biryani Silicon Valley",
+    ],
 }
 
 AD_PLACEMENT_QUERIES: dict[Brand, list[str]] = {
@@ -155,6 +161,12 @@ AD_PLACEMENT_QUERIES: dict[Brand, list[str]] = {
         "high traffic XR forums popular weekly threads",
         "most active industrial AR reddit threads this week",
     ],
+    Brand.BEST_BIRYANI: [
+        "Bay Area food blog advertising rates sponsorship",
+        "Silicon Valley restaurant newsletter ad placement",
+        "reddit r/bayarea food self promotion rules",
+        "Indian restaurant Bay Area directory advertising",
+    ],
 }
 
 TARGET_COMPANY_QUERIES: dict[Brand, list[str]] = {
@@ -213,13 +225,16 @@ def loop_kinds_for_brand(brand: Brand) -> tuple[ResearchFindingKind, ...]:
 
 def loop_seed_entries() -> list[tuple[Brand, ResearchFindingKind, str]]:
     """Flatten seed packs the standing loop should enqueue (append-only)."""
-    entries: list[tuple[Brand, ResearchFindingKind, str]] = []
-    for brand in (
+    from agent_crm.projects.channel_flags import active_brands_for
+
+    brands = active_brands_for("research") or (
         Brand.CELESTIAL_NEXUS,
         Brand.MIDNIGHTSATIN,
         Brand.HEYBUDDY,
         Brand.TACTIC_STUDIO,
-    ):
+    )
+    entries: list[tuple[Brand, ResearchFindingKind, str]] = []
+    for brand in brands:
         for kind in loop_kinds_for_brand(brand):
             for query in seed_queries(brand, kind):
                 entries.append((brand, kind, query))
@@ -268,5 +283,6 @@ BRAND_DISPLAY: dict[Brand, str] = {
     Brand.MIDNIGHTSATIN: "MidnightSatin",
     Brand.HEYBUDDY: "HeyBuddy",
     Brand.TACTIC_STUDIO: "tactic.studio",
+    Brand.BEST_BIRYANI: "Best Biryani",
     Brand.UNASSIGNED: "unassigned",
 }

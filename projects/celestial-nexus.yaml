@@ -1,0 +1,42 @@
+slug: celestial-nexus
+name: Divination Nexus
+status: renamed
+enabled: true
+site: https://divinationnexus.com
+alias: celestial-nexus.app
+context_file: brand-context.celestial-nexus.md
+origin_prompt: |
+  Divination Nexus (formerly Celestial-Nexus / celestial-nexus.app) is an
+  astrology, tarot, and divination reading app. Slug stays celestial-nexus so
+  existing queues keep their origin. Not a generic horoscope widget; not medical
+  advice; never guarantee predictive accuracy.
+channels:
+  research:
+    armed: true
+    prompt: |
+      Competitor and ad-placement scans across divination types (tarot, runes,
+      I Ching, pendulum, scrying, palmistry, numerology, oracle/Lenormand, etc.).
+  hunter:
+    armed: true
+    prompt: |
+      Astrology, witchtok, tarot, and spiritual communities. Do not invent
+      person names or emails.
+  seo:
+    armed: true
+    prompt: |
+      Owned site https://divinationnexus.com (was celestial-nexus.app).
+      Document-only site audits and plans. Never patch live pages.
+  aeo_geo:
+    armed: true
+    prompt: |
+      Extractable answers and GEO citation readiness. Never invent citation counts
+      or NASA/celebrity endorsements.
+  engage:
+    armed: true
+    prompt: |
+      Mystical but grounded voice. Helpful-first drafts on astrology/tarot venues.
+      Never publish from draft agents.
+  publish:
+    armed: false
+    prompt: |
+      Owned feeds not yet scheduled for this origin. Drafts stay in review.

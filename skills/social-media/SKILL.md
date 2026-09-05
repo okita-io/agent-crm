@@ -1,12 +1,12 @@
 ---
 name: social-media
-description: Ranch content factory. Weekly post packages, newsletter drafts, content matrices, 7-day niche pulses, and visual briefs for MidnightSatin, Celestial-Nexus, HeyBuddy, and tactic.studio. Documents only — never post, never send, never log into social. Adapted from charlie947/social-media-skills.
+description: Ranch content factory. Weekly post packages, newsletter drafts, content matrices, 7-day niche pulses, and visual briefs for MidnightSatin, Celestial-Nexus, HeyBuddy, and tactic.studio. Documents only from this skill — live publish is the separate publisher worker after human schedule. Adapted from charlie947/social-media-skills.
 license: MIT
 ---
 
 # Social media content for The Agency
 
-Document-first content production. The CRM agent searches with SearXNG, scrapes with Firecrawl, and writes **content packages**. It does not post, schedule, comment, or log into LinkedIn / Instagram / TikTok / X / YouTube.
+Document-first content production. The CRM agent searches with SearXNG, scrapes with Firecrawl, and writes **content packages**. This skill does not post, schedule, comment, or log into LinkedIn / Instagram / TikTok / X / YouTube — the standing `publisher` worker sends only after a human schedules a `publish_jobs` row.
 
 Craft modules (hooks, copy frameworks, slop removal, email sequences) stay in `skills/marketing-agi/`. Site audits stay in `skills/open-seo/`. This pack is the missing production calendar: what to ship this week, in whose voice, with which visual.
 
@@ -34,9 +34,9 @@ Craft modules (hooks, copy frameworks, slop removal, email sequences) stay in `s
 
 Load only the module needed. Do not concatenate the pack into one prompt.
 
-## What this stack will not do (say so)
+## What this skill will not do (say so)
 
-- Post, schedule, or pin anything
+- Post, schedule, or pin from inside this skill (publisher + human schedule only)
 - Scrape LinkedIn or Instagram via Apify
 - Drive a browser through Reddit / X feeds
 - Call Gemini or other image APIs (prompts only; humans run ComfyUI)

@@ -60,6 +60,17 @@ def test_compose_hunt_loop_stays_unbounded() -> None:
         assert "restart: unless-stopped" in block, f"{service} missing restart policy"
 
 
+def test_compose_publish_loop_is_dry_run_by_default() -> None:
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    start = content.index("  publish-loop:")
+    end = content.index("\n\n", start)
+    block = content[start:end]
+    assert "--watch" in block
+    assert "CRM_PUBLISH_DRY_RUN: ${CRM_PUBLISH_DRY_RUN:-true}" in block
+    assert 'CRM_PUBLISH_MAX_JOBS_PER_CYCLE: "5"' in block
+    assert "spark-queue:" not in block[block.index("depends_on:") :]
+
+
 def test_compose_engagement_loop_is_bounded() -> None:
     content = COMPOSE_PATH.read_text(encoding="utf-8")
     start = content.index("  engagement-loop:")
@@ -129,12 +140,16 @@ def test_compose_binds_sensitive_ports_to_localhost() -> None:
     content = COMPOSE_PATH.read_text(encoding="utf-8")
     assert '"127.0.0.1:5432:5432"' in content
     assert '"127.0.0.1:8088:8088"' in content
-    assert '"127.0.0.1:8000:8000"' in content
-    assert '"127.0.0.1:8501:8501"' in content
-    assert '"127.0.0.1:3000:80"' in content
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}" in content
     assert "CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}" in content
     assert "CRM_DASHBOARD_PASSWORD: ${CRM_DASHBOARD_PASSWORD:-}" in content
+
+
+def test_compose_publishes_dashboards_on_all_interfaces() -> None:
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    assert '"0.0.0.0:8000:8000"' in content
+    assert '"0.0.0.0:8501:8501"' in content
+    assert '"0.0.0.0:3000:80"' in content
 
 
 def test_workers_wait_for_api_migrations() -> None:

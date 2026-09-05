@@ -2,7 +2,7 @@
 
 Draft one owned-social post as a stored document. Adapted from Charlie Hills' post-writer plus the first-comment pattern. Craft rules for LinkedIn/X live in marketing-agi `references/social.md` — load that excerpt; do not rewrite it here.
 
-This agent never posts.
+This skill writes documents only. Live publish is the `publisher` worker after human schedule.
 
 ## Inputs
 

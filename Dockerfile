@@ -13,6 +13,7 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY skills ./skills
 COPY brand-context*.md ./
+COPY projects ./projects
 COPY migrations ./migrations
 COPY alembic.ini ./
 

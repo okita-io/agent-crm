@@ -71,6 +71,12 @@ AEO_GEO_LOOP_BRANDS: tuple[Brand, ...] = (
 )
 
 
+def aeo_geo_loop_brands() -> tuple[Brand, ...]:
+    from agent_crm.projects.channel_flags import active_brands_for
+
+    return active_brands_for("aeo_geo") or AEO_GEO_LOOP_BRANDS
+
+
 @dataclass
 class AeoGeoLoopResult:
     targets_processed: int = 0
@@ -83,7 +89,7 @@ class AeoGeoLoopResult:
 
 def _seed_aeo_geo_queue(store: SeoQueryStore, *, brand: Brand | None) -> None:
     align_review_schedule()
-    brands = (brand,) if brand is not None else AEO_GEO_LOOP_BRANDS
+    brands = (brand,) if brand is not None else aeo_geo_loop_brands()
     for cycle_brand in brands:
         for seed in seeds_for_brand(cycle_brand):
             if not is_public_http_url(seed.url, resolve_dns=False):
@@ -146,7 +152,7 @@ def run_aeo_geo_loop(
     queries_run = 0
     brand_cycle = 0
     idle_rounds = 0
-    brands = (brand,) if brand is not None else AEO_GEO_LOOP_BRANDS
+    brands = (brand,) if brand is not None else aeo_geo_loop_brands()
 
     while True:
         if stop_if_disabled(ACTOR):
@@ -674,7 +680,7 @@ def _llm_review(
     fallback_one_thing: str,
 ) -> tuple[str, int, str, str] | None:
     settings = get_settings()
-    brand_context = brand_context_for(ACTOR, brand, max_chars=700)
+    brand_context = brand_context_for(ACTOR, brand, max_chars=700, channel="aeo_geo")
     review_guidance = (
         review_writer_guidance()
         if has_skill(ACTOR, "aeo-geo") or has_skill(ACTOR, "aeo-geo/aeo-geo-review")
@@ -749,7 +755,7 @@ def _llm_plan(
     fallback_tasks: list[dict[str, Any]],
 ) -> tuple[str, str, str, list[dict[str, Any]]] | None:
     settings = get_settings()
-    brand_context = brand_context_for(ACTOR, brand, max_chars=600)
+    brand_context = brand_context_for(ACTOR, brand, max_chars=600, channel="aeo_geo")
     plan_guidance = (
         plan_writer_guidance()
         if has_skill(ACTOR, "aeo-geo") or has_skill(ACTOR, "aeo-geo/aeo-geo-plan")

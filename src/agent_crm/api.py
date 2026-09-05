@@ -81,7 +81,7 @@ from .enums import (
     SeoTargetRole,
     Stage,
 )
-from .errors import NotFoundError
+from .errors import ConflictError, NotFoundError, ValidationAppError
 from .floor import build_queue_lanes
 from .heartbeat import list_heartbeats, record_heartbeat
 from .improvement_store import list_improvement_notes
@@ -140,6 +140,18 @@ from .schemas import (
     LeadCreate,
     LeadOut,
     OpportunityOut,
+    PublishJobOut,
+    PublishLoopRequest,
+    PublishLoopResultOut,
+    PublishScheduleRequest,
+    ContentPackageScheduleRequest,
+    ProjectChannelsIn,
+    ProjectCreateIn,
+    ProjectOut,
+    ProjectPatchIn,
+    ProjectPromptsIn,
+    ProjectsListOut,
+    ProjectStatsOut,
     QueueLaneOut,
     QueuesOut,
     ResearchFindingOut,
@@ -147,6 +159,8 @@ from .schemas import (
     ResearchResult,
     RuntimeSettingMetaOut,
     SeoLoopRequest,
+    SocialAccountCreate,
+    SocialAccountOut,
     SeoLoopResultOut,
     SeoPlanOut,
     SeoReviewOut,
@@ -437,12 +451,12 @@ def treg_tools_allow(body: TregAllowIn) -> TregAllowResultOut:
     )
 
 
-# ---- agent engagement (comment drafts; never posts) -----------------------
+# ---- agent engagement (comment drafts; publish via /publish/*) ------------
 
 
 @app.post("/engagement/loop", response_model=EngagementLoopResultOut, tags=["engagement"])
 def engagement_loop(payload: EngagementLoopRequest) -> EngagementLoopResultOut:
-    """Rescan catalogued forums and draft replies. This stack never posts."""
+    """Rescan catalogued forums and draft replies. Does not publish."""
     budget = EngagementBudget(
         max_venues=payload.max_venues,
         max_pages_per_venue=payload.max_pages_per_venue,
@@ -480,6 +494,133 @@ def engagement_drafts(
 ) -> list[EngagementDraftOut]:
     rows = list_drafts(brand=brand, limit=limit)
     return [EngagementDraftOut.model_validate(row) for row in rows]
+
+
+# ---- publisher (human-scheduled outbound) ---------------------------------
+
+
+@app.get("/publish/accounts", response_model=list[SocialAccountOut], tags=["publish"])
+def publish_accounts(
+    brand: Brand | None = None,
+    enabled_only: bool = False,
+    limit: int = 200,
+) -> list[SocialAccountOut]:
+    from agent_crm.publish.store import list_social_accounts
+
+    rows = list_social_accounts(brand=brand, enabled_only=enabled_only, limit=limit)
+    return [SocialAccountOut.model_validate(row) for row in rows]
+
+
+@app.post("/publish/accounts", response_model=SocialAccountOut, tags=["publish"])
+def publish_accounts_create(payload: SocialAccountCreate) -> SocialAccountOut:
+    from agent_crm.publish.store import create_social_account
+
+    try:
+        row = create_social_account(
+            brand=payload.brand,
+            platform=payload.platform,
+            handle=payload.handle,
+            postiz_integration_id=payload.postiz_integration_id,
+            credential_key=payload.credential_key,
+            enabled=payload.enabled,
+            daily_cap=payload.daily_cap,
+            min_interval_minutes=payload.min_interval_minutes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SocialAccountOut.model_validate(row)
+
+
+@app.get("/publish/jobs", response_model=list[PublishJobOut], tags=["publish"])
+def publish_jobs(
+    brand: Brand | None = None,
+    status: str | None = None,
+    limit: int = 200,
+) -> list[PublishJobOut]:
+    from agent_crm.enums import PublishJobStatus
+    from agent_crm.publish.store import list_publish_jobs
+
+    status_enum = None
+    if status:
+        try:
+            status_enum = PublishJobStatus(status)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid status: {status}") from exc
+    rows = list_publish_jobs(brand=brand, status=status_enum, limit=limit)
+    return [PublishJobOut.model_validate(row) for row in rows]
+
+
+@app.post("/publish/schedule", response_model=list[PublishJobOut], tags=["publish"])
+def publish_schedule(payload: PublishScheduleRequest) -> list[PublishJobOut]:
+    from agent_crm.publish.schedule import ScheduleError, schedule_engagement_drafts
+
+    try:
+        jobs = schedule_engagement_drafts(
+            draft_ids=payload.draft_ids,
+            account_id=payload.account_id,
+            scheduled_at=payload.scheduled_at,
+            use_next_slot=payload.use_next_slot,
+            pete_override=payload.pete_override,
+            dry_run=payload.dry_run,
+        )
+    except ScheduleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return [PublishJobOut.model_validate(job) for job in jobs]
+
+
+@app.post(
+    "/publish/schedule-package",
+    response_model=PublishJobOut,
+    tags=["publish"],
+)
+def publish_schedule_package(payload: ContentPackageScheduleRequest) -> PublishJobOut:
+    from agent_crm.publish.schedule import ScheduleError, schedule_content_package
+    from agent_crm.publish.store import get_social_account
+
+    account = get_social_account(payload.account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="social account not found")
+    try:
+        job = schedule_content_package(
+            source_id=payload.source_id,
+            brand=payload.brand,
+            account=account,
+            body=payload.body,
+            scheduled_at=payload.scheduled_at,
+            use_next_slot=payload.use_next_slot,
+            payload_json=payload.payload_json,
+            pete_override=payload.pete_override,
+            dry_run=payload.dry_run,
+        )
+    except ScheduleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PublishJobOut.model_validate(job)
+
+
+@app.post("/publish/jobs/{job_id}/cancel", response_model=PublishJobOut, tags=["publish"])
+def publish_job_cancel(job_id: int) -> PublishJobOut:
+    from agent_crm.publish.store import cancel_publish_job
+
+    row = cancel_publish_job(job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="publish job not found")
+    return PublishJobOut.model_validate(row)
+
+
+@app.post("/publish/loop", response_model=PublishLoopResultOut, tags=["publish"])
+def publish_loop(payload: PublishLoopRequest) -> PublishLoopResultOut:
+    from agent_crm.publish.loop import PublishBudget, run_publish_loop
+
+    result = run_publish_loop(budget=PublishBudget(max_jobs=payload.max_jobs))
+    return PublishLoopResultOut(
+        claimed=result.claimed,
+        posted=result.posted,
+        failed=result.failed,
+        rescheduled=result.rescheduled,
+        skipped=result.skipped,
+        errors=result.errors,
+        stop_reason=result.stop_reason,
+    )
 
 
 # ---- SEO documents (reviews + plans; never implemented on live sites) ------
@@ -1104,3 +1245,180 @@ def hermes_seo_plans(
     limit: int = Query(50, ge=1, le=200),
 ) -> AgentPageOut:
     return query_seo_plans(q=q, brand=brand, kind=kind, offset=offset, limit=limit)
+
+
+# ---- projects (YAML prompt origins) ----------------------------------------
+
+
+def _context_exists(doc) -> bool:
+    from pathlib import Path
+
+    from agent_crm.projects.store import brand_for_slug
+    from agent_crm.marketing_skill import brand_context_path
+
+    if doc.context_file:
+        for base in (Path(__file__).resolve().parents[2], Path("/app")):
+            candidate = base / doc.context_file
+            if candidate.is_file():
+                return True
+    brand = brand_for_slug(doc.slug)
+    if brand is None:
+        return False
+    path = brand_context_path(brand)
+    return path is not None and path.is_file()
+
+
+def _project_out(doc) -> ProjectOut:
+    from agent_crm.projects.schema import CHANNEL_NAMES
+    from agent_crm.projects.store import brand_for_slug
+
+    summary = (doc.origin_prompt or "").strip().split("\n", 1)[0][:160]
+    channels = {
+        name: {"armed": doc.channels[name].armed, "prompt": doc.channels[name].prompt}
+        for name in CHANNEL_NAMES
+    }
+    brand = brand_for_slug(doc.slug)
+    return ProjectOut(
+        slug=doc.slug,
+        name=doc.name,
+        status=doc.status.value if hasattr(doc.status, "value") else str(doc.status),
+        enabled=doc.enabled,
+        site=doc.site,
+        alias=doc.alias,
+        context_file=doc.context_file,
+        context_exists=_context_exists(doc),
+        origin_prompt=doc.origin_prompt,
+        summary=summary,
+        brand=brand,
+        channels=channels,
+        armed_count=len(doc.armed_channels()),
+        channel_count=len(CHANNEL_NAMES),
+        seeded_loops=doc.seeded_loops(),
+    )
+
+
+@app.get("/projects", response_model=ProjectsListOut, tags=["projects"])
+def projects_list() -> ProjectsListOut:
+    from agent_crm.projects import list_projects, projects_stats
+
+    docs = list_projects()
+    stats = projects_stats(docs)
+    return ProjectsListOut(
+        projects=[_project_out(doc) for doc in docs],
+        stats=ProjectStatsOut(**stats),
+    )
+
+
+@app.get("/projects/{slug}", response_model=ProjectOut, tags=["projects"])
+def projects_get(slug: str) -> ProjectOut:
+    from agent_crm.projects import get_project
+
+    try:
+        return _project_out(get_project(slug))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationAppError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects", response_model=ProjectOut, tags=["projects"])
+def projects_create(body: ProjectCreateIn) -> ProjectOut:
+    from agent_crm.projects import create_project
+    from agent_crm.projects.schema import ProjectStatus
+
+    try:
+        status = ProjectStatus(body.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid status: {body.status}") from exc
+    try:
+        doc = create_project(
+            slug=body.slug,
+            name=body.name,
+            site=body.site,
+            origin_prompt=body.origin_prompt,
+            alias=body.alias,
+            status=status,
+            enabled=body.enabled,
+        )
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValidationAppError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _project_out(doc)
+
+
+@app.patch("/projects/{slug}", response_model=ProjectOut, tags=["projects"])
+def projects_patch(slug: str, body: ProjectPatchIn) -> ProjectOut:
+    from agent_crm.projects import patch_project
+    from agent_crm.projects.schema import ProjectStatus
+
+    status = None
+    if body.status is not None:
+        try:
+            status = ProjectStatus(body.status)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid status: {body.status}") from exc
+    kwargs: dict = {}
+    if body.name is not None:
+        kwargs["name"] = body.name
+    if "site" in body.model_fields_set:
+        kwargs["site"] = body.site
+    if "alias" in body.model_fields_set:
+        kwargs["alias"] = body.alias
+    if status is not None:
+        kwargs["status"] = status
+    if body.origin_prompt is not None:
+        kwargs["origin_prompt"] = body.origin_prompt
+    if body.enabled is not None:
+        kwargs["enabled"] = body.enabled
+    if "context_file" in body.model_fields_set:
+        kwargs["context_file"] = body.context_file
+    try:
+        return _project_out(patch_project(slug, **kwargs))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationAppError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/projects/{slug}/channels", response_model=ProjectOut, tags=["projects"])
+def projects_put_channels(slug: str, body: ProjectChannelsIn) -> ProjectOut:
+    from agent_crm.projects import update_channels
+
+    armed = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        return _project_out(update_channels(slug, armed))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationAppError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/projects/{slug}/prompts", response_model=ProjectOut, tags=["projects"])
+def projects_put_prompts(slug: str, body: ProjectPromptsIn) -> ProjectOut:
+    from agent_crm.projects import update_prompts
+
+    try:
+        return _project_out(
+            update_prompts(
+                slug,
+                origin_prompt=body.origin_prompt,
+                channel_prompts=body.channels,
+            )
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationAppError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{slug}/reload-context", response_model=ProjectOut, tags=["projects"])
+def projects_reload_context(slug: str) -> ProjectOut:
+    from agent_crm.projects import reload_context
+
+    try:
+        return _project_out(reload_context(slug))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationAppError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -24,6 +24,7 @@ BRAND_DISPLAY: dict[Brand, str] = {
     Brand.CELESTIAL_NEXUS: "Celestial-Nexus",
     Brand.HEYBUDDY: "HeyBuddy",
     Brand.TACTIC_STUDIO: "tactic.studio",
+    Brand.BEST_BIRYANI: "Best Biryani",
 }
 
 # Owned sites get a site-audit review plus an implementation plan.
@@ -74,10 +75,10 @@ SEO_SEEDS: dict[Brand, tuple[SeoSeed, ...]] = {
     ),
     Brand.CELESTIAL_NEXUS: (
         SeoSeed(
-            url="https://celestial-nexus.app",
+            url="https://divinationnexus.com",
             role=SeoTargetRole.OWNED,
-            title="Celestial-Nexus",
-            notes="Ranch-owned astrology and divination reading app.",
+            title="Divination Nexus",
+            notes="Ranch-owned astrology and divination reading app (was celestial-nexus.app).",
         ),
         SeoSeed(
             url="https://www.costarastrology.com",
@@ -145,6 +146,14 @@ SEO_SEEDS: dict[Brand, tuple[SeoSeed, ...]] = {
             query_kind=SeoQueryKind.COMPETITOR,
         ),
     ),
+    Brand.BEST_BIRYANI: (
+        SeoSeed(
+            url="https://bestbiryanisiliconvalley.com",
+            role=SeoTargetRole.OWNED,
+            title="Best Biryani Silicon Valley",
+            notes="Local restaurant destination (brand context not vendored yet).",
+        ),
+    ),
 }
 
 KEYWORD_SEEDS: dict[Brand, tuple[str, ...]] = {
@@ -169,6 +178,11 @@ KEYWORD_SEEDS: dict[Brand, tuple[str, ...]] = {
         "industrial AR training",
         "WebAR brand activation studio",
         "8th Wall industrial visualization",
+    ),
+    Brand.BEST_BIRYANI: (
+        "biryani restaurant Silicon Valley",
+        "best biryani Bay Area",
+        "Indian restaurant Sunnyvale biryani",
     ),
 }
 

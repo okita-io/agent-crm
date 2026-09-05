@@ -11,6 +11,7 @@ KNOWN_AGENT_ROSTER: frozenset[str] = frozenset(
         "lead_intake",
         "outbound_hunter",
         "engagement",
+        "publisher",
         "seo",
         "queue-review",
         "research",

@@ -22,3 +22,16 @@ export function formatUsd(amount: number): string {
 export function padSlotIndex(index: number): string {
   return String(index + 1).padStart(2, "0")
 }
+
+export function formatWait(seconds: number): string {
+  const value = Math.max(0, Math.floor(seconds))
+  if (value < 60) return `oldest ${value}s`
+  if (value < 3600) return `oldest ${Math.round(value / 60)}m`
+  if (value < 86400) {
+    const hours = Math.floor(value / 3600)
+    const minutes = Math.round((value % 3600) / 60)
+    return minutes > 0 ? `oldest ${hours}h ${minutes}m` : `oldest ${hours}h`
+  }
+  const days = Math.floor(value / 86400)
+  return `oldest ${days}d`
+}

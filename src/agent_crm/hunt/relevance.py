@@ -12,7 +12,6 @@ import httpx
 from agent_crm.enums import Brand, TopicalRelevanceVerdict
 from agent_crm.llm_client import chat_completions
 from agent_crm.llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, extract_json_object, wrap_untrusted
-from agent_crm.marketing_skill import brand_context_snippet
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +317,9 @@ def _spark_topical_assessment(
     query: str | None,
 ) -> RelevanceAssessment:
     topic = BRAND_TOPIC_SUMMARIES.get(brand, brand.value)
-    context = brand_context_snippet(brand, max_chars=400)
+    from agent_crm.projects.channel_flags import project_prompt_for
+
+    context = project_prompt_for(brand, "hunter", max_chars=400)
     prompt = (
         "Decide if this web page is actually about the brand hunt topic, "
         "not just ranking because of popularity or generic tech/docs noise.\n"
