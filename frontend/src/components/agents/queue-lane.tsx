@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react"
+import { Expand, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import type { AgentObserver, QueueLane } from "@/lib/api"
@@ -10,6 +10,7 @@ type QueueLaneCardProps = {
   lane: QueueLane
   agent: AgentObserver | null
   onResume?: (name: string) => void
+  onInspect?: (lane: QueueLane) => void
 }
 
 function badgeTone(lane: QueueLane, enabled: boolean) {
@@ -36,16 +37,35 @@ function staffLine(lane: QueueLane, agent: AgentObserver | null, enabled: boolea
   return parts.join(" · ")
 }
 
-export function QueueLaneCard({ lane, agent, onResume }: QueueLaneCardProps) {
+export function QueueLaneCard({ lane, agent, onResume, onInspect }: QueueLaneCardProps) {
   const enabled = agent?.enabled ?? true
   const empty = lane.pending === 0
   const canResume = Boolean(
     agent && !enabled && isToggleable(agent.name, agent.toggleable) && onResume,
   )
   const prompts = lane.prompts.slice(0, 4)
+  const extra = Math.max(0, lane.pending - prompts.length)
 
   return (
-    <div className="flex flex-col gap-2 rounded-[4px] border border-border bg-card p-2.5">
+    <div
+      className={cn(
+        "flex flex-col gap-2 rounded-[4px] border border-border bg-card p-2.5",
+        onInspect && "cursor-pointer hover:border-primary/50",
+      )}
+      onClick={onInspect ? () => onInspect(lane) : undefined}
+      onKeyDown={
+        onInspect
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault()
+                onInspect(lane)
+              }
+            }
+          : undefined
+      }
+      role={onInspect ? "button" : undefined}
+      tabIndex={onInspect ? 0 : undefined}
+    >
       <div className="flex items-center justify-between gap-2">
         <p className="text-[13px] font-semibold text-foreground">{lane.name}</p>
         <span
@@ -78,13 +98,24 @@ export function QueueLaneCard({ lane, agent, onResume }: QueueLaneCardProps) {
         ) : (
           <p className="font-mono text-[11px] text-faint">—</p>
         )}
+        {onInspect ? (
+          <p className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
+            <Expand className="size-3" />
+            {extra > 0 ? `+${extra} more · inspect` : "inspect queue"}
+          </p>
+        ) : extra > 0 ? (
+          <p className="font-mono text-[10px] text-muted-foreground">+{extra} more</p>
+        ) : null}
       </div>
       {canResume ? (
         <Button
           type="button"
           size="sm"
           className="mt-0.5 h-7 rounded-[2px] text-[11px]"
-          onClick={() => onResume?.(agent!.name)}
+          onClick={(event) => {
+            event.stopPropagation()
+            onResume?.(agent!.name)
+          }}
         >
           <Plus className="size-3" />
           {empty ? "Assign agent" : "Resume agent"}

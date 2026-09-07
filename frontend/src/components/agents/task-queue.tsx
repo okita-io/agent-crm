@@ -8,6 +8,7 @@ type TaskQueueRailProps = {
   lanes: QueueLane[]
   agentsByName: Record<string, AgentObserver>
   onResume: (name: string) => void
+  onInspectLane?: (lane: QueueLane) => void
   variant?: "sidebar" | "inline"
 }
 
@@ -16,6 +17,7 @@ export function TaskQueueRail({
   lanes,
   agentsByName,
   onResume,
+  onInspectLane,
   variant = "sidebar",
 }: TaskQueueRailProps) {
   const body = (
@@ -26,6 +28,7 @@ export function TaskQueueRail({
           lane={lane}
           agent={agentsByName[lane.agent_name] ?? null}
           onResume={onResume}
+          onInspect={lane.id === "hunter" ? onInspectLane : undefined}
         />
       ))}
     </div>

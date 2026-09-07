@@ -72,6 +72,7 @@ from .enums import (
     Brand,
     ContactAudience,
     HuntResourceKind,
+    HuntQueryStatus,
     ImprovementNoteStatus,
     ResearchFindingKind,
     SeoPlanKind,
@@ -131,6 +132,13 @@ from .schemas import (
     HeartbeatOut,
     HuntLoopRequest,
     HuntLoopResultOut,
+    HuntQueryActionOut,
+    HuntQueryListOut,
+    HuntQueryOut,
+    HuntQueryRejectIdsIn,
+    HuntQueryRejectIn,
+    HuntQueryRejectMatchingIn,
+    HuntQueryRejectResultOut,
     HuntQueueStatusOut,
     HuntRequest,
     HuntResourceOut,
@@ -308,6 +316,129 @@ def list_hunt_resources(
 @app.get("/hunt/queue", response_model=HuntQueueStatusOut, tags=["hunter"])
 def hunt_queue_status() -> HuntQueueStatusOut:
     return HuntQueueStatusOut(**HuntStore().queue_status())
+
+
+@app.get("/hunt/queries", response_model=HuntQueryListOut, tags=["hunter"])
+def list_hunt_queries(
+    brand: Brand | None = None,
+    status: HuntQueryStatus | None = None,
+    origin_prefix: str | None = None,
+    q: str | None = None,
+    drain_order: bool = False,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> HuntQueryListOut:
+    """Inspect hunt_queries. Drain order is priority desc, id asc (what the loop claims next)."""
+    store = HuntStore()
+    rows = store.list_queries(
+        brand=brand,
+        status=status,
+        origin_prefix=origin_prefix,
+        q=q,
+        limit=limit,
+        offset=offset,
+        drain_order=drain_order,
+    )
+    return HuntQueryListOut(
+        items=[HuntQueryOut.model_validate(row) for row in rows],
+        total=store.count_queries(
+            brand=brand, status=status, origin_prefix=origin_prefix, q=q
+        ),
+        offset=offset,
+        limit=limit,
+        by_status=store.queue_status()["by_status"],
+    )
+
+
+@app.post("/hunt/queries/reject", response_model=HuntQueryRejectResultOut, tags=["hunter"])
+def reject_hunt_queries(payload: HuntQueryRejectIdsIn) -> HuntQueryRejectResultOut:
+    rejected = HuntStore().reject_queries(payload.ids, payload.reason)
+    return HuntQueryRejectResultOut(rejected=rejected)
+
+
+@app.post(
+    "/hunt/queries/reject-matching",
+    response_model=HuntQueryRejectResultOut,
+    tags=["hunter"],
+)
+def reject_matching_hunt_queries(
+    payload: HuntQueryRejectMatchingIn,
+) -> HuntQueryRejectResultOut:
+    if payload.status not in HuntStore.TOSSABLE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="can only toss pending, pending_review, or failed queries",
+        )
+    try:
+        rejected = HuntStore().reject_matching(
+            status=payload.status,
+            brand=payload.brand,
+            origin_prefix=payload.origin_prefix,
+            q=payload.q,
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return HuntQueryRejectResultOut(rejected=rejected)
+
+
+@app.post(
+    "/hunt/queries/{query_id}/reject",
+    response_model=HuntQueryActionOut,
+    tags=["hunter"],
+)
+def reject_hunt_query(query_id: int, payload: HuntQueryRejectIn) -> HuntQueryActionOut:
+    row = HuntStore().mark_query_rejected(query_id, payload.reason)
+    if row is None:
+        raise HTTPException(status_code=404, detail="hunt query not found")
+    if row.status != HuntQueryStatus.REJECTED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"cannot toss query in status {row.status.value}",
+        )
+    return HuntQueryActionOut.model_validate(row)
+
+
+@app.post(
+    "/hunt/queries/{query_id}/keep",
+    response_model=HuntQueryActionOut,
+    tags=["hunter"],
+)
+def keep_hunt_query(query_id: int) -> HuntQueryActionOut:
+    store = HuntStore()
+    existing = store.get_query(query_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="hunt query not found")
+    if existing.status != HuntQueryStatus.PENDING_REVIEW:
+        raise HTTPException(
+            status_code=409,
+            detail=f"cannot keep query in status {existing.status.value}",
+        )
+    row = store.mark_query_kept(query_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="hunt query not found")
+    return HuntQueryActionOut.model_validate(row)
+
+
+@app.post(
+    "/hunt/queries/{query_id}/retry",
+    response_model=HuntQueryActionOut,
+    tags=["hunter"],
+)
+def retry_hunt_query(query_id: int) -> HuntQueryActionOut:
+    store = HuntStore()
+    existing = store.get_query(query_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="hunt query not found")
+    if existing.status != HuntQueryStatus.FAILED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"cannot retry query in status {existing.status.value}",
+        )
+    row = store.retry_query(query_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="hunt query not found")
+    return HuntQueryActionOut.model_validate(row)
 
 
 @app.get("/hunt/status", response_model=HuntStatusOut, tags=["hunter"])

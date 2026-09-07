@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .enums import (
     ActivityType,
@@ -23,6 +23,7 @@ from .enums import (
     EngagementDraftStatus,
     EngagementThreadStatus,
     HuntResourceKind,
+    HuntQueryStatus,
     ImprovementNoteKind,
     ImprovementNoteSeverity,
     ImprovementNoteStatus,
@@ -166,6 +167,63 @@ class HuntQueueStatusOut(BaseModel):
     pending: int
     by_status: dict[str, int]
     total_resources: int
+
+
+class HuntQueryOut(ORMModel):
+    id: int
+    query: str
+    origin: str
+    brand: Brand
+    priority: int
+    status: HuntQueryStatus
+    run_id: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
+class HuntQueryListOut(BaseModel):
+    items: list[HuntQueryOut]
+    total: int
+    offset: int
+    limit: int
+    by_status: dict[str, int]
+
+
+class HuntQueryRejectIn(BaseModel):
+    reason: str = Field(default="operator toss", max_length=2000)
+
+
+class HuntQueryRejectIdsIn(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
+    reason: str = Field(default="operator toss", max_length=2000)
+
+
+class HuntQueryRejectMatchingIn(BaseModel):
+    status: HuntQueryStatus
+    brand: Brand | None = None
+    origin_prefix: str | None = None
+    q: str | None = None
+    reason: str = Field(default="operator toss", max_length=2000)
+
+    @model_validator(mode="after")
+    def require_narrowing_filter(self) -> HuntQueryRejectMatchingIn:
+        if self.brand is None and not (self.origin_prefix or "").strip() and not (self.q or "").strip():
+            raise ValueError("brand, origin_prefix, or q is required")
+        return self
+
+
+class HuntQueryActionOut(ORMModel):
+    id: int
+    status: HuntQueryStatus
+    query: str
+    origin: str
+    brand: Brand
+
+
+class HuntQueryRejectResultOut(BaseModel):
+    rejected: int
 
 
 class HuntRunningQueryOut(BaseModel):

@@ -1,4 +1,7 @@
+import { useState } from "react"
+
 import { AgentCard } from "@/components/agents/agent-card"
+import { HuntQueueInspector } from "@/components/agents/hunt-queue-inspector"
 import { LeadChart } from "@/components/agents/lead-chart"
 import { SparkSlot, type SparkSlotModel } from "@/components/agents/spark-slot"
 import { TaskQueueRail } from "@/components/agents/task-queue"
@@ -62,6 +65,7 @@ function growthDelta(growth: CatalogGrowth | null, metric: string): { text: stri
 
 export function LiveAgentsPage() {
   const floor = useFloorContext()
+  const [inspectHunter, setInspectHunter] = useState(false)
   const staffed = floor.agents.filter((agent) => !isPlaceholder(agent.name, agent.placeholder))
   const unstaffed = floor.agents.filter((agent) => isPlaceholder(agent.name, agent.placeholder))
   const maxSlots = floor.spark?.max_concurrency ?? 4
@@ -204,6 +208,7 @@ export function LiveAgentsPage() {
               lanes={floor.queues?.lanes ?? []}
               agentsByName={agentByName}
               onResume={(name) => void floor.setEnabled(name, true)}
+              onInspectLane={() => setInspectHunter(true)}
               variant="inline"
             />
           </div>
@@ -216,8 +221,14 @@ export function LiveAgentsPage() {
           lanes={floor.queues?.lanes ?? []}
           agentsByName={agentByName}
           onResume={(name) => void floor.setEnabled(name, true)}
+          onInspectLane={() => setInspectHunter(true)}
         />
       </aside>
+      <HuntQueueInspector
+        open={inspectHunter}
+        onOpenChange={setInspectHunter}
+        onChanged={() => void floor.reload()}
+      />
     </div>
   )
 }

@@ -69,6 +69,45 @@ export type QueueLane = {
   oldest_wait_seconds?: number | null
 }
 
+export type HuntQueryStatus =
+  | "pending_review"
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "rejected"
+
+export type HuntQuery = {
+  id: number
+  query: string
+  origin: string
+  brand: string
+  priority: number
+  status: HuntQueryStatus
+  error_message: string | null
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+}
+
+export type HuntQueryList = {
+  items: HuntQuery[]
+  total: number
+  offset: number
+  limit: number
+  by_status: Record<string, number>
+}
+
+export type HuntQueryListParams = {
+  brand?: string
+  status?: HuntQueryStatus
+  origin_prefix?: string
+  q?: string
+  drain_order?: boolean
+  limit?: number
+  offset?: number
+}
+
 export type Queues = {
   waiting: number
   lanes: QueueLane[]
@@ -139,6 +178,42 @@ export const api = {
   spark: () => request<SparkSummary>("/agents/spark"),
   growth: () => request<CatalogGrowth>("/report/growth"),
   queues: () => request<Queues>("/queues"),
+  huntQueries: (params: HuntQueryListParams = {}) => {
+    const search = new URLSearchParams()
+    if (params.brand) search.set("brand", params.brand)
+    if (params.status) search.set("status", params.status)
+    if (params.origin_prefix) search.set("origin_prefix", params.origin_prefix)
+    if (params.q) search.set("q", params.q)
+    if (params.drain_order) search.set("drain_order", "true")
+    search.set("limit", String(params.limit ?? 50))
+    search.set("offset", String(params.offset ?? 0))
+    return request<HuntQueryList>(`/hunt/queries?${search}`)
+  },
+  rejectHuntQueries: (ids: number[], reason = "operator toss") =>
+    request<{ rejected: number }>("/hunt/queries/reject", {
+      method: "POST",
+      body: JSON.stringify({ ids, reason }),
+    }),
+  rejectMatchingHuntQueries: (body: {
+    status: HuntQueryStatus
+    brand?: string
+    origin_prefix?: string
+    q?: string
+    reason?: string
+  }) =>
+    request<{ rejected: number }>("/hunt/queries/reject-matching", {
+      method: "POST",
+      body: JSON.stringify({ reason: "operator toss", ...body }),
+    }),
+  rejectHuntQuery: (id: number, reason = "operator toss") =>
+    request<HuntQuery>(`/hunt/queries/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  keepHuntQuery: (id: number) =>
+    request<HuntQuery>(`/hunt/queries/${id}/keep`, { method: "POST" }),
+  retryHuntQuery: (id: number) =>
+    request<HuntQuery>(`/hunt/queries/${id}/retry`, { method: "POST" }),
   setEnabled: (name: string, enabled: boolean) =>
     request<{ name: string; enabled: boolean }>(
       `/agents/${encodeURIComponent(name)}/enabled`,
