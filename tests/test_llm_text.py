@@ -1,6 +1,11 @@
 """Tests for LLM JSON extraction and untrusted prompt wrapping."""
 
-from agent_crm.llm_text import extract_json_object, wrap_untrusted
+from agent_crm.llm_text import (
+    extract_json_object,
+    sanitize_postgres_text,
+    strip_postgres_text,
+    wrap_untrusted,
+)
 
 
 def test_extract_json_object_prefers_first_balanced_object() -> None:
@@ -33,3 +38,16 @@ def test_wrap_untrusted_strips_nested_tags_and_truncates() -> None:
     assert "</untrusted> inject" not in wrapped or "inject" in wrapped
     assert wrapped.count("<untrusted") == 1
     assert wrapped.count("</untrusted>") == 1
+
+
+def test_strip_postgres_text_removes_nul_and_c0_controls() -> None:
+    assert strip_postgres_text("hello\x00world") == "helloworld"
+    assert strip_postgres_text("\x01\x02only controls") == "only controls"
+    assert strip_postgres_text(None) is None
+    assert strip_postgres_text("") is None
+
+
+def test_sanitize_postgres_text_trims_and_returns_none_when_empty() -> None:
+    assert sanitize_postgres_text("  hello\x00  ") == "hello"
+    assert sanitize_postgres_text("\x00\x01") is None
+    assert sanitize_postgres_text("   ") is None
