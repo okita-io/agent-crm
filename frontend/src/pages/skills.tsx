@@ -11,7 +11,7 @@ export function SkillsPage() {
   const modules = floor.skills.filter((skill) => skill.kind === "module")
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
+    <ScrollArea className="min-h-0 flex-1 overflow-hidden">
       <div className="flex flex-col gap-4 p-4 lg:p-[18px]">
         <header>
           <h1 className="text-[22px] font-semibold text-foreground">Skills</h1>

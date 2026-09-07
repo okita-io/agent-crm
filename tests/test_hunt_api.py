@@ -160,5 +160,15 @@ def test_hunt_query_inspector_list_toss_retry(tmp_path, monkeypatch):
     )
     assert blocked.status_code == 422
 
+    running = store.list_queries(q="retail VP", limit=1)[0]
+    store.mark_query_running(running.id)
+    cleared = client.post("/hunt/queries/clear", json={"reason": "operator clear"})
+    assert cleared.status_code == 200
+    assert cleared.json()["rejected"] >= 1
+    leftover = {row.status for row in store.list_queries(limit=20)}
+    assert HuntQueryStatus.PENDING not in leftover
+    assert HuntQueryStatus.FAILED not in leftover
+    assert HuntQueryStatus.RUNNING in leftover
+
     reset_engine()
     get_settings.cache_clear()

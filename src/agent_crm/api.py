@@ -382,6 +382,13 @@ def reject_matching_hunt_queries(
     return HuntQueryRejectResultOut(rejected=rejected)
 
 
+@app.post("/hunt/queries/clear", response_model=HuntQueryRejectResultOut, tags=["hunter"])
+def clear_hunt_queue(payload: HuntQueryRejectIn) -> HuntQueryRejectResultOut:
+    """Toss all pending, pending_review, and failed hunt queries. Leaves running/completed."""
+    rejected = HuntStore().clear_queue(reason=payload.reason)
+    return HuntQueryRejectResultOut(rejected=rejected)
+
+
 @app.post(
     "/hunt/queries/{query_id}/reject",
     response_model=HuntQueryActionOut,

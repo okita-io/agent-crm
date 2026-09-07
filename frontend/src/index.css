@@ -129,6 +129,7 @@
     @apply bg-background text-foreground antialiased;
   }
   #root {
-    min-height: 100svh;
+    height: 100svh;
+    overflow: hidden;
   }
 }

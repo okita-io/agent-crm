@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/app-shell"
 import { FloorProvider, useFloorContext } from "@/hooks/floor-context"
 import { isPlaceholder } from "@/lib/roster"
 import { ComingSoonPage } from "@/pages/coming-soon"
+import { CommandPage } from "@/pages/command"
 import { LiveAgentsPage } from "@/pages/live-agents"
 import { ProjectsPage } from "@/pages/projects"
 import { SkillsPage } from "@/pages/skills"
@@ -34,7 +35,7 @@ export default function App() {
           <Route element={<ShellLayout />}>
             <Route path="/" element={<LiveAgentsPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
-            <Route path="/command" element={<ComingSoonPage />} />
+            <Route path="/command" element={<CommandPage />} />
             <Route path="/pipeline" element={<ComingSoonPage />} />
             <Route path="/contacts" element={<ComingSoonPage />} />
             <Route path="/hunter" element={<ComingSoonPage />} />

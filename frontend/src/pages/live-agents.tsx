@@ -88,8 +88,8 @@ export function LiveAgentsPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <ScrollArea className="min-w-0 flex-1">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      <ScrollArea className="min-h-0 min-w-0 flex-1">
         <div className="flex flex-col gap-3 p-4 lg:p-[18px]">
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -215,7 +215,7 @@ export function LiveAgentsPage() {
         </div>
       </ScrollArea>
 
-      <aside className="hidden h-full min-h-0 w-[332px] shrink-0 flex-col border-l border-sidebar-border bg-sidebar p-3.5 xl:flex">
+      <aside className="hidden min-h-0 w-[332px] shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar p-3.5 xl:flex">
         <TaskQueueRail
           waiting={floor.queues?.waiting ?? 0}
           lanes={floor.queues?.lanes ?? []}

@@ -41,8 +41,8 @@ export function ProjectsPage() {
     : null
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <ScrollArea className="min-w-0 flex-1">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      <ScrollArea className="min-h-0 min-w-0 flex-1">
         <div className="flex flex-col gap-3 p-4 lg:p-[18px]">
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div>

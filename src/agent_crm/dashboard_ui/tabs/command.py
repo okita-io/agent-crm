@@ -13,6 +13,7 @@ def _render_command_tab() -> None:
     st.caption(
         "Send natural-language instructions to the orchestrator. It can pause or resume "
         "standing agents and enqueue hunt, research, engagement, SEO, or AEO/GEO work. "
+        "The Vite Command page on port 3000 is the same queue. "
         "Responses appear here once the orchestrator picks up your message (usually within a few seconds)."
     )
 

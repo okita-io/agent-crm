@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from agent_crm.agent_control import activate_queue_review
@@ -311,6 +311,26 @@ class HuntStore:
                 row.completed_at = now
                 rejected += 1
         return rejected
+
+    def clear_queue(self, *, reason: str = "operator clear") -> int:
+        """Toss every pending, pending_review, and failed hunt query.
+
+        Leaves running and completed rows. Rejected seed terms stay rejected, so
+        the standing loop will not re-enqueue the same dedupe_key.
+        """
+        note = (reason or "operator clear")[:2000]
+        now = datetime.now(UTC)
+        with session_scope() as session:
+            result = session.execute(
+                update(HuntQuery)
+                .where(HuntQuery.status.in_(self.TOSSABLE_STATUSES))
+                .values(
+                    status=HuntQueryStatus.REJECTED,
+                    error_message=note,
+                    completed_at=now,
+                )
+            )
+            return int(result.rowcount or 0)
 
     def reset_stale_running_queries(self, *, stale_minutes: int = 30) -> int:
         """Return stuck RUNNING hunt queries to PENDING (crash recovery).

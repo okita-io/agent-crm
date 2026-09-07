@@ -214,6 +214,30 @@ def _render_hunt_query_inspector() -> None:
         st.success(f"Re-queued {retried} failed queries.")
         st.rerun()
 
+    clearable = (
+        int(counts.get("pending", 0))
+        + int(counts.get("pending_review", 0))
+        + int(counts.get("failed", 0))
+    )
+    if "hunt_clear_confirm" not in st.session_state:
+        st.session_state.hunt_clear_confirm = False
+    if st.button("Clear queue", disabled=clearable == 0, key="hunt_clear_queue"):
+        st.session_state.hunt_clear_confirm = True
+    if st.session_state.hunt_clear_confirm:
+        st.warning(
+            f"Clear hunter queue? This tosses {clearable} pending, review, and failed queries. "
+            "The running query and completed history stay. Tossed seed terms will not re-enqueue."
+        )
+        confirm_cols = st.columns(2)
+        if confirm_cols[0].button("Cancel", key="hunt_clear_cancel"):
+            st.session_state.hunt_clear_confirm = False
+            st.rerun()
+        if confirm_cols[1].button("OK", key="hunt_clear_ok"):
+            tossed = store.clear_queue(reason="operator clear")
+            st.session_state.hunt_clear_confirm = False
+            st.success(f"Cleared {tossed} queries.")
+            st.rerun()
+
 
 def _render_hunter_tab(refresh_seconds: int) -> None:
     try:

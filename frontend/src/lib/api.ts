@@ -98,6 +98,19 @@ export type HuntQueryList = {
   by_status: Record<string, number>
 }
 
+export type AgencyRequestStatus = "pending" | "processing" | "completed" | "failed"
+
+export type AgencyRequest = {
+  id: number
+  message: string
+  status: AgencyRequestStatus
+  reply: string | null
+  actions: unknown
+  error_message: string | null
+  created_at: string
+  processed_at: string | null
+}
+
 export type HuntQueryListParams = {
   brand?: string
   status?: HuntQueryStatus
@@ -214,6 +227,11 @@ export const api = {
     request<HuntQuery>(`/hunt/queries/${id}/keep`, { method: "POST" }),
   retryHuntQuery: (id: number) =>
     request<HuntQuery>(`/hunt/queries/${id}/retry`, { method: "POST" }),
+  clearHuntQueue: (reason = "operator clear") =>
+    request<{ rejected: number }>("/hunt/queries/clear", {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
   setEnabled: (name: string, enabled: boolean) =>
     request<{ name: string; enabled: boolean }>(
       `/agents/${encodeURIComponent(name)}/enabled`,
@@ -282,5 +300,12 @@ export const api = {
   reloadProjectContext: (slug: string) =>
     request<Project>(`/projects/${encodeURIComponent(slug)}/reload-context`, {
       method: "POST",
+    }),
+  agencyRequests: (limit = 80) =>
+    request<AgencyRequest[]>(`/agency/requests?limit=${limit}`),
+  submitAgencyRequest: (message: string) =>
+    request<AgencyRequest>("/agency/requests", {
+      method: "POST",
+      body: JSON.stringify({ message }),
     }),
 }

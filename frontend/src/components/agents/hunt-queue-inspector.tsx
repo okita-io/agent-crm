@@ -66,6 +66,7 @@ export function HuntQueueInspector({ open, onOpenChange, onChanged }: HuntQueueI
   const [data, setData] = useState<HuntQueryList | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const drainOrder = status === "pending" || status === "pending_review" || status === "running"
 
@@ -109,6 +110,8 @@ export function HuntQueueInspector({ open, onOpenChange, onChanged }: HuntQueueI
   const matchingNarrowed = Boolean(brand || originPrefix || search.trim())
   const tossableStatus =
     status === "pending" || status === "pending_review" || status === "failed" ? status : null
+  const clearable =
+    (counts.pending ?? 0) + (counts.pending_review ?? 0) + (counts.failed ?? 0)
 
   async function runAction(action: () => Promise<unknown>) {
     setBusy(true)
@@ -128,6 +131,7 @@ export function HuntQueueInspector({ open, onOpenChange, onChanged }: HuntQueueI
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[min(960px,calc(100vw-2rem))] gap-0 p-0" showCloseButton>
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Hunter queue</DialogTitle>
           <DialogDescription>
@@ -219,7 +223,7 @@ export function HuntQueueInspector({ open, onOpenChange, onChanged }: HuntQueueI
           ) : null}
         </div>
 
-        <ScrollArea className="max-h-[48vh] border-t border-border">
+        <ScrollArea className="relative z-0 min-h-0 max-h-[48vh] overflow-hidden border-t border-border">
           <table className="w-full text-left">
             <thead className="sticky top-0 bg-card">
               <tr className="font-mono text-[9px] tracking-[0.8px] text-muted-foreground">
@@ -275,7 +279,7 @@ export function HuntQueueInspector({ open, onOpenChange, onChanged }: HuntQueueI
           </table>
         </ScrollArea>
 
-        <DialogFooter className="flex-wrap gap-2">
+        <DialogFooter className="relative z-20 shrink-0 flex-wrap gap-2 bg-card">
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -340,8 +344,55 @@ export function HuntQueueInspector({ open, onOpenChange, onChanged }: HuntQueueI
             >
               Toss matching filter
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              disabled={busy || clearable === 0}
+              onClick={() => setConfirmClear(true)}
+            >
+              Clear queue
+            </Button>
           </div>
         </DialogFooter>
+        {confirmClear ? (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#12110FD9] p-4">
+            <div className="w-[min(420px,100%)] rounded-[4px] border border-border bg-card">
+              <div className="border-b border-border px-[18px] py-4">
+                <p className="text-base font-semibold text-foreground">Clear hunter queue?</p>
+                <p className="mt-1 font-mono text-[11px] leading-[1.45] text-muted-foreground">
+                  This tosses {clearable.toLocaleString()} pending, review, and failed queries.
+                  The running query and completed history stay. Tossed seed terms will not
+                  re-enqueue on their own.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 px-[18px] py-3.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setConfirmClear(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  disabled={busy}
+                  onClick={() => {
+                    setConfirmClear(false)
+                    void runAction(() => api.clearHuntQueue("operator clear"))
+                  }}
+                >
+                  OK
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   )

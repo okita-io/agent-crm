@@ -14,16 +14,18 @@ type AppShellProps = {
 export function AppShell({ occupied, maxSlots, standing, unstaffed }: AppShellProps) {
   return (
     <TooltipProvider>
-      <div className="flex min-h-svh bg-background">
+      <div className="flex h-full overflow-hidden bg-background">
         <Sidebar
           occupied={occupied}
           maxSlots={maxSlots}
           standing={standing}
           unstaffed={unstaffed}
         />
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <Topbar />
-          <Outlet />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <Outlet />
+          </div>
         </div>
       </div>
     </TooltipProvider>
