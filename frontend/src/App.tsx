@@ -5,6 +5,7 @@ import { FloorProvider, useFloorContext } from "@/hooks/floor-context"
 import { isPlaceholder } from "@/lib/roster"
 import { ComingSoonPage } from "@/pages/coming-soon"
 import { CommandPage } from "@/pages/command"
+import { HunterPage } from "@/pages/hunter"
 import { LiveAgentsPage } from "@/pages/live-agents"
 import { ProjectsPage } from "@/pages/projects"
 import { SkillsPage } from "@/pages/skills"
@@ -38,7 +39,7 @@ export default function App() {
             <Route path="/command" element={<CommandPage />} />
             <Route path="/pipeline" element={<ComingSoonPage />} />
             <Route path="/contacts" element={<ComingSoonPage />} />
-            <Route path="/hunter" element={<ComingSoonPage />} />
+            <Route path="/hunter" element={<HunterPage />} />
             <Route path="/seo" element={<ComingSoonPage />} />
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/settings" element={<ComingSoonPage />} />

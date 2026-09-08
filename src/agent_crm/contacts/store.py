@@ -710,6 +710,7 @@ def backfill_contact_enrichment(
                 name=row.name,
                 allow_spark=True,
                 budget=budget,
+                brand=row.brand,
             )
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{row.email}: {exc}")

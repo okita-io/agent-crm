@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .channel_flags import PROJECT_CHANNELS, active_brands_for, project_prompt_for
+from .mission import log_mission_focus, mission_focus_for, supplemental_seed_queries
 from .schema import ProjectChannel, ProjectChannelName, ProjectDocument, ProjectStatus
 from .store import (
     create_project,
@@ -29,6 +30,9 @@ __all__ = [
     "project_prompt_for",
     "projects_stats",
     "reload_context",
+    "mission_focus_for",
+    "log_mission_focus",
+    "supplemental_seed_queries",
     "update_channels",
     "update_prompts",
 ]

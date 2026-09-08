@@ -109,10 +109,11 @@ BRAND_TOPIC_SUMMARIES: dict[Brand, str] = {
         "male-oriented communities and creators"
     ),
     Brand.TACTIC_STUDIO: (
-        "marketing and brand leadership at large retail and food & beverage "
-        "companies (more than $10 million annual revenue): VP of marketing, "
-        "marketing managers, brand managers, brand management; also WebAR "
-        "and brand AR activations"
+        "US government grant awardees for interactive museum, campus, library, "
+        "and cultural institution projects: IMLS, NEA, NEH, Grants.gov, USASpending, "
+        "state arts councils. Immersive exhibits, AR/XR, digital media, digital "
+        "storytelling. Marketing, exhibits, and digital media leadership at "
+        "grant-funded institutions; named vendors/partners on award pages."
     ),
 }
 
@@ -153,32 +154,37 @@ BRAND_ON_TOPIC_KEYWORDS: dict[Brand, tuple[str, ...]] = {
         "men's hobbies",
     ),
     Brand.TACTIC_STUDIO: (
-        "vp of marketing",
-        "vice president of marketing",
-        "vice president marketing",
-        "brand manager",
-        "marketing manager",
-        "brand management",
-        "head of marketing",
-        "director of marketing",
-        "chief marketing officer",
-        "vp of sales",
-        "vice president of sales",
-        "vice president sales",
-        "food and beverage",
-        "food & beverage",
-        "grocery chain",
-        "retail marketing",
-        "consumer packaged goods",
-        "augmented reality",
+        "imls",
+        "nea grant",
+        "neh grant",
+        "grants.gov",
+        "usaspending",
+        "museum grant",
+        "interactive exhibit",
+        "immersive exhibit",
+        "digital storytelling",
+        "cultural institution",
+        "state arts council",
+        "campus immersive",
+        "university museum",
+        "library digital",
+        "science center",
+        "exhibit design",
+        "experience production",
+        "digital media",
+        "ar exhibit",
+        "xr exhibit",
         "webxr",
         "webar",
-        "ar glasses",
         "mixed reality",
-        "snap ar",
-        "8th wall",
-        "ar campaign",
-        "ar activation",
+        "immersive media",
+        "grant awardee",
+        "grant recipient",
+        "award recipient",
+        "federal grant",
+        "director of exhibits",
+        "head of digital",
+        "marketing director museum",
     ),
 }
 

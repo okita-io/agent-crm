@@ -1,4 +1,4 @@
-"""Tests for tactic.studio hunt seeds, audiences, and contact labeling."""
+"""Tests for tactic.studio gov-grant hunt seeds, audiences, and contact labeling."""
 
 from __future__ import annotations
 
@@ -26,13 +26,13 @@ def db_url(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
-def test_tactic_studio_seeds_cover_audiences_and_xr_terms() -> None:
+def test_tactic_studio_seeds_cover_grant_institution_terms() -> None:
     seeds = seeds_for_brand(Brand.TACTIC_STUDIO)
     combined = " ".join(seeds).lower()
-    assert "webar" in combined or "webxr" in combined
-    assert "ar" in combined or "xr" in combined or "vr" in combined
-    assert "influencer" in combined or "creator" in combined or "youtuber" in combined
-    assert "reddit" in combined or "discord" in combined or "community" in combined
+    assert "imls" in combined or "neh" in combined or "nea" in combined
+    assert "museum" in combined or "campus" in combined or "cultural" in combined
+    assert "grant" in combined
+    assert "interactive" in combined or "immersive" in combined or "exhibit" in combined
 
     entries = seed_query_entries(Brand.TACTIC_STUDIO)
     origins = {origin for _, origin in entries}
@@ -42,12 +42,9 @@ def test_tactic_studio_seeds_cover_audiences_and_xr_terms() -> None:
 
     marketing = " ".join(query for query, origin in entries if origin == "marketing:seed_pack")
     marketing_lower = marketing.lower()
-    assert "vp" in marketing_lower or "vice president" in marketing_lower
-    assert "marketing" in marketing_lower
-    assert "brand" in marketing_lower
-    assert "retail" in marketing_lower
-    assert "food" in marketing_lower or "beverage" in marketing_lower
-    assert "10 million" in marketing_lower or "$10" in marketing_lower
+    assert "museum" in marketing_lower or "university" in marketing_lower
+    assert "grant" in marketing_lower
+    assert "imls" in marketing_lower or "neh" in marketing_lower or "nea" in marketing_lower
 
 
 def test_marketing_origin_labels_contact_profile(db_url) -> None:

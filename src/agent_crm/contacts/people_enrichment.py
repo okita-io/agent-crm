@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import httpx
 
 from agent_crm.config import get_settings
+from agent_crm.enums import Brand
 from .quality import filter_socials, is_role_inbox_email
 from .social_lookup import (
     _matches_contact,
@@ -446,6 +447,7 @@ def extract_with_spark(
     serp_evidence: list[SerpEvidence],
     page_evidence: list[PageEvidence],
     existing: PeopleEnrichmentFields,
+    brand: Brand | None = None,
 ) -> PeopleEnrichmentFields:
     """Use Spark (via queue) to extract structured fields from collected evidence."""
     evidence_text = _evidence_block(serp_evidence, page_evidence)
@@ -453,6 +455,11 @@ def extract_with_spark(
         return existing
 
     from agent_crm.llm_text import UNTRUSTED_DATA_SYSTEM_SUFFIX, wrap_untrusted
+    from agent_crm.projects.mission import mission_focus_for
+
+    mission_context = ""
+    if brand is not None:
+        mission_context = mission_focus_for(brand, "hunter", max_chars=500)
 
     prompt = (
         "Extract person facts for this email contact from the evidence below. "
@@ -461,8 +468,10 @@ def extract_with_spark(
         "Do not invent facts. bio should be one short sentence max.\n\n"
         f"Email: {email}\n"
         f"Known name hint: {name or 'unknown'}\n\n"
-        f"{wrap_untrusted('evidence', evidence_text, max_chars=6000)}"
     )
+    if mission_context:
+        prompt += f"Mission focus (prefer roles/orgs aligned with this):\n{mission_context}\n\n"
+    prompt += f"{wrap_untrusted('evidence', evidence_text, max_chars=6000)}"
     try:
         response = chat_completions(
             {
@@ -518,6 +527,7 @@ def enrich_contact_person(
     allow_spark: bool = True,
     max_pages: int = 2,
     budget: Any | None = None,
+    brand: Brand | None = None,
 ) -> PeopleEnrichmentResult | None:
     """Run public people-enrichment for one contact email.
 
@@ -560,6 +570,7 @@ def enrich_contact_person(
             serp_evidence=serp_evidence,
             page_evidence=page_evidence,
             existing=merged,
+            brand=brand,
         )
         spark_used = True
 

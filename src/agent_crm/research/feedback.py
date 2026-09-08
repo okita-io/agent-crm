@@ -63,19 +63,30 @@ BRAND_TOPIC_HINTS: dict[Brand, tuple[str, ...]] = {
         "elder isolation",
     ),
     Brand.TACTIC_STUDIO: (
-        "industrial visualization",
-        "product visualization",
-        "industrial training aid",
-        "training aids",
-        "digital twin",
-        "work instruction",
+        "imls",
+        "nea grant",
+        "neh grant",
+        "grants.gov",
+        "museum grant",
+        "interactive exhibit",
+        "immersive exhibit",
+        "digital storytelling",
+        "cultural institution",
+        "campus immersive",
+        "university museum",
+        "library digital",
+        "science center",
+        "grant awardee",
+        "grant recipient",
+        "federal grant",
+        "immersive media",
         "webar",
         "webxr",
-        "factory ar",
-        "cad visualization",
-        "assembly overlay",
-        "mixed reality training",
-        "industrial ar visualization",
+        "mixed reality",
+        "experience production",
+        "digital media",
+        "exhibit design",
+        "state arts council",
     ),
 }
 
@@ -87,14 +98,21 @@ _TITLE_KEEP = re.compile(
 )
 
 _TARGET_COMPANY_HINTS: tuple[str, ...] = (
-    "grocery",
-    "supermarket",
-    "convenience store",
-    "cpg",
-    "restaurant chain",
-    "beverage company",
-    "food retailer",
-    "department store",
+    "imls",
+    "nea grant",
+    "neh grant",
+    "grants.gov",
+    "museum grant",
+    "interactive exhibit",
+    "immersive exhibit",
+    "cultural institution",
+    "university museum",
+    "campus immersive",
+    "library digital",
+    "science center",
+    "grant awardee",
+    "federal grant",
+    "state arts council",
 )
 
 
@@ -105,9 +123,9 @@ def follow_up_suffix(brand: Brand, kind: ResearchFindingKind) -> str:
     if kind == ResearchFindingKind.NONPROFIT:
         return "501c3 nonprofit"
     if kind == ResearchFindingKind.TARGET_COMPANY:
-        return "retail companies over $10 million revenue"
+        return "grant awardee institutions interactive exhibits"
     if brand == Brand.TACTIC_STUDIO:
-        return "AR experience studio"
+        return "museum campus immersive grant awardee"
     if brand == Brand.CELESTIAL_NEXUS:
         return "divination app"
     if brand == Brand.MIDNIGHTSATIN:

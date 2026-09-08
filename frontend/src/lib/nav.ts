@@ -24,7 +24,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/command", label: "Command", icon: Terminal, ready: true },
   { to: "/pipeline", label: "Pipeline", icon: GitBranch, ready: false },
   { to: "/contacts", label: "Contacts", icon: Users, ready: false },
-  { to: "/hunter", label: "Hunter", icon: Search, ready: false },
+  { to: "/hunter", label: "Hunter", icon: Search, ready: true },
   { to: "/seo", label: "SEO / GEO", icon: FileSearch, ready: false },
   { to: "/skills", label: "Skills", icon: Sparkles, ready: true },
   { to: "/settings", label: "Settings", icon: Settings, ready: false },

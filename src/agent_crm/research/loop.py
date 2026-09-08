@@ -160,6 +160,10 @@ def run_research_loop(
         kind = claimed.kind
         query_id = claimed.id
 
+        from agent_crm.projects.mission import log_mission_focus
+
+        log_mission_focus("research", brand, "research")
+
         try:
             run_result = run_research(
                 ResearchRequest(
