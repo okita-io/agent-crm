@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-from agent_crm.enums import AgencyRequestStatus, AgentStatus, Brand, ContactAudience, ContactVerificationStatus, HuntResourceKind, LeadSource, ResearchFindingKind, SeoPlanKind, SeoReviewKind, Stage
+from agent_crm.enums import AgencyRequestStatus, AgentStatus, Brand, ContactAudience, ContactVerificationStatus, HuntQueryStatus, HuntResourceKind, LeadSource, ResearchFindingKind, SeoPlanKind, SeoReviewKind, Stage
 from agent_crm.hunt.feedback import parse_community_notes
 from agent_crm.hunt.store import HuntStore
 
@@ -85,6 +85,160 @@ def _derived_query_rows(brand: Brand | None, *, limit: int | None = 200) -> pd.D
     )
 
 
+def _query_inspector_rows(
+    *,
+    brand: Brand | None,
+    status: HuntQueryStatus | None,
+    origin_prefix: str | None,
+    q: str | None,
+    limit: int | None = 200,
+) -> pd.DataFrame:
+    store = HuntStore()
+    rows = store.list_queries(
+        brand=brand,
+        status=status,
+        origin_prefix=origin_prefix or None,
+        q=q or None,
+        limit=limit or 200,
+        drain_order=status in {HuntQueryStatus.PENDING, HuntQueryStatus.PENDING_REVIEW, HuntQueryStatus.RUNNING},
+    )
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        [
+            {
+                "id": row.id,
+                "query": row.query,
+                "origin": row.origin,
+                "brand": row.brand.value,
+                "priority": row.priority,
+                "status": row.status.value,
+                "error": row.error_message or "",
+                "updated": row.updated_at,
+            }
+            for row in rows
+        ]
+    )
+
+
+def _render_hunt_query_inspector() -> None:
+    st.subheader("Queue inspector")
+    st.caption(
+        "Full hunt_queries list in drain order. Toss pending/review/failed terms here, "
+        "or open the same inspector from the Vite Hunter queries box."
+    )
+    store = HuntStore()
+    counts = store.queue_status()["by_status"]
+    cols = st.columns(5)
+    cols[0].metric("Pending", counts.get("pending", 0))
+    cols[1].metric("Running", counts.get("running", 0))
+    cols[2].metric("Review", counts.get("pending_review", 0))
+    cols[3].metric("Failed", counts.get("failed", 0))
+    cols[4].metric("Tossed", counts.get("rejected", 0))
+
+    filters = st.columns(4)
+    status_choice = filters[0].selectbox(
+        "Status",
+        options=["pending", "running", "pending_review", "failed", "completed", "rejected", "all"],
+        key="hunt_inspector_status",
+    )
+    brand_choice = filters[1].selectbox(
+        "Brand",
+        options=["all"] + [b.value for b in Brand if b != Brand.UNASSIGNED],
+        key="hunt_inspector_brand",
+    )
+    origin_prefix = filters[2].text_input(
+        "Origin prefix",
+        value="",
+        placeholder="branch",
+        key="hunt_inspector_origin",
+    )
+    search = filters[3].text_input("Search", value="", key="hunt_inspector_q")
+    status = None if status_choice == "all" else HuntQueryStatus(status_choice)
+    brand = None if brand_choice == "all" else Brand(brand_choice)
+    df = _query_inspector_rows(
+        brand=brand,
+        status=status,
+        origin_prefix=origin_prefix.strip() or None,
+        q=search.strip() or None,
+        limit=200,
+    )
+    matching = store.count_queries(
+        brand=brand,
+        status=status,
+        origin_prefix=origin_prefix.strip() or None,
+        q=search.strip() or None,
+    )
+    st.caption(f"{matching} matching (showing {len(df)})")
+    if df.empty:
+        st.info("No hunt queries match this filter.")
+        return
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    tossable = status in {
+        HuntQueryStatus.PENDING,
+        HuntQueryStatus.PENDING_REVIEW,
+        HuntQueryStatus.FAILED,
+    }
+    selected_ids = st.multiselect(
+        "Toss selected ids",
+        options=df["id"].tolist(),
+        key="hunt_inspector_ids",
+    )
+    actions = st.columns(3)
+    if actions[0].button("Toss selected", disabled=not selected_ids, key="hunt_toss_selected"):
+        tossed = store.reject_queries(selected_ids, "operator toss")
+        st.success(f"Tossed {tossed} queries.")
+        st.rerun()
+    matching_ok = tossable and (brand is not None or origin_prefix.strip() or search.strip())
+    if actions[1].button(
+        "Toss matching filter",
+        disabled=not matching_ok,
+        key="hunt_toss_matching",
+    ):
+        tossed = store.reject_matching(
+            status=status,
+            brand=brand,
+            origin_prefix=origin_prefix.strip() or None,
+            q=search.strip() or None,
+            reason="operator toss",
+        )
+        st.success(f"Tossed {tossed} matching queries.")
+        st.rerun()
+    retry_ids = df.loc[df["status"] == "failed", "id"].tolist() if "status" in df else []
+    if actions[2].button("Retry visible failed", disabled=not retry_ids, key="hunt_retry_failed"):
+        retried = 0
+        for query_id in retry_ids:
+            row = store.retry_query(int(query_id))
+            if row is not None and row.status != HuntQueryStatus.FAILED:
+                retried += 1
+        st.success(f"Re-queued {retried} failed queries.")
+        st.rerun()
+
+    clearable = (
+        int(counts.get("pending", 0))
+        + int(counts.get("pending_review", 0))
+        + int(counts.get("failed", 0))
+    )
+    if "hunt_clear_confirm" not in st.session_state:
+        st.session_state.hunt_clear_confirm = False
+    if st.button("Clear queue", disabled=clearable == 0, key="hunt_clear_queue"):
+        st.session_state.hunt_clear_confirm = True
+    if st.session_state.hunt_clear_confirm:
+        st.warning(
+            f"Clear hunter queue? This tosses {clearable} pending, review, and failed queries. "
+            "The running query and completed history stay. Tossed seed terms will not re-enqueue."
+        )
+        confirm_cols = st.columns(2)
+        if confirm_cols[0].button("Cancel", key="hunt_clear_cancel"):
+            st.session_state.hunt_clear_confirm = False
+            st.rerun()
+        if confirm_cols[1].button("OK", key="hunt_clear_ok"):
+            tossed = store.clear_queue(reason="operator clear")
+            st.session_state.hunt_clear_confirm = False
+            st.success(f"Cleared {tossed} queries.")
+            st.rerun()
+
+
 def _render_hunter_tab(refresh_seconds: int) -> None:
     try:
         fragment = st.fragment(run_every=timedelta(seconds=refresh_seconds))
@@ -97,6 +251,8 @@ def _render_hunter_tab(refresh_seconds: int) -> None:
         _render_catalog_growth(compact=True)
 
     _hunter_live()
+
+    _render_hunt_query_inspector()
 
     st.subheader("Hunter resources")
     status = HuntStore().queue_status()

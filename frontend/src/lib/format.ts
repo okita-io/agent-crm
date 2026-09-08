@@ -23,6 +23,18 @@ export function padSlotIndex(index: number): string {
   return String(index + 1).padStart(2, "0")
 }
 
+export function formatAgo(iso: string | null | undefined): string {
+  if (!iso) return "never"
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return "never"
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000))
+  if (seconds < 5) return "just now"
+  if (seconds < 60) return `${seconds}s ago`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`
+  return `${Math.round(seconds / 86400)}d ago`
+}
+
 export function formatWait(seconds: number): string {
   const value = Math.max(0, Math.floor(seconds))
   if (value < 60) return `oldest ${value}s`

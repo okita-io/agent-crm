@@ -1,5 +1,8 @@
+import { useState } from "react"
+
 import { AgentCard } from "@/components/agents/agent-card"
 import { AgentMissionStrip } from "@/components/agents/agent-mission-strip"
+import { HuntQueueInspector } from "@/components/agents/hunt-queue-inspector"
 import { LeadChart } from "@/components/agents/lead-chart"
 import { SparkSlot, type SparkSlotModel } from "@/components/agents/spark-slot"
 import { TaskQueueRail } from "@/components/agents/task-queue"
@@ -65,6 +68,7 @@ function growthDelta(growth: CatalogGrowth | null, metric: string): { text: stri
 export function LiveAgentsPage() {
   const floor = useFloorContext()
   const projects = useProjects()
+  const [inspectHunter, setInspectHunter] = useState(false)
   const staffed = floor.agents.filter((agent) => !isPlaceholder(agent.name, agent.placeholder))
   const unstaffed = floor.agents.filter((agent) => isPlaceholder(agent.name, agent.placeholder))
   const maxSlots = floor.spark?.max_concurrency ?? 4
@@ -87,8 +91,8 @@ export function LiveAgentsPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <ScrollArea className="min-w-0 flex-1">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      <ScrollArea className="min-h-0 min-w-0 flex-1">
         <div className="flex flex-col gap-3 p-4 lg:p-[18px]">
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -220,20 +224,27 @@ export function LiveAgentsPage() {
               lanes={floor.queues?.lanes ?? []}
               agentsByName={agentByName}
               onResume={(name) => void floor.setEnabled(name, true)}
+              onInspectLane={() => setInspectHunter(true)}
               variant="inline"
             />
           </div>
         </div>
       </ScrollArea>
 
-      <aside className="hidden h-full min-h-0 w-[332px] shrink-0 flex-col border-l border-sidebar-border bg-sidebar p-3.5 xl:flex">
+      <aside className="hidden min-h-0 w-[332px] shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar p-3.5 xl:flex">
         <TaskQueueRail
           waiting={floor.queues?.waiting ?? 0}
           lanes={floor.queues?.lanes ?? []}
           agentsByName={agentByName}
           onResume={(name) => void floor.setEnabled(name, true)}
+          onInspectLane={() => setInspectHunter(true)}
         />
       </aside>
+      <HuntQueueInspector
+        open={inspectHunter}
+        onOpenChange={setInspectHunter}
+        onChanged={() => void floor.reload()}
+      />
     </div>
   )
 }

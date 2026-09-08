@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from agent_crm.agent_control import activate_queue_review
@@ -42,6 +43,15 @@ class HuntStore:
     """Persist queue state and discovered resources."""
 
     ACTOR = "outbound_hunter"
+    TOSSABLE_STATUSES = frozenset(
+        {
+            HuntQueryStatus.PENDING,
+            HuntQueryStatus.PENDING_REVIEW,
+            HuntQueryStatus.FAILED,
+        }
+    )
+    REJECT_MATCHING_CAP = 5000
+    REJECT_IDS_CAP = 500
 
     def set_heartbeat(
         self,
@@ -204,22 +214,123 @@ class HuntStore:
                 return None
             return (row.id, row.brand, row.query, row.origin)
 
-    def mark_query_kept(self, query_id: int) -> None:
+    def get_query(self, query_id: int) -> HuntQuery | None:
         with session_scope() as session:
-            row = session.get(HuntQuery, query_id)
-            if row is None or row.status != HuntQueryStatus.PENDING_REVIEW:
-                return
-            row.status = HuntQueryStatus.PENDING
-            row.error_message = None
+            return session.get(HuntQuery, query_id)
 
-    def mark_query_rejected(self, query_id: int, reason: str) -> None:
+    def mark_query_kept(self, query_id: int) -> HuntQuery | None:
         with session_scope() as session:
             row = session.get(HuntQuery, query_id)
             if row is None:
-                return
+                return None
+            if row.status != HuntQueryStatus.PENDING_REVIEW:
+                return row
+            row.status = HuntQueryStatus.PENDING
+            row.error_message = None
+            session.flush()
+            return row
+
+    def mark_query_rejected(self, query_id: int, reason: str) -> HuntQuery | None:
+        with session_scope() as session:
+            row = session.get(HuntQuery, query_id)
+            if row is None:
+                return None
+            if row.status not in self.TOSSABLE_STATUSES:
+                return row
             row.status = HuntQueryStatus.REJECTED
-            row.error_message = reason[:2000]
+            row.error_message = (reason or "operator toss")[:2000]
             row.completed_at = datetime.now(UTC)
+            session.flush()
+            return row
+
+    def retry_query(self, query_id: int) -> HuntQuery | None:
+        """Re-queue a failed hunt term. Returns the row, or None if missing."""
+        with session_scope() as session:
+            row = session.get(HuntQuery, query_id)
+            if row is None:
+                return None
+            if row.status != HuntQueryStatus.FAILED:
+                return row
+            row.status = (
+                HuntQueryStatus.PENDING_REVIEW
+                if origin_needs_review(row.origin)
+                else HuntQueryStatus.PENDING
+            )
+            row.error_message = None
+            row.completed_at = None
+            session.flush()
+            return row
+
+    def reject_queries(self, query_ids: Sequence[int], reason: str = "operator toss") -> int:
+        """Toss pending/review/failed rows by id. Skips running and completed."""
+        ids = list(dict.fromkeys(int(item) for item in query_ids))[: self.REJECT_IDS_CAP]
+        if not ids:
+            return 0
+        rejected = 0
+        note = (reason or "operator toss")[:2000]
+        now = datetime.now(UTC)
+        with session_scope() as session:
+            rows = list(session.scalars(select(HuntQuery).where(HuntQuery.id.in_(ids))))
+            for row in rows:
+                if row.status not in self.TOSSABLE_STATUSES:
+                    continue
+                row.status = HuntQueryStatus.REJECTED
+                row.error_message = note
+                row.completed_at = now
+                rejected += 1
+        return rejected
+
+    def reject_matching(
+        self,
+        *,
+        status: HuntQueryStatus,
+        brand: Brand | None = None,
+        origin_prefix: str | None = None,
+        q: str | None = None,
+        reason: str = "operator toss",
+    ) -> int:
+        """Toss tossable rows matching inspector filters. Requires a narrowing filter."""
+        if status not in self.TOSSABLE_STATUSES:
+            return 0
+        if brand is None and not (origin_prefix or "").strip() and not (q or "").strip():
+            raise ValueError("reject-matching requires brand, origin_prefix, or q")
+        note = (reason or "operator toss")[:2000]
+        now = datetime.now(UTC)
+        rejected = 0
+        with session_scope() as session:
+            stmt = (
+                select(HuntQuery)
+                .where(*self._query_filters(brand=brand, origin_prefix=origin_prefix, status=status, q=q))
+                .order_by(HuntQuery.id.asc())
+                .limit(self.REJECT_MATCHING_CAP)
+            )
+            rows = list(session.scalars(stmt))
+            for row in rows:
+                row.status = HuntQueryStatus.REJECTED
+                row.error_message = note
+                row.completed_at = now
+                rejected += 1
+        return rejected
+
+    def clear_queue(self, *, reason: str = "operator clear") -> int:
+        """Toss every pending, pending_review, and failed hunt query.
+
+        Leaves running and completed rows. Rejected seed terms stay rejected, so
+        the standing loop will not re-enqueue the same dedupe_key.
+        """
+        note = (reason or "operator clear")[:2000]
+        now = datetime.now(UTC)
+        with session_scope() as session:
+            result = session.execute(
+                update(HuntQuery)
+                .where(HuntQuery.status.in_(self.TOSSABLE_STATUSES))
+                .values(
+                    status=HuntQueryStatus.REJECTED,
+                    error_message=note,
+                    completed_at=now,
+                )
+            )
+            return int(result.rowcount or 0)
 
     def reset_stale_running_queries(self, *, stale_minutes: int = 30) -> int:
         """Return stuck RUNNING hunt queries to PENDING (crash recovery).
@@ -352,17 +463,84 @@ class HuntStore:
         brand: Brand | None = None,
         origin_prefix: str | None = None,
         status: HuntQueryStatus | None = None,
+        statuses: Sequence[HuntQueryStatus] | None = None,
+        q: str | None = None,
         limit: int = 200,
+        offset: int = 0,
+        drain_order: bool = False,
     ) -> list[HuntQuery]:
         with session_scope() as session:
-            stmt = select(HuntQuery).order_by(HuntQuery.id.desc()).limit(limit)
-            if brand is not None:
-                stmt = stmt.where(HuntQuery.brand == brand)
-            if origin_prefix is not None:
-                stmt = stmt.where(HuntQuery.origin.startswith(origin_prefix))
-            if status is not None:
-                stmt = stmt.where(HuntQuery.status == status)
+            stmt = select(HuntQuery).where(
+                *self._query_filters(
+                    brand=brand,
+                    origin_prefix=origin_prefix,
+                    status=status,
+                    statuses=statuses,
+                    q=q,
+                )
+            )
+            if drain_order:
+                stmt = stmt.order_by(HuntQuery.priority.desc(), HuntQuery.id.asc())
+            else:
+                stmt = stmt.order_by(HuntQuery.id.desc())
+            if offset:
+                stmt = stmt.offset(offset)
+            stmt = stmt.limit(limit)
             return list(session.scalars(stmt))
+
+    def count_queries(
+        self,
+        *,
+        brand: Brand | None = None,
+        origin_prefix: str | None = None,
+        status: HuntQueryStatus | None = None,
+        statuses: Sequence[HuntQueryStatus] | None = None,
+        q: str | None = None,
+    ) -> int:
+        with session_scope() as session:
+            stmt = (
+                select(func.count())
+                .select_from(HuntQuery)
+                .where(
+                    *self._query_filters(
+                        brand=brand,
+                        origin_prefix=origin_prefix,
+                        status=status,
+                        statuses=statuses,
+                        q=q,
+                    )
+                )
+            )
+            return session.scalar(stmt) or 0
+
+    @staticmethod
+    def _query_filters(
+        *,
+        brand: Brand | None = None,
+        origin_prefix: str | None = None,
+        status: HuntQueryStatus | None = None,
+        statuses: Sequence[HuntQueryStatus] | None = None,
+        q: str | None = None,
+    ) -> list:
+        filters: list = []
+        if brand is not None:
+            filters.append(HuntQuery.brand == brand)
+        if origin_prefix is not None and origin_prefix.strip():
+            filters.append(HuntQuery.origin.startswith(origin_prefix.strip()))
+        if statuses:
+            filters.append(HuntQuery.status.in_(list(statuses)))
+        elif status is not None:
+            filters.append(HuntQuery.status == status)
+        needle = (q or "").strip().lower()
+        if needle:
+            pattern = f"%{needle}%"
+            filters.append(
+                or_(
+                    func.lower(HuntQuery.query).like(pattern),
+                    func.lower(HuntQuery.origin).like(pattern),
+                )
+            )
+        return filters
 
     def list_feedback_queries(
         self,
