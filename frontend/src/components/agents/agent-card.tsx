@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils"
 type AgentCardProps = {
   agent: AgentObserver
   catalog: SkillCatalogItem[]
+  selected?: boolean
+  onSelect?: (name: string, options?: { scroll?: boolean }) => void
   onEnabledChange: (name: string, enabled: boolean) => void
   onAssignSkill: (name: string, skillId: string) => void
   onUnassignSkill: (name: string, skillId: string) => void
@@ -30,6 +32,8 @@ type AgentCardProps = {
 export function AgentCard({
   agent,
   catalog,
+  selected = false,
+  onSelect,
   onEnabledChange,
   onAssignSkill,
   onUnassignSkill,
@@ -41,10 +45,13 @@ export function AgentCard({
 
   return (
     <article
+      aria-selected={selected}
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-3 rounded-[4px] border bg-card p-3.5",
-        tone.border,
+        selected ? "border-primary ring-1 ring-primary/40" : tone.border,
+        onSelect && "cursor-pointer",
       )}
+      onClick={onSelect ? () => onSelect(agent.name) : undefined}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -56,7 +63,13 @@ export function AgentCard({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div
+          className="flex items-center gap-1.5"
+          onClick={(event) => {
+            event.stopPropagation()
+            onSelect?.(agent.name, { scroll: false })
+          }}
+        >
           <AgentSettingsSheet
             agent={agent}
             catalog={catalog}
@@ -109,7 +122,13 @@ export function AgentCard({
         <TokenCol label="RATE" value={formatTokenRate(agent.tokens_per_hour)} />
       </div>
 
-      <div className="mt-auto">
+      <div
+        className="mt-auto"
+        onClick={(event) => {
+          event.stopPropagation()
+          onSelect?.(agent.name, { scroll: false })
+        }}
+      >
         <div className="mb-1.5 flex items-center justify-between">
           <p className="font-mono text-[9px] font-medium tracking-[0.8px] text-muted-foreground">
             SKILLS

@@ -1,3 +1,5 @@
+import type { ProjectChannelName } from "@/lib/api"
+
 export const CHANNEL_ORDER = [
   "research",
   "hunter",
@@ -7,7 +9,7 @@ export const CHANNEL_ORDER = [
   "publish",
 ] as const
 
-export const CHANNEL_LABELS: Record<(typeof CHANNEL_ORDER)[number], string> = {
+export const CHANNEL_LABELS: Record<ProjectChannelName, string> = {
   research: "Research",
   hunter: "Hunter",
   seo: "SEO",
@@ -16,13 +18,26 @@ export const CHANNEL_LABELS: Record<(typeof CHANNEL_ORDER)[number], string> = {
   publish: "Publish",
 }
 
-export const CHANNEL_HINTS: Record<(typeof CHANNEL_ORDER)[number], string> = {
+export const CHANNEL_HINTS: Record<ProjectChannelName, string> = {
   research: "seeds research_queries",
   hunter: "seeds hunt_queries",
   seo: "owned seo targets",
   aeo_geo: "aeo-geo reviews",
   engage: "engagement_queries",
   publish: "publish_jobs",
+}
+
+const AGENT_CHANNELS: Record<string, ProjectChannelName> = {
+  research: "research",
+  outbound_hunter: "hunter",
+  seo: "seo",
+  "aeo-geo": "aeo_geo",
+  engagement: "engage",
+  publisher: "publish",
+}
+
+export function channelForAgent(name: string): ProjectChannelName | null {
+  return AGENT_CHANNELS[name] ?? null
 }
 
 export function statusTone(status: string) {

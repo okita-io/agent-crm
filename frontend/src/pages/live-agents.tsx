@@ -69,8 +69,11 @@ export function LiveAgentsPage() {
   const floor = useFloorContext()
   const projects = useProjects()
   const [inspectHunter, setInspectHunter] = useState(false)
+  const [selectedName, setSelectedName] = useState<string | null>(null)
   const staffed = floor.agents.filter((agent) => !isPlaceholder(agent.name, agent.placeholder))
   const unstaffed = floor.agents.filter((agent) => isPlaceholder(agent.name, agent.placeholder))
+  const selectedAgent =
+    staffed.find((agent) => agent.name === selectedName) ?? staffed[0] ?? null
   const maxSlots = floor.spark?.max_concurrency ?? 4
   const prompt = staffed.reduce((sum, agent) => sum + agent.prompt_tokens, 0)
   const completion = staffed.reduce((sum, agent) => sum + agent.completion_tokens, 0)
@@ -88,6 +91,17 @@ export function LiveAgentsPage() {
       (agent) => isToggleable(agent.name, agent.toggleable) && agent.enabled,
     )
     await Promise.all(targets.map((agent) => floor.setEnabled(agent.name, false)))
+  }
+
+  function selectAgent(name: string, options?: { scroll?: boolean }) {
+    const already = selectedAgent?.name === name
+    setSelectedName(name)
+    if (!already && options?.scroll !== false) {
+      document.getElementById("agent-mission")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+    }
   }
 
   return (
@@ -126,6 +140,21 @@ export function LiveAgentsPage() {
             </p>
           ) : null}
 
+          <AgentMissionStrip
+            projects={projects.projects}
+            selectedAgentName={selectedAgent?.name ?? null}
+            selectedAgentLabel={selectedAgent?.display_name ?? null}
+            onSave={async (slug, payload) => {
+              await projects.saveSettings(slug, payload as {
+                origin_prompt: string
+                channels: Record<
+                  "research" | "hunter" | "seo" | "aeo_geo" | "engage" | "publish",
+                  { armed: boolean; prompt: string }
+                >
+              })
+            }}
+          />
+
           <div className="flex items-center justify-between">
             <span className="font-mono text-[9px] font-medium tracking-[0.8px] text-muted-foreground">
               CONCURRENT SLOTS
@@ -141,19 +170,6 @@ export function LiveAgentsPage() {
               <SparkSlot key={index} index={index} slot={slot} />
             ))}
           </div>
-
-          <AgentMissionStrip
-            projects={projects.projects}
-            onSave={async (slug, payload) => {
-              await projects.saveSettings(slug, payload as {
-                origin_prompt: string
-                channels: Record<
-                  "research" | "hunter" | "seo" | "aeo_geo" | "engage" | "publish",
-                  { armed: boolean; prompt: string }
-                >
-              })
-            }}
-          />
 
           <div className="flex gap-2">
             <LeadChart
@@ -204,6 +220,8 @@ export function LiveAgentsPage() {
                   key={agent.name}
                   agent={agent}
                   catalog={floor.skills}
+                  selected={selectedAgent?.name === agent.name}
+                  onSelect={selectAgent}
                   onEnabledChange={(name, enabled) => void floor.setEnabled(name, enabled)}
                   onAssignSkill={(name, skillId) => void floor.assignSkill(name, skillId)}
                   onUnassignSkill={(name, skillId) => void floor.unassignSkill(name, skillId)}
