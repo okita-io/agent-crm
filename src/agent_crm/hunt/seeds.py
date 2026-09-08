@@ -82,20 +82,6 @@ SEED_PACKS: dict[str, list[str]] = {
         "reddit.com/r/Advancedastrology",
         "reddit.com/r/witchcraft",
     ],
-    Brand.HEYBUDDY.value: [
-        "ai companion app communities",
-        "virtual friend discord servers",
-        "ai chatbot user forums",
-        "loneliness support community lists",
-        "ai girlfriend reddit communities",
-        "ai companion tiktok influencers",
-        "people who watch ai generated character content",
-        "ai roleplay discord communities",
-        "influencers promoting ai girlfriend apps",
-        "most active loneliness support forums high traffic",
-        "high engagement mental wellness reddit communities",
-        "busiest veteran peer support forums",
-    ],
     Brand.BEST_BIRYANI.value: [
         "best biryani Silicon Valley restaurant reviews",
         "Bay Area biryani food blogs",
@@ -105,9 +91,45 @@ SEED_PACKS: dict[str, list[str]] = {
     ],
 }
 
+# HeyBuddy: grant-awarded loneliness/veteran/elder/caregiver partners first.
 # tactic.studio: grant-awarded museum/campus/cultural institution contacts first;
 # XR creators covering immersive cultural work second.
 SEED_PACKS_BY_AUDIENCE: dict[str, dict[str, list[str]]] = {
+    Brand.HEYBUDDY.value: {
+        ContactAudience.MARKETING.value: [
+            "SAMHSA loneliness social isolation grant awardee leadership",
+            "ACL elder isolation grant award recipient contact",
+            "VA veteran mental health grant awardee program director",
+            "Grants.gov social isolation community grant recipient",
+            "USASpending veteran peer support grant awardee",
+            "HHS caregiver support grant award contact",
+            "Administration for Community Living senior isolation grant",
+            "HRSA rural mental health grant awardee leadership",
+            "Older Americans Act Title III grant recipient aging agency",
+            "state aging agency social isolation grant award contact",
+            "youth digital wellbeing SAMHSA grant recipient leadership",
+            "501c3 federal grant loneliness program director",
+            "Area Agency on Aging grant award partnership contact",
+            "CDC social connectedness grant awardee leadership",
+        ],
+        ContactAudience.INFLUENCER.value: [
+            "veteran mental health grant program advocate channel",
+            "loneliness epidemic federal grant researcher speaker",
+            "caregiver support grant funded program creator",
+            "elder isolation ACL grant project documentary",
+            "youth digital wellbeing SAMHSA grant showcase creator",
+        ],
+        ContactAudience.USER.value: [
+            "reddit loneliness grant funded community programs",
+            "veteran peer support grant recipient community forum",
+            "caregiver support grant program community",
+            "elder isolation Area Agency on Aging community",
+            "social isolation SAMHSA grant community forum",
+            "most active veteran peer support forums high traffic",
+            "high engagement loneliness support reddit communities",
+            "busiest caregiver support forums high traffic",
+        ],
+    },
     Brand.TACTIC_STUDIO.value: {
         ContactAudience.MARKETING.value: [
             "IMLS museum interactive exhibit grant awardee leadership team",

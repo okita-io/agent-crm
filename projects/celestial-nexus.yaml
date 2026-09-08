@@ -1,7 +1,7 @@
 slug: celestial-nexus
 name: Divination Nexus
 status: renamed
-enabled: true
+enabled: false
 site: https://divinationnexus.com
 alias: celestial-nexus.app
 context_file: brand-context.celestial-nexus.md

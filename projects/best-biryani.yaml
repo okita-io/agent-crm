@@ -1,7 +1,7 @@
 slug: best-biryani
 name: Best Biryani
 status: live
-enabled: true
+enabled: false
 site: https://bestbiryanisiliconvalley.com
 alias: null
 context_file: null

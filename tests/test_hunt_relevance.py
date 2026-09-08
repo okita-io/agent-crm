@@ -81,16 +81,31 @@ def test_horoscope_page_accepted_for_celestial_nexus() -> None:
     assert result.verdict == TopicalRelevanceVerdict.ON_TOPIC
 
 
-def test_mens_interest_page_accepted_for_heybuddy() -> None:
+def test_grant_awardee_page_accepted_for_heybuddy() -> None:
+    result = assess_topical_relevance(
+        brand=Brand.HEYBUDDY,
+        url="https://aging.example/grants/acl-elder-isolation-award",
+        title="ACL Grant Award — Elder Isolation Program at County Aging Agency",
+        snippet=(
+            "federal grant recipient for loneliness and social isolation "
+            "caregiver support at an Area Agency on Aging"
+        ),
+        query="ACL elder isolation grant award recipient contact",
+        allow_spark=False,
+    )
+    assert result.verdict == TopicalRelevanceVerdict.ON_TOPIC
+
+
+def test_mens_lifestyle_page_rejected_for_heybuddy() -> None:
     result = assess_topical_relevance(
         brand=Brand.HEYBUDDY,
         url="https://forum.example/mens-hobbies-and-lifestyle",
         title="Men's Interests Forum",
-        snippet="discussion of men's hobbies, fitness, and lifestyle for guys",
+        snippet="discussion of men's hobbies, fitness, gear, and dating for guys",
         query="men's interests community",
         allow_spark=False,
     )
-    assert result.verdict == TopicalRelevanceVerdict.ON_TOPIC
+    assert result.verdict == TopicalRelevanceVerdict.UNCERTAIN
 
 
 def test_query_cannot_mark_denied_host_on_topic() -> None:

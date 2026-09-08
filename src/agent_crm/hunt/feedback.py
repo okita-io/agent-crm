@@ -169,6 +169,7 @@ def person_search_terms(
     *,
     max_terms: int = 4,
     audience: ContactAudience | None = None,
+    brand: Brand | None = None,
 ) -> list[str]:
     """Build brand-scoped person discovery queries (never raw emails)."""
     clean = re.sub(r"\s+", " ", name.strip())
@@ -176,12 +177,20 @@ def person_search_terms(
         return []
     quoted = f'"{clean}"'
     if audience == ContactAudience.MARKETING:
-        templates = [
-            f"{quoted} VP of marketing",
-            f"{quoted} brand manager",
-            f"{quoted} marketing director retail",
-            f"{quoted} food and beverage company",
-        ]
+        if brand == Brand.HEYBUDDY:
+            templates = [
+                f"{quoted} program director",
+                f"{quoted} grants manager",
+                f"{quoted} partnership director",
+                f"{quoted} veteran services",
+            ]
+        else:
+            templates = [
+                f"{quoted} VP of marketing",
+                f"{quoted} brand manager",
+                f"{quoted} marketing director retail",
+                f"{quoted} food and beverage company",
+            ]
     else:
         templates = [
             f"{quoted} reddit",
@@ -364,7 +373,7 @@ def enqueue_person_terms(
 
     origin = origin_with_audience(f"person:{_origin_slug(name)}", audience)
     enqueued = 0
-    for term in person_search_terms(name, audience=audience):
+    for term in person_search_terms(name, audience=audience, brand=brand):
         if budget.person_terms_remaining <= 0:
             break
         if "@" in term:

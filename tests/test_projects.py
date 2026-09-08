@@ -153,8 +153,9 @@ def test_project_prompt_for_includes_origin(projects_tmpdir: Path) -> None:
         encoding="utf-8",
     )
     clear_channel_cache()
-    text = project_prompt_for(Brand.HEYBUDDY, "research", max_chars=2000)
-    assert "HeyBuddy" in text or "loneliness" in text.lower()
+    text = project_prompt_for(Brand.HEYBUDDY, "hunter", max_chars=2000)
+    assert "grant" in text.lower()
+    assert "samhsa" in text.lower() or "loneliness" in text.lower()
 
 
 def test_fail_open_without_projects_dir(tmp_path, monkeypatch) -> None:

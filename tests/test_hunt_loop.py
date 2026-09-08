@@ -10,7 +10,7 @@ import pytest
 from agent_crm.config import get_settings
 from agent_crm.db import init_db, reset_engine
 from agent_crm.enums import Brand, ContactAudience, HuntResourceKind, TopicalRelevanceVerdict
-from agent_crm.hunt.loop import HuntBudget, _llm_branch_terms, run_hunt_loop, run_hunt_loop_watch
+from agent_crm.hunt.loop import HuntBudget, _llm_branch_terms, param_palettes_for_brand, run_hunt_loop, run_hunt_loop_watch
 from agent_crm.hunt.store import HuntStore
 from agent_crm.searxng_client import SearchResult
 
@@ -532,6 +532,55 @@ channels:
     assert "10 million" in prompt
 
 
+def test_heybuddy_branch_prompt_uses_grant_mission(tmp_path, monkeypatch) -> None:
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+    (projects_dir / "heybuddy.yaml").write_text(
+        """
+slug: heybuddy
+name: HeyBuddy
+status: pre_launch
+enabled: true
+origin_prompt: |
+  Partnership hunts US government grant awardees in loneliness and veteran care.
+channels:
+  hunter:
+    armed: true
+    prompt: |
+      SAMHSA, ACL, VA grant award pages and program directors. Not men's lifestyle.
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CRM_PROJECTS_DIR", str(projects_dir))
+    get_settings.cache_clear()
+    from agent_crm.projects.channel_flags import clear_channel_cache
+
+    clear_channel_cache()
+
+    with patch("agent_crm.hunt.loop.chat_completions") as mock_llm:
+        mock_llm.return_value = {
+            "choices": [{"message": {"content": '{"terms": []}'}}]
+        }
+        _llm_branch_terms(
+            "SAMHSA loneliness grant",
+            [
+                {
+                    "title": "Award recipients",
+                    "url": "https://aging.example/grants",
+                    "content": "elder isolation program",
+                }
+            ],
+            max_terms=3,
+            brand=Brand.HEYBUDDY,
+            audience=ContactAudience.MARKETING,
+        )
+    prompt = mock_llm.call_args[0][0]["messages"][1]["content"].lower()
+    assert "mission focus" in prompt
+    assert "samhsa" in prompt and "grant" in prompt
+    assert "loneliness" in prompt
+    assert "men's lifestyle" in prompt
+
+
 def test_unassigned_loop_seeds_all_brands_when_queue_empty(loop_db) -> None:
     from agent_crm.hunt.seeds import HUNT_LOOP_BRANDS
 
@@ -628,4 +677,15 @@ def test_hunt_loop_watch_continues_when_backlog_remains(loop_db, monkeypatch) ->
         )
     assert runs["n"] == 2
     assert sleeps and sleeps[0] == 1.0
+
+
+def test_heybuddy_param_palettes_include_news_for_grant_awards() -> None:
+    from agent_crm.hunt.loop import CONSUMER_PARAM_PALETTES, PARAM_PALETTES
+
+    assert param_palettes_for_brand(Brand.HEYBUDDY) == PARAM_PALETTES
+    assert param_palettes_for_brand(Brand.MIDNIGHTSATIN) == CONSUMER_PARAM_PALETTES
+    assert any(
+        isinstance(palette, dict) and palette.get("categories") == "news"
+        for palette in param_palettes_for_brand(Brand.HEYBUDDY)
+    )
 

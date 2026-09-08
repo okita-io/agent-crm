@@ -86,6 +86,30 @@ def test_assess_search_query_tosses_noise_and_keeps_romance() -> None:
     assert seed_news.keep is False
 
 
+def test_assess_search_query_keeps_heybuddy_grant_branch() -> None:
+    kept = assess_search_query(
+        brand=Brand.HEYBUDDY,
+        query="SAMHSA loneliness social isolation grant awardee leadership",
+        origin="branch:seed",
+        allow_spark=False,
+    )
+    assert kept.keep is True
+    tossed = assess_search_query(
+        brand=Brand.HEYBUDDY,
+        query="men's fitness gear discord community",
+        origin="branch:seed",
+        allow_spark=False,
+    )
+    assert tossed.keep is False
+    elder = assess_search_query(
+        brand=Brand.HEYBUDDY,
+        query="elder isolation grant funded community forum",
+        origin="branch:seed",
+        allow_spark=False,
+    )
+    assert elder.keep is True
+
+
 def test_enqueue_branch_waits_for_review(review_db) -> None:
     store = HuntStore()
     assert store.enqueue_query(

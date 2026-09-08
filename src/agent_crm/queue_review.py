@@ -84,7 +84,7 @@ _GENERIC_DISCOVERY_TOKENS: tuple[str, ...] = (
 )
 
 # News/commodity queries that are off-topic for every CRM brand (romance,
-# astrology, companion wellness, retail/F&B marketing + WebAR).
+# astrology, loneliness/veteran grant partners, cultural-institution grants).
 _OFF_TOPIC_NEWS_RE = re.compile(
     r"\b("
     r"egg recalls?|"
@@ -111,7 +111,18 @@ _VERTICAL_HOST_HINTS: dict[Brand, frozenset[str]] = {
         {"r/astrology", "horoscope", "natal chart", "tarot", "witchtok"}
     ),
     Brand.HEYBUDDY: frozenset(
-        {"loneliness", "veteran", "companion", "wellness", "caregiver"}
+        {
+            "loneliness",
+            "veteran",
+            "caregiver",
+            "samhsa",
+            "grants.gov",
+            "usaspending",
+            "social isolation",
+            "elder isolation",
+            "grant awardee",
+            "501c3",
+        }
     ),
     Brand.TACTIC_STUDIO: frozenset(
         {"webar", "webxr", "augmented reality", "vp of marketing", "brand manager"}

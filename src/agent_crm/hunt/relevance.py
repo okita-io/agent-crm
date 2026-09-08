@@ -105,8 +105,11 @@ BRAND_TOPIC_SUMMARIES: dict[Brand, str] = {
         "spiritual astrology communities"
     ),
     Brand.HEYBUDDY: (
-        "men's interests: hobbies, lifestyle, fitness, gear, dating, "
-        "male-oriented communities and creators"
+        "US government grant awardees in loneliness, social isolation, veteran "
+        "mental health, elder care, caregiver support, and youth digital wellbeing: "
+        "SAMHSA, ACL, VA, HHS, Grants.gov, USASpending, state aging and "
+        "behavioral-health agencies. Partnership contacts at awarded nonprofits "
+        "and public agencies — HeyBuddy itself is not a nonprofit"
     ),
     Brand.TACTIC_STUDIO: (
         "US government grant awardees for interactive museum, campus, library, "
@@ -143,15 +146,35 @@ BRAND_ON_TOPIC_KEYWORDS: dict[Brand, tuple[str, ...]] = {
         "spiritual astrology",
     ),
     Brand.HEYBUDDY: (
-        "men's",
-        "mens",
-        "male",
-        "guys",
-        "brotherhood",
-        "masculinity",
-        "men interest",
-        "men's lifestyle",
-        "men's hobbies",
+        "samhsa",
+        "grants.gov",
+        "usaspending",
+        "loneliness grant",
+        "social isolation grant",
+        "veteran grant",
+        "veterans grant",
+        "elder isolation",
+        "caregiver grant",
+        "caregiver support",
+        "mental health grant",
+        "peer support grant",
+        "grant awardee",
+        "grant recipient",
+        "federal grant",
+        "501c3 grant",
+        "area agency on aging",
+        "older americans act",
+        "administration for community living",
+        "va grant",
+        "hrsa",
+        "loneliness",
+        "social isolation",
+        "veteran peer",
+        "veteran mental",
+        "elder care",
+        "youth digital wellbeing",
+        "aging grant",
+        "behavioral health grant",
     ),
     Brand.TACTIC_STUDIO: (
         "imls",

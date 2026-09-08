@@ -15,6 +15,7 @@ _PRIORITY_TABLE: dict[tuple[Brand, ContactAudience | None], int] = {
     (Brand.MIDNIGHTSATIN, ContactAudience.USER): 65,
     (Brand.CELESTIAL_NEXUS, ContactAudience.INFLUENCER): 60,
     (Brand.CELESTIAL_NEXUS, ContactAudience.USER): 55,
+    (Brand.HEYBUDDY, ContactAudience.MARKETING): 75,
     (Brand.HEYBUDDY, ContactAudience.INFLUENCER): 50,
     (Brand.HEYBUDDY, ContactAudience.USER): 45,
 }

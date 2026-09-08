@@ -14,6 +14,20 @@ def test_midnightsatin_seed_pack_includes_ai_generated_and_influencer_terms() ->
     assert "high traffic" in combined or "high engagement" in combined
 
 
+def test_heybuddy_seed_pack_is_grant_focused() -> None:
+    seeds = seeds_for_brand(Brand.HEYBUDDY)
+    combined = " ".join(seeds).lower()
+    assert "samhsa" in combined
+    assert "grants.gov" in combined
+    assert "usaspending" in combined
+    assert "loneliness" in combined
+    assert "veteran" in combined
+    assert "acl" in combined or "administration for community living" in combined
+    assert "men's hobbies" not in combined
+    origins = {origin for brand, _query, origin in loop_seed_entries() if brand == Brand.HEYBUDDY}
+    assert any(origin.startswith("marketing:") for origin in origins)
+
+
 def test_tactic_studio_seed_pack_non_empty() -> None:
     seeds = seeds_for_brand(Brand.TACTIC_STUDIO)
     assert len(seeds) >= 20

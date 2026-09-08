@@ -31,6 +31,7 @@ def test_hunt_query_priority_ordering() -> None:
     assert hunt_query_priority(Brand.MIDNIGHTSATIN, ContactAudience.INFLUENCER) == 70
     assert hunt_query_priority(Brand.MIDNIGHTSATIN, ContactAudience.USER) == 65
     assert hunt_query_priority(Brand.MIDNIGHTSATIN, None) == 30
+    assert hunt_query_priority(Brand.HEYBUDDY, ContactAudience.MARKETING) == 75
 
 
 def test_tactic_marketing_dequeues_before_older_midnightsatin(db_url) -> None:

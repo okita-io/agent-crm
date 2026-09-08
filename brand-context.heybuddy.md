@@ -10,7 +10,7 @@
 
 ## Audience
 
-**Who buys/uses it:** Adults experiencing loneliness, caregivers, veterans, elders seeking connection, youth navigating digital wellbeing — often discovered through wellness communities and nonprofit-adjacent channels.
+**Who buys/uses it:** Adults experiencing loneliness, caregivers, veterans, elders seeking connection, youth navigating digital wellbeing — often discovered through wellness communities and grant-funded nonprofit/public-agency programs.
 
 **What they believe before they arrive:** They want someone to talk to without judgment; they may be wary of "AI replacing humans" or exploitative wellness apps.
 
@@ -24,7 +24,7 @@
 
 **Category:** AI companion for loneliness / mental wellness (not clinical telehealth).
 
-**Partnership focus:** Research hunts **nonprofit partners** (501(c)(3) orgs in loneliness, elder care, veterans, youth digital wellbeing). HeyBuddy itself remains a for-profit product seeking mission-aligned partnerships — not a nonprofit.
+**Partnership focus:** Research and hunter loops hunt **US government grant awardees** (SAMHSA, ACL, VA, HHS, Grants.gov, USASpending, state aging and behavioral-health agencies) in loneliness, social isolation, veteran mental health, elder care, caregiver support, and youth digital wellbeing. HeyBuddy itself remains a for-profit product seeking mission-aligned partnerships — not a nonprofit.
 
 **Named competitors:** Replika, Character.ai, Pi, other AI companion apps.
 
@@ -48,7 +48,7 @@ Claims needing legal sign-off: mental health outcomes, HIPAA-adjacent claims, cr
 
 ## Constraints
 
-- **Never claim HeyBuddy is a nonprofit.** Partnership research targets external 501(c)(3) orgs only.
+- **Never claim HeyBuddy is a nonprofit.** Partnership research targets grant-awarded external 501(c)(3) orgs and public agencies only.
 - Never invent EINs — only include EIN if verbatim in source text.
 - No outbound email/DM from this stack.
 - Ad placement research is discovery-only.

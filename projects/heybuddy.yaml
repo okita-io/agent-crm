@@ -9,19 +9,30 @@ origin_prompt: |
   HeyBuddy is an AI companion for loneliness and mental wellness.
   Offer conversational companionship and check-ins. It is not licensed
   therapy, crisis intervention, or a 501(c)(3). Never claim nonprofit status.
-  Partnership research targets external 501(c)(3) orgs in loneliness, elder
-  care, veterans, and youth digital wellbeing.
+  Partnership research hunts US government grant AWARDEES (SAMHSA, ACL, VA,
+  HHS, Grants.gov, USASpending, state aging and behavioral-health agencies)
+  in loneliness, social isolation, veteran mental health, elder care,
+  caregiver support, and youth digital wellbeing. Hunt awarded nonprofits
+  and public agencies — not generic lifestyle lists.
 channels:
   research:
     armed: true
     prompt: |
-      Default kind: nonprofit. Hunt 501(c)(3) partners in loneliness, elder
-      care, veterans, and youth digital wellbeing. Ad-placement is discovery
-      only. Never invent EINs. Never claim HeyBuddy is a nonprofit.
+      Default kind: nonprofit. Focus: institutions awarded US gov grants for
+      loneliness, social isolation, veteran mental health, elder/caregiver
+      support, and youth digital wellbeing. Scrape Grants.gov, USASpending,
+      SAMHSA, ACL, VA, and state aging/behavioral-health award pages. Extract
+      recipient org, grant title, award amount, and named program leads.
+      Ad-placement is discovery only. Never invent EINs. Never claim
+      HeyBuddy is a nonprofit.
   hunter:
     armed: true
     prompt: |
-      Catalog loneliness, veteran, elder, and caregiver communities.
+      Priority: program, partnership, outreach, and grants-management contacts
+      at grant-awarded nonprofits and public agencies (SAMHSA, ACL, VA, HHS,
+      state aging/behavioral-health). Hunt award pages, leadership directories,
+      and USASpending/Grants.gov recipient records. Secondary: loneliness,
+      veteran, elder, and caregiver communities around those programs.
       Do not invent person names or emails. No outbound send from this stack.
   seo:
     armed: false
@@ -34,11 +45,12 @@ channels:
       Document extractable answers and GEO citation readiness.
       Never invent citation counts. Skipped until HeyBuddy has quotable owned pages.
   engage:
-    armed: true
+    armed: false
     prompt: |
-      Rescan catalogued venues. Draft helpful-first replies.
-      Voice: warm, present, non-clinical. Never position HeyBuddy as therapy,
-      a crisis hotline, or a cure.
+      Rescan venues around grant-funded loneliness, veteran, elder, and
+      caregiver programs. Draft helpful-first replies. Voice: warm, present,
+      non-clinical. Never position HeyBuddy as therapy, a crisis hotline,
+      or a cure.
   publish:
     armed: false
     prompt: |

@@ -469,7 +469,7 @@ def _fallback_summary(
     if kind == ResearchFindingKind.COMPETITOR:
         prefix = f"Competitor site vs {brand_label}: "
     elif kind == ResearchFindingKind.NONPROFIT:
-        prefix = "Potential nonprofit / 501(c)(3) partner for HeyBuddy: "
+        prefix = "Potential grant-awarded partner for HeyBuddy: "
     elif kind == ResearchFindingKind.AD_PLACEMENT:
         prefix = f"Ad placement opportunity for {brand_label}: "
     elif kind == ResearchFindingKind.TARGET_COMPANY:
@@ -520,9 +520,11 @@ def _maybe_summarize(
         max_tokens = 320
     elif kind == ResearchFindingKind.NONPROFIT:
         system = (
-            "You analyze US nonprofits and 501(c)(3)-adjacent organizations for partnership "
-            "prospecting with an AI companion app (HeyBuddy). Focus on mission overlap: "
-            "loneliness, mental wellness, elder companionship, veterans, youth digital wellbeing. "
+            "You analyze US nonprofits, public agencies, and 501(c)(3)-adjacent organizations "
+            "for partnership prospecting with an AI companion app (HeyBuddy). Prefer "
+            "US government grant AWARDEES (SAMHSA, ACL, VA, HHS, Grants.gov, USASpending, "
+            "state aging/behavioral-health). Mission overlap: loneliness, social isolation, "
+            "elder companionship, veterans, caregiver support, youth digital wellbeing. "
             "Only include ein if it appears verbatim in the source text; never invent tax status."
             + UNTRUSTED_DATA_SYSTEM_SUFFIX
         )

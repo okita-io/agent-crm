@@ -64,8 +64,10 @@ PARAM_PALETTES: list[dict | None] = [
     {"categories": "it"},
 ]
 
+# MidnightSatin / Celestial-Nexus skip IT/news aggregators.
+# HeyBuddy and tactic.studio keep news so grant-award announcements surface.
 _CONSUMER_BRANDS = frozenset(
-    {Brand.MIDNIGHTSATIN, Brand.CELESTIAL_NEXUS, Brand.HEYBUDDY}
+    {Brand.MIDNIGHTSATIN, Brand.CELESTIAL_NEXUS}
 )
 
 

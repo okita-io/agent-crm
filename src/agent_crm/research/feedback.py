@@ -61,6 +61,14 @@ BRAND_TOPIC_HINTS: dict[Brand, tuple[str, ...]] = {
         "social isolation",
         "ai companion",
         "elder isolation",
+        "samhsa",
+        "grants.gov",
+        "usaspending",
+        "grant awardee",
+        "older americans act",
+        "area agency on aging",
+        "administration for community living",
+        "va grant",
     ),
     Brand.TACTIC_STUDIO: (
         "imls",
@@ -91,7 +99,7 @@ BRAND_TOPIC_HINTS: dict[Brand, tuple[str, ...]] = {
 }
 
 _TITLE_KEEP = re.compile(
-    r"\b(app|studio|agency|nonprofit|501|forum|newsletter|community|"
+    r"\b(app|studio|agency|nonprofit|501|grant|samhsa|forum|newsletter|community|"
     r"discord|reddit|podcast|visualization|training|divination|romance|"
     r"grocery|supermarket|retail|beverage|restaurant)\b",
     re.IGNORECASE,
@@ -131,7 +139,7 @@ def follow_up_suffix(brand: Brand, kind: ResearchFindingKind) -> str:
     if brand == Brand.MIDNIGHTSATIN:
         return "romance app"
     if brand == Brand.HEYBUDDY:
-        return "companionship nonprofit"
+        return "grant awardee nonprofit"
     return "research"
 
 
