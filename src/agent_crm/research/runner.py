@@ -473,7 +473,7 @@ def _fallback_summary(
     elif kind == ResearchFindingKind.AD_PLACEMENT:
         prefix = f"Ad placement opportunity for {brand_label}: "
     elif kind == ResearchFindingKind.TARGET_COMPANY:
-        prefix = f"Retail / F&B target company for {brand_label}: "
+        prefix = f"Grant-funded institution target for {brand_label}: "
     else:
         prefix = "Research finding: "
     parts = [prefix + title]
@@ -554,11 +554,12 @@ def _maybe_summarize(
         max_tokens = 320
     elif kind == ResearchFindingKind.TARGET_COMPANY:
         system = (
-            "You extract named retail, grocery, food & beverage, CPG, restaurant, "
-            "and convenience-store companies as CRM hunt targets. "
-            "Prefer companies that appear to do more than $10 million in annual revenue. "
-            "Never invent company names that are not in the source. "
-            "Skip agencies, XR studios, software vendors, and listicle publishers."
+            "You extract named museums, universities, libraries, science centers, "
+            "and cultural institutions awarded US federal, state, or local grants "
+            "for interactive exhibits, immersive media, AR/XR, digital storytelling, "
+            "or campus experience projects. Prefer grant award pages and institution "
+            "sites over agencies and software vendors. "
+            "Never invent institution names that are not in the source."
             + UNTRUSTED_DATA_SYSTEM_SUFFIX
         )
         if brand_context:
@@ -567,8 +568,8 @@ def _maybe_summarize(
             f"Target brand: {brand_label}\n"
             f"{page_block}\n\n"
             "Return JSON: "
-            '{"summary":"...","companies":[{"name":"Kroger","sector":"grocery",'
-            '"revenue_hint":"$150B or unknown","why_target":"large US grocer"}]}. '
+            '{"summary":"...","companies":[{"name":"Smithsonian","sector":"museum",'
+            '"revenue_hint":"$500k NEA grant or unknown","why_target":"interactive exhibit grant awardee"}]}. '
             "Include up to 25 companies. If the page is a single company site, "
             "return one company."
         )

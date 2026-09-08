@@ -25,10 +25,14 @@ def hunt_loop_brands() -> tuple[Brand, ...]:
 
 def loop_seed_entries() -> list[tuple[Brand, str, str]]:
     """Flatten seed packs the standing hunt-loop should enqueue (append-only)."""
+    from agent_crm.projects.mission import supplemental_seed_queries
+
     entries: list[tuple[Brand, str, str]] = []
     for brand in hunt_loop_brands():
         for query, origin in seed_query_entries(brand):
             entries.append((brand, query, origin))
+        for query in supplemental_seed_queries(brand, "hunter"):
+            entries.append((brand, query, "prompt_seed:hunter"))
     return entries
 
 SEED_PACKS: dict[str, list[str]] = {
@@ -101,51 +105,50 @@ SEED_PACKS: dict[str, list[str]] = {
     ],
 }
 
-# tactic.studio: retail/F&B marketing leadership first ($10M+ revenue);
-# influencers and XR communities second.
+# tactic.studio: grant-awarded museum/campus/cultural institution contacts first;
+# XR creators covering immersive cultural work second.
 SEED_PACKS_BY_AUDIENCE: dict[str, dict[str, list[str]]] = {
     Brand.TACTIC_STUDIO.value: {
         ContactAudience.MARKETING.value: [
-            "VP of marketing grocery retail leadership team",
-            "vice president marketing food and beverage company",
-            "brand manager CPG beverage about team",
-            "marketing director supermarket chain leadership",
-            "VP brand management retail company over $10 million revenue",
-            "head of marketing restaurant group leadership",
-            "marketing manager food company $10 million annual revenue",
-            "brand marketing VP consumer packaged goods",
-            "director of marketing QSR restaurant chain",
-            "food and beverage company marketing leadership directory",
-            "large retail VP marketing press contact",
-            "grocery chain marketing vice president bio",
-            "beverage brand head of marketing team page",
-            "convenience store chain VP of marketing",
+            "IMLS museum interactive exhibit grant awardee leadership team",
+            "NEH digital humanities grant university museum contact",
+            "NEA arts grant immersive exhibit recipient institution",
+            "museum director of exhibits digital media team page",
+            "university immersive media center grant project lead",
+            "library digital experience grant award contact marketing",
+            "campus AR XR immersive project grant recipient leadership",
+            "Grants.gov museum interactive exhibit award recipient",
+            "USASpending museum immersive digital media grant awardee",
+            "state arts council interactive exhibit grant museum recipient",
+            "cultural institution digital storytelling grant award contact",
+            "museum experience production director team page",
+            "university museum marketing exhibits digital media contact",
+            "science center immersive exhibit grant awardee leadership",
         ],
         ContactAudience.INFLUENCER.value: [
-            "AR glasses reviewer YouTube TikTok",
-            "WebAR creator influencer TikTok channel",
-            "Snap AR lens creator YouTuber review",
-            "industrial XR training reviewer channel",
-            "Meta Ray-Ban smart glasses reviewer",
-            "Snap Spectacles creator influencer",
-            "VR AR headset influencer TikTok",
-            "augmented reality tech reviewer YouTube",
-            "XR mixed reality content creator channel",
-            "WebXR demo creator social media",
+            "museum AR exhibit creator YouTube channel",
+            "campus immersive media project documentary creator",
+            "cultural institution digital experience case study creator",
+            "WebAR museum exhibit reviewer YouTube",
+            "immersive storytelling museum installation creator TikTok",
+            "university XR lab project showcase creator",
+            "interactive exhibit design influencer channel",
+            "museum technology digital media creator blog",
+            "NEA grant immersive arts project showcase creator",
+            "campus digital twin immersive experience creator",
         ],
         ContactAudience.USER.value: [
-            "reddit augmented reality glasses community",
-            "discord WebAR developers server",
-            "reddit virtual reality industrial training",
-            "lemmy AR glasses discussion forum",
-            "Meta Ray-Ban smart glasses reddit",
-            "Snap Spectacles users community forum",
-            "Android XR developers discord server",
-            "WebXR community forum discussion",
-            "AR VR training reddit manufacturing",
-            "mixed reality enthusiasts discord community",
-            "most active WebXR forums high traffic",
-            "high engagement industrial AR reddit communities",
+            "reddit museum technology interactive exhibits community",
+            "discord museum digital media professionals server",
+            "reddit university immersive media XR projects",
+            "museum exhibit design professionals forum",
+            "campus experience design immersive media community",
+            "library digital experience makers forum",
+            "cultural heritage AR XR practitioners community",
+            "interactive museum exhibit professionals linkedin group",
+            "immersive storytelling cultural institutions forum",
+            "most active museum technology forums high traffic",
+            "high engagement campus XR immersive media reddit",
         ],
     },
 }

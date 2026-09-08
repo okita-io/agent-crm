@@ -1,4 +1,5 @@
 import { AgentCard } from "@/components/agents/agent-card"
+import { AgentMissionStrip } from "@/components/agents/agent-mission-strip"
 import { LeadChart } from "@/components/agents/lead-chart"
 import { SparkSlot, type SparkSlotModel } from "@/components/agents/spark-slot"
 import { TaskQueueRail } from "@/components/agents/task-queue"
@@ -9,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import type { AgentObserver, CatalogGrowth, SparkSummary } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useFloorContext } from "@/hooks/floor-context"
+import { useProjects } from "@/hooks/use-projects"
 import { isPlaceholder, isToggleable } from "@/lib/roster"
 
 function sparkSlots(spark: SparkSummary | null, agents: AgentObserver[]): SparkSlotModel[] {
@@ -62,6 +64,7 @@ function growthDelta(growth: CatalogGrowth | null, metric: string): { text: stri
 
 export function LiveAgentsPage() {
   const floor = useFloorContext()
+  const projects = useProjects()
   const staffed = floor.agents.filter((agent) => !isPlaceholder(agent.name, agent.placeholder))
   const unstaffed = floor.agents.filter((agent) => isPlaceholder(agent.name, agent.placeholder))
   const maxSlots = floor.spark?.max_concurrency ?? 4
@@ -134,6 +137,19 @@ export function LiveAgentsPage() {
               <SparkSlot key={index} index={index} slot={slot} />
             ))}
           </div>
+
+          <AgentMissionStrip
+            projects={projects.projects}
+            onSave={async (slug, payload) => {
+              await projects.saveSettings(slug, payload as {
+                origin_prompt: string
+                channels: Record<
+                  "research" | "hunter" | "seo" | "aeo_geo" | "engage" | "publish",
+                  { armed: boolean; prompt: string }
+                >
+              })
+            }}
+          />
 
           <div className="flex gap-2">
             <LeadChart

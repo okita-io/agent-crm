@@ -484,18 +484,42 @@ def test_reset_stale_running_queries_zero_minutes_clears_all(loop_db) -> None:
     assert pending.query == "fresh running"
 
 
-def test_tactic_marketing_branch_prompt_targets_retail_fnb_leaders() -> None:
+def test_tactic_marketing_branch_prompt_uses_mission_focus(tmp_path, monkeypatch) -> None:
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+    (projects_dir / "tactic-studio.yaml").write_text(
+        """
+slug: tactic-studio
+name: tactic.studio
+status: live
+enabled: true
+origin_prompt: |
+  Museum and campus grant awardees for interactive exhibits.
+channels:
+  hunter:
+    armed: true
+    prompt: |
+      VP marketing at food and beverage companies over $10 million revenue.
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CRM_PROJECTS_DIR", str(projects_dir))
+    get_settings.cache_clear()
+    from agent_crm.projects.channel_flags import clear_channel_cache
+
+    clear_channel_cache()
+
     with patch("agent_crm.hunt.loop.chat_completions") as mock_llm:
         mock_llm.return_value = {
             "choices": [{"message": {"content": '{"terms": []}'}}]
         }
         _llm_branch_terms(
-            "VP of marketing grocery",
+            "IMLS museum grant",
             [
                 {
                     "title": "Leadership",
-                    "url": "https://grocery.example/leadership",
-                    "content": "marketing team",
+                    "url": "https://museum.example/leadership",
+                    "content": "exhibits team",
                 }
             ],
             max_terms=3,
@@ -503,11 +527,9 @@ def test_tactic_marketing_branch_prompt_targets_retail_fnb_leaders() -> None:
             audience=ContactAudience.MARKETING,
         )
     prompt = mock_llm.call_args[0][0]["messages"][1]["content"].lower()
-    assert "food" in prompt and "beverage" in prompt
+    assert "mission focus" in prompt
+    assert "museum" in prompt and "grant" in prompt
     assert "10 million" in prompt
-    assert "vp of marketing" in prompt
-    assert "brand manager" in prompt
-    assert "not individual people" not in prompt
 
 
 def test_unassigned_loop_seeds_all_brands_when_queue_empty(loop_db) -> None:

@@ -199,6 +199,10 @@ def run_hunt_loop(
         )
         palette_index += 1
 
+        from agent_crm.projects.mission import log_mission_focus
+
+        log_mission_focus(ACTOR, pending.brand, "hunter")
+
         query_progress = (
             f"query {result.queries_run + 1}/{budget.max_queries}"
             if budget.max_queries > 0
@@ -622,19 +626,33 @@ def _llm_branch_terms(
                 max_chars=280,
             )
         )
-    if brand == Brand.TACTIC_STUDIO and audience == ContactAudience.MARKETING:
+    if not lines:
+        return []
+
+    from agent_crm.projects.mission import mission_focus_for
+
+    mission_context = ""
+    if brand is not None:
+        mission_context = mission_focus_for(brand, "hunter", max_chars=700)
+
+    audience_note = ""
+    if audience is not None:
+        audience_note = f"Audience bucket: {audience.value}.\n"
+
+    if mission_context:
         prompt = (
-            "You help an outbound researcher find named marketing leaders at "
-            "large retail and food & beverage companies (more than $10 million "
-            "annual revenue).\n"
+            "You help an outbound researcher find relevant online resources and "
+            "follow-up search queries aligned with the mission focus below.\n"
+            f"Mission focus:\n{mission_context}\n\n"
+            f"{audience_note}"
             f"Original query: {wrap_untrusted('query', query, max_chars=300)}\n"
             "Search results:\n"
             + "\n".join(lines)
             + "\n\n"
-            f"Suggest up to {max_terms} NEW search queries for VP of marketing, "
-            "brand managers, marketing managers, and brand-management leadership "
-            "directories, team pages, and press bios at those companies. "
-            "Prefer company about/leadership pages over XR communities. "
+            f"Suggest up to {max_terms} NEW search queries that advance the mission focus. "
+            "Prefer institution directories, grant award pages, leadership/team pages, "
+            "and community resources over individual people unless the mission calls for "
+            "named roles at grant-funded institutions. "
             "Do NOT invent emails or person names. Skip news headlines, "
             "product recalls, sports, and weather — they are off-topic.\n"
             'Respond with JSON only: {"terms": ["query one", "query two"]}'

@@ -65,11 +65,13 @@ def execute_job(
                 return
             email = row.email
             name = row.name
+            brand = row.brand
         result = enrich_contact_person(
             email=email,
             name=name,
             allow_spark=True,
             budget=budget,
+            brand=brand,
         )
         if result is None:
             with session_scope() as session:

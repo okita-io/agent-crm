@@ -54,16 +54,16 @@ def test_ar_case_study_accepted_for_tactic_studio() -> None:
     assert result.verdict == TopicalRelevanceVerdict.ON_TOPIC
 
 
-def test_retail_marketing_vp_page_accepted_for_tactic_studio() -> None:
+def test_museum_grant_awardee_page_accepted_for_tactic_studio() -> None:
     result = assess_topical_relevance(
         brand=Brand.TACTIC_STUDIO,
-        url="https://grocery.example/leadership/jane-smith",
-        title="Jane Smith, VP of Marketing at FreshMart Grocery",
+        url="https://museum.example/grants/imls-interactive-exhibit-award",
+        title="IMLS Grant Award — Interactive Exhibit at City Science Museum",
         snippet=(
-            "brand management and marketing manager leadership at a "
-            "food and beverage retailer with $50 million revenue"
+            "federal grant recipient for immersive digital storytelling and "
+            "interactive exhibit design at a cultural institution"
         ),
-        query="VP of marketing grocery retail leadership team",
+        query="IMLS museum interactive exhibit grant awardee leadership team",
         allow_spark=False,
     )
     assert result.verdict == TopicalRelevanceVerdict.ON_TOPIC

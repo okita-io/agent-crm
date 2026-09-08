@@ -54,26 +54,26 @@ COMPETITOR_QUERIES: dict[Brand, list[str]] = {
         "influencers promoting AI novels",
     ],
     Brand.TACTIC_STUDIO: [
-        "WebAR XR experience studio portfolio",
-        "industrial AR training vendor enterprise",
-        "8th Wall migration WebAR agency alternative",
-        "immersive brand activation AR studio",
-        "enterprise AR product visualization studio",
-        "Snap AR lens creative production studio",
-        "WebXR agency retail CPG campaigns",
-        "augmented reality industrial training company",
-        "mixed reality studio commercial activations",
-        "AR glasses enterprise deployment vendor",
-        "industrial visualization AR experience manufacturing",
-        "AR industrial product visualization experience studio",
-        "factory floor AR visualization experience",
-        "CAD to AR industrial visualization experience",
-        "digital twin industrial AR visualization experience",
-        "industrial AR training aids manufacturing",
-        "AR work instruction training aids factory",
-        "mixed reality industrial training aids vendor",
-        "enterprise industrial training aid AR overlay",
-        "assembly line AR training aid experience",
+        "IMLS museum interactive exhibit grant award recipient",
+        "NEH digital humanities immersive project grant awardee",
+        "NEA arts grant museum immersive experience recipient",
+        "Grants.gov museum AR XR interactive exhibit award",
+        "USASpending university campus immersive media grant",
+        "state arts council interactive exhibit grant museum",
+        "museum digital storytelling grant award over $100000",
+        "university campus immersive experience grant recipient",
+        "library interactive exhibit digital media grant awardee",
+        "cultural institution AR XR exhibit grant award",
+        "science center immersive digital media grant recipient",
+        "campus digital twin immersive project federal grant",
+        "museum experience vendor partner grant award page",
+        "interactive exhibit production studio museum grant partner",
+        "immersive media vendor museum campus grant subcontractor",
+        "WebAR museum exhibit grant funded project",
+        "mixed reality cultural heritage grant award institution",
+        "digital media exhibit fabrication grant awardee museum",
+        "university museum collaborative immersive grant project",
+        "federal grant interactive public experience awardee",
     ],
     Brand.BEST_BIRYANI: [
         "best biryani Silicon Valley restaurant",
@@ -171,22 +171,22 @@ AD_PLACEMENT_QUERIES: dict[Brand, list[str]] = {
 
 TARGET_COMPANY_QUERIES: dict[Brand, list[str]] = {
     Brand.TACTIC_STUDIO: [
-        "largest US grocery supermarket chains by revenue",
-        "top food and beverage companies over $10 million revenue",
-        "largest CPG consumer packaged goods companies United States",
-        "biggest restaurant QSR chains United States revenue",
-        "convenience store chains US largest companies",
-        "largest retail chains United States by annual revenue",
-        "supermarket companies over $10 million annual revenue list",
-        "beverage brand companies US revenue ranking",
-        "regional grocery chains United States list",
-        "specialty food retailers largest US companies",
-        "department store retail companies United States",
-        "largest alcohol beverage companies US",
-        "snack food companies US over $10 million revenue",
-        "drugstore and convenience retailers largest US chains",
-        "foodservice grocery retailers United States companies",
-        "Fortune 500 retail grocery food beverage companies",
+        "IMLS grant awardees interactive museum exhibits list",
+        "NEH digital projects grant recipients university museum",
+        "NEA grant awards immersive arts cultural institutions",
+        "Grants.gov award search museum interactive exhibit",
+        "USASpending museum immersive digital media awards",
+        "state arts council grant recipients interactive exhibits",
+        "university museum federal grant immersive media projects",
+        "library digital experience federal grant awardees",
+        "campus AR XR grant funded projects institutions",
+        "science museum immersive exhibit federal grant awards",
+        "cultural heritage digital experience grant recipients",
+        "interactive public art federal grant awardee institutions",
+        "museum campus collaborative immersive grant over $100000",
+        "federal grant digital storytelling cultural institution",
+        "IMLS Inspire grant interactive learning awardees",
+        "NEH media projects grant recipient universities",
     ],
 }
 
@@ -226,6 +226,7 @@ def loop_kinds_for_brand(brand: Brand) -> tuple[ResearchFindingKind, ...]:
 def loop_seed_entries() -> list[tuple[Brand, ResearchFindingKind, str]]:
     """Flatten seed packs the standing loop should enqueue (append-only)."""
     from agent_crm.projects.channel_flags import active_brands_for
+    from agent_crm.projects.mission import supplemental_seed_queries
 
     brands = active_brands_for("research") or (
         Brand.CELESTIAL_NEXUS,
@@ -238,6 +239,9 @@ def loop_seed_entries() -> list[tuple[Brand, ResearchFindingKind, str]]:
         for kind in loop_kinds_for_brand(brand):
             for query in seed_queries(brand, kind):
                 entries.append((brand, kind, query))
+        default_kind = default_kind_for_brand(brand)
+        for query in supplemental_seed_queries(brand, "research"):
+            entries.append((brand, default_kind, query))
     return entries
 
 
