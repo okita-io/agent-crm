@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from agent_crm.presence import AGENT_IDENTITY_HEADER
@@ -87,6 +87,33 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     http_client = None
 
 
+def require_queue_token(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_crm_token: str | None = Header(default=None, alias="X-CRM-Token"),
+) -> None:
+    """Require Bearer / X-CRM-Token when ``SPARK_LLM_QUEUE_TOKEN`` is set.
+
+    Empty token disables auth so local tests and an unset ranch secret keep
+    working. ``GET /health`` is always open.
+    """
+    if request.url.path.rstrip("/") == "/health":
+        return
+    expected = get_spark_queue_settings().queue_token.strip()
+    if not expected:
+        return
+    provided = (x_crm_token or "").strip()
+    if not provided and authorization:
+        scheme, _, value = authorization.partition(" ")
+        if scheme.lower() == "bearer":
+            provided = value.strip()
+    if provided != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or missing Spark queue token",
+        )
+
+
 app = FastAPI(
     title="Spark SGLang Queue",
     description=(
@@ -94,6 +121,7 @@ app = FastAPI(
         "across Hermes and CRM agents."
     ),
     lifespan=lifespan,
+    dependencies=[Depends(require_queue_token)],
 )
 
 
@@ -218,7 +246,7 @@ async def _stream_upstream(
         await gate.release(actor)
 
 
-@app.get("/health", tags=["system"])
+@app.get("/health", tags=["system"], dependencies=[])
 async def health() -> dict:
     _sync_runtime_spark_config()
     await occupancy_client.observe_running_count()
