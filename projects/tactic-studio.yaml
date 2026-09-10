@@ -10,31 +10,82 @@ origin_prompt: |
   campuses, libraries, and cultural institutions. Buyer ICP: universities,
   museums, libraries, and cultural institutions that were AWARDED US federal,
   state, or local grants for interactive exhibits, immersive media, AR/XR,
-  digital storytelling, or campus experience projects (IMLS, NEA, NEH,
-  Grants.gov, USASpending, state arts councils). Hunt award recipients and
+  digital storytelling, campus experience, or education/workforce interactive-learning apps (IMLS, NEA, NEH,
+  Grants.gov, USASpending, state arts councils, California Grants Portal
+  grants.ca.gov / Quantum FAST). Hunt award recipients and
   named vendor/partners on grant pages — not generic industrial retail lists.
+  Priority focus: UC/CSU/CCC Quantum FAST partner campuses and MANAGEMENT
+  titles (Director / VP / Dean / Chair / Lab Director / Program Director).
   Research and CRM enrichment only. Outbound email/DM is Pete-gated
   (pete@tactic.studio + naming-rights). Never invent emails or auto-send.
+  Reject dictionary/thesaurus/glossary/definition-only pages as contacts.
 channels:
   research:
     armed: true
     prompt: |
       Default kinds: target_company, competitor, ad_placement.
       Focus: institutions awarded US gov grants for interactive / museum /
-      campus / exhibit / AR-XR / immersive / digital-media projects over $100k.
-      Scrape IMLS, NEA, NEH, Grants.gov, USASpending, and state arts council
-      award pages. Extract recipient institution, grant title, award amount,
-      project description, and named vendors/partners. Tag findings for the
-      gov-grants cultural interactive lane.
+      campus / exhibit / AR-XR / immersive / digital-media / quantum education
+      / workforce projects over $100k — especially Quantum FAST (UC/CSU/CCC).
+      Scrape IMLS, NEA, NEH, Grants.gov, USASpending, state arts council
+      award pages, and the California Grants Portal (grants.ca.gov). Extract
+      recipient institution, grant title, award amount, project description,
+      and named vendors/partners. Tag findings for the gov-grants cultural
+      interactive lane. Prefer Libraries and Arts / museum / exhibit /
+      interactive / immersive / digital storytelling / campus experience
+      opportunities and post-award recipients over $100k when listed.
+      Never treat dictionary.com / thesaurus / glossary / "define:" pages as orgs.
+      query: site:grants.ca.gov quantum FAST challenge award recipient
+      query: site:grants.ca.gov quantum education workforce learning coordinator
+      query: site:grants.ca.gov Quantum FAST campus partner university
+      query: site:grants.ca.gov museum interactive exhibit grant
+      query: site:grants.ca.gov immersive AR XR cultural institution award
+      query: site:grants.ca.gov digital storytelling exhibit grant recipient
+      query: site:grants.ca.gov "Libraries and Arts" interactive exhibit
+      query: site:grants.ca.gov STEM workforce development digital experience
+      query: site:grants.ca.gov interactive learning app education grant program director
+      seed: https://www.grants.ca.gov/grants/quantum-fast-challenge/
+      seed: https://www.grants.ca.gov/?s museum interactive exhibit California
   hunter:
     armed: true
     prompt: |
-      Priority: marketing, exhibits, digital media, and experience-production
-      contacts at grant-awarded museums, universities, libraries, and cultural
-      campuses. Hunt leadership directories, press releases, and grant award
-      pages naming exhibit/interactive project leads. Secondary: XR creators
-      covering museum/campus immersive work. Audience-tagged seeds. Never
-      invent emails. No outbound send.
+      Priority: MANAGEMENT contacts at grant-awarded museums, universities,
+      libraries, and Quantum FAST UC/CSU/CCC partner campuses — Director of
+      Exhibits / Experience / Digital Media / Innovation / Education /
+      Workforce Development; VP Marketing / CMO; Dean; Dept Chair; Lab
+      Director; Program Director. Hunt leadership directories, press releases,
+      and grant award pages naming exhibit/interactive/quantum-education leads
+      — including grants.ca.gov solicitations and post-award pages.
+      Secondary: XR creators covering museum/campus immersive work.
+      Audience-tagged seeds. Never invent emails. No outbound send. Pete-gated.
+      REJECT dictionary/thesaurus/WordNet/glossary/"define X" SERP hits —
+      those are word definitions, not people or institutions.
+      query: "Director of Exhibits" OR "Director of Experience" museum university California
+      query: "Director of Digital Media" OR "Head of Digital" museum campus grant
+      query: "Director of Innovation" OR "Director of Education" university museum California
+      query: "Workforce Development" Director OR Coordinator university California quantum
+      query: "VP Marketing" OR CMO OR "Chief Marketing Officer" university museum California
+      query: "Program Director" OR "Lab Director" quantum education OR QIST OR MQST California
+      query: "Dean" OR "Department Chair" quantum OR immersive media OR digital experience California university
+      query: site:grants.ca.gov quantum FAST award recipient contact OR coordinator OR director
+      query: site:grants.ca.gov "Libraries and Arts" interactive exhibit grant recipient
+      query: site:grants.ca.gov STEM workforce development program director coordinator
+      query: "UCLA" CQSE OR MQST (Ross OR "quantum") ("Director" OR "Program Director" OR Chair)
+      query: "UC Berkeley" OR Berkeley CIQC OR Sipahigil quantum ("Lab Director" OR "Program Director")
+      query: "UC Santa Barbara" OR UCSB Moody quantum ("Director" OR Chair OR Dean)
+      query: "UC Davis" Radulaski quantum ("Lab Director" OR "Program Director" OR Chair)
+      query: "UC San Diego" OR UCSD (Sailor OR Brydges) quantum ("Director" OR Chair)
+      query: "San Jose State" OR SJSU Hurst quantum OR QIST ("Director" OR "Program Director")
+      query: "Cal State San Marcos" OR CSUSM Perron quantum ("Director" OR Chair)
+      query: "Cal Poly" Gillen quantum OR QIST ("Director" OR "Program Director" OR Chair)
+      query: "San Francisco State" OR SFSU Bethel quantum ("Director" OR Chair)
+      query: "Cal State LA" OR "Cal State Los Angeles" Mondin quantum ("Director" OR Chair)
+      query: "CSU East Bay" OR "Cal State East Bay" Kimball quantum ("Director" OR Chair)
+      query: Foothill ETI OR "Foothill College" quantum workforce ("Director" OR Coordinator)
+      query: "University of California" "Director of Exhibits" OR "Director of Experience" campus
+      query: "California State University" "Workforce Development" Director quantum education
+      seed: https://www.grants.ca.gov/grants/quantum-fast-challenge/
+      seed: https://www.grants.ca.gov/?s museum interactive exhibit California
   seo:
     armed: true
     prompt: |
@@ -49,8 +100,9 @@ channels:
     armed: true
     prompt: |
       Museum, campus, library, and cultural-institution venues where
-      interactive / immersive grant projects are discussed. Helpful-first
-      drafts. Conversion CTAs stay human-gated. Never publish from draft agents.
+      interactive / immersive / Quantum FAST grant projects are discussed.
+      Helpful-first drafts. Conversion CTAs stay human-gated. Never publish
+      from draft agents. Never invent emails.
   publish:
     armed: false
     prompt: |

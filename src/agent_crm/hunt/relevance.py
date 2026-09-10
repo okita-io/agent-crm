@@ -55,6 +55,15 @@ ALWAYS_OFF_TOPIC_HOSTS: frozenset[str] = frozenset(
         "bloomberg.com",
         "dictionary.com",
         "merriam-webster.com",
+        "thesaurus.com",
+        "vocabulary.com",
+        "wordnik.com",
+        "thefreedictionary.com",
+        "collinsdictionary.com",
+        "oxfordlearnersdictionaries.com",
+        "lexico.com",
+        "dictionary.cambridge.org",
+        "wordnet.princeton.edu",
         "britannica.com",
         "sportsbots.xyz",
     }
@@ -78,6 +87,13 @@ DENIED_HOST_SUFFIXES: frozenset[str] = frozenset(
         "wsj.com",
         "dictionary.com",
         "merriam-webster.com",
+        "thesaurus.com",
+        "vocabulary.com",
+        "wordnik.com",
+        "thefreedictionary.com",
+        "collinsdictionary.com",
+        "oxfordlearnersdictionaries.com",
+        "lexico.com",
         "britannica.com",
     }
 )
@@ -93,6 +109,36 @@ DOCS_PATH_FRAGMENTS: tuple[str, ...] = (
     "/legal/",
     "/privacy",
     "/terms",
+)
+
+# Lexicon / glossary paths — reject even on otherwise-unknown hosts when the
+# page is defining a word rather than listing people/orgs.
+DEFINITION_PATH_FRAGMENTS: tuple[str, ...] = (
+    "/dictionary/",
+    "/thesaurus/",
+    "/glossary/",
+    "/glossaries/",
+    "/define/",
+    "/definition/",
+    "/definitions/",
+    "/synonym/",
+    "/synonyms/",
+    "/antonym/",
+    "/word-of-the-day",
+)
+
+_DEFINITION_TITLE_RE = re.compile(
+    r"\b("
+    r"definition of|"
+    r"meaning of|"
+    r"synonyms? (for|of)|"
+    r"thesaurus|"
+    r"what does .+ mean|"
+    r"define:\s*|"
+    r"glossary (of|entry)|"
+    r"wordnet"
+    r")\b",
+    re.IGNORECASE,
 )
 
 BRAND_TOPIC_SUMMARIES: dict[Brand, str] = {
@@ -114,9 +160,13 @@ BRAND_TOPIC_SUMMARIES: dict[Brand, str] = {
     Brand.TACTIC_STUDIO: (
         "US government grant awardees for interactive museum, campus, library, "
         "and cultural institution projects: IMLS, NEA, NEH, Grants.gov, USASpending, "
-        "state arts councils. Immersive exhibits, AR/XR, digital media, digital "
-        "storytelling. Marketing, exhibits, and digital media leadership at "
-        "grant-funded institutions; named vendors/partners on award pages."
+        "state arts councils, California Grants Portal / Quantum FAST (UC/CSU/CCC). "
+        "Immersive exhibits, AR/XR, digital media, digital storytelling, quantum "
+        "education/workforce (QIST/MQST). Management titles: Director of Exhibits / "
+        "Experience / Digital Media / Innovation / Education / Workforce Development, "
+        "VP Marketing, CMO, Dean, Dept Chair, Lab Director, Program Director at "
+        "grant-funded campuses. Named vendors/partners on award pages — never "
+        "dictionary/thesaurus definition pages as contacts."
     ),
 }
 
@@ -208,6 +258,29 @@ BRAND_ON_TOPIC_KEYWORDS: dict[Brand, tuple[str, ...]] = {
         "director of exhibits",
         "head of digital",
         "marketing director museum",
+        "grants.ca.gov",
+        "quantum fast",
+        "quantum education",
+        "quantum workforce",
+        "qist",
+        "mqst",
+        "workforce development",
+        "program director",
+        "lab director",
+        "dean of",
+        "department chair",
+        "vp marketing",
+        "chief marketing",
+        "director of innovation",
+        "director of education",
+        "uc berkeley",
+        "ucla",
+        "ucsb",
+        "uc davis",
+        "uc san diego",
+        "cal poly",
+        "san jose state",
+        "foothill",
     ),
 }
 
@@ -253,11 +326,50 @@ def denied_host_reason(url: str) -> str | None:
     return None
 
 
+def looks_like_definition_page(
+    url: str,
+    title: str | None = None,
+    snippet: str | None = None,
+) -> str | None:
+    """Reject lexicon / glossary / define-X pages (not people/org directories)."""
+    host = _normalize_host(_host(url))
+    path = _path(url)
+    if host.endswith("wordnet.princeton.edu") or host == "wordnet.princeton.edu":
+        return "WordNet lexicon page"
+    if host.startswith("dictionary.") or host.startswith("thesaurus."):
+        return f"dictionary/thesaurus subdomain: {host}"
+    if any(fragment in path for fragment in DEFINITION_PATH_FRAGMENTS):
+        return f"definition/glossary path on {host or 'unknown host'}"
+    blob = _text_blob(title, snippet)
+    if blob and _DEFINITION_TITLE_RE.search(blob):
+        # Keep pages that also look like staff/org directories.
+        people_signals = (
+            "director of",
+            "staff",
+            "faculty",
+            "leadership",
+            "team",
+            "contact",
+            "biography",
+            "profile",
+            "department of",
+            "university",
+            "museum",
+            "grant",
+        )
+        if not any(signal in blob for signal in people_signals):
+            return "definition/thesaurus title or snippet without people/org signals"
+    return None
+
+
 def is_obvious_off_topic_url(url: str) -> str | None:
     """Return a rejection reason when the URL is clearly generic noise."""
     denied = denied_host_reason(url)
     if denied:
         return denied
+    definition = looks_like_definition_page(url)
+    if definition:
+        return definition
     host = _normalize_host(_host(url))
     path = _path(url)
     if host == "github.com" and any(fragment in path for fragment in DOCS_PATH_FRAGMENTS):
@@ -301,6 +413,13 @@ def assess_topical_relevance(
         return RelevanceAssessment(
             verdict=TopicalRelevanceVerdict.OFF_TOPIC,
             reason=obvious,
+        )
+
+    definition = looks_like_definition_page(url, title=title, snippet=snippet or page_excerpt)
+    if definition:
+        return RelevanceAssessment(
+            verdict=TopicalRelevanceVerdict.OFF_TOPIC,
+            reason=definition,
         )
 
     # Score the page, never the search query — seed queries already contain

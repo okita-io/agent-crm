@@ -134,6 +134,8 @@ def origin_needs_review(origin: str | None) -> bool:
         return False
     if value.startswith("seed"):
         return False
+    if value.startswith("prompt_seed"):
+        return False
     if value.startswith("venue:"):
         return False
     return True
