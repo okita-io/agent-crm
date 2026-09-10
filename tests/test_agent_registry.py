@@ -37,6 +37,16 @@ def test_presence_roster_matches_registry() -> None:
     assert len(KNOWN_AGENT_ROSTER) == len(AGENT_SPECS)
 
 
+def test_auth_heartbeat_roster_follows_registry() -> None:
+    from agent_crm.auth import EXTERNAL_HEARTBEAT_ACTORS
+    from agent_crm.auth import KNOWN_AGENT_ROSTER as AUTH_ROSTER
+
+    assert set(REG_ROSTER).issubset(AUTH_ROSTER)
+    assert "aeo-geo" in AUTH_ROSTER
+    assert EXTERNAL_HEARTBEAT_ACTORS <= AUTH_ROSTER
+    assert AUTH_ROSTER == frozenset(REG_ROSTER) | EXTERNAL_HEARTBEAT_ACTORS
+
+
 def test_work_agents_and_enqueue_match_registry() -> None:
     assert WORK_AGENTS == REG_WORK
     assert ENQUEUE_ACTION_AGENTS == REG_ENQUEUE

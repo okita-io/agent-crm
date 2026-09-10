@@ -196,3 +196,21 @@ def test_queue_review_tosses_pending_news_that_skipped_review(review_db) -> None
     assert research.claim_next_pending_query() is None
     assert hunt.queue_status()["by_status"].get("rejected", 0) >= 1
     assert research.queue_status().get("rejected", 0) >= 1
+
+def test_dictionary_and_define_queries_tossed() -> None:
+    from agent_crm.enums import Brand
+    from agent_crm.queue_review import assess_search_query
+
+    for query in (
+        "site:thesaurus.com director",
+        "define: workforce development",
+        "synonyms for program director",
+        "merriam-webster dean definition",
+    ):
+        decision = assess_search_query(
+            brand=Brand.TACTIC_STUDIO,
+            query=query,
+            origin="branch:test",
+            allow_spark=False,
+        )
+        assert decision.keep is False, query

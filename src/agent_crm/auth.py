@@ -4,26 +4,19 @@ from __future__ import annotations
 
 from fastapi import Header, HTTPException, Request, status
 
+from .agents.registry import KNOWN_AGENT_ROSTER as REGISTRY_ROSTER
 from .config import get_settings
 
-KNOWN_AGENT_ROSTER: frozenset[str] = frozenset(
+# Actors that post HTTP heartbeats but are not standing Live Agents.
+EXTERNAL_HEARTBEAT_ACTORS: frozenset[str] = frozenset(
     {
-        "lead_intake",
-        "outbound_hunter",
-        "engagement",
-        "publisher",
-        "seo",
-        "queue-review",
-        "research",
-        "job-dispatcher",
-        "orchestrator",
-        "contact-qualifier",
-        "lead_verifier",
-        "crm_manager",
         "hermes",
         "dashboard",
+        "contact-qualifier",
     }
 )
+
+KNOWN_AGENT_ROSTER: frozenset[str] = frozenset(REGISTRY_ROSTER) | EXTERNAL_HEARTBEAT_ACTORS
 
 
 def require_api_token(

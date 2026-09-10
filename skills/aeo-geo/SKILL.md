@@ -18,6 +18,8 @@ Google Search Central does **not** require extra “AI markup.” Ship crawlable
 
 Use `references/aeo-geo-review.md` when writing a review. Use `references/aeo-geo-plan.md` when writing a plan.
 
+For the expanded five-lever scorecard, technical checklist, and anti-patterns, also load pack `ultimate-aeo-seo-geo`.
+
 ## Hard rules
 
 1. **Documents, not deploys.** Output is markdown in `seo_reviews` / `seo_plans` with AEO/GEO kinds. A human applies it on the site.

@@ -36,6 +36,11 @@ def load_reference_slice(relative_path: str, *, max_chars: int = _DEFAULT_MAX_CH
     return _read_bounded(aeo_geo_skill_root() / relative_path, max_chars=max_chars)
 
 
+def load_ultimate_excerpt(*, max_chars: int = 1400) -> str:
+    """Optional ultimate-aeo-seo-geo pack excerpt when vendored beside aeo-geo."""
+    return _read_bounded(skills_root() / "ultimate-aeo-seo-geo" / "SKILL.md", max_chars=max_chars)
+
+
 def review_writer_guidance() -> str:
     audit = load_reference_slice("references/aeo-geo-review.md", max_chars=1600)
     parts = [
@@ -55,6 +60,9 @@ def review_writer_guidance() -> str:
     ]
     if audit:
         parts.append(f"--- aeo-geo-review.md (excerpt) ---\n{audit}")
+    ultimate = load_ultimate_excerpt()
+    if ultimate:
+        parts.append(f"--- ultimate-aeo-seo-geo/SKILL.md (excerpt) ---\n{ultimate}")
     return "\n\n".join(parts)
 
 
@@ -74,6 +82,9 @@ def plan_writer_guidance() -> str:
     ]
     if plan:
         parts.append(f"--- aeo-geo-plan.md (excerpt) ---\n{plan}")
+    ultimate = load_ultimate_excerpt(max_chars=1000)
+    if ultimate:
+        parts.append(f"--- ultimate-aeo-seo-geo/SKILL.md (excerpt) ---\n{ultimate}")
     return "\n\n".join(parts)
 
 

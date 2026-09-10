@@ -67,7 +67,19 @@ _NOISE_QUERY_FRAGMENTS: tuple[str, ...] = (
     "flipboard",
     "merriam-webster",
     "dictionary.com",
+    "thesaurus.com",
+    "vocabulary.com",
+    "thefreedictionary",
+    "wordnik",
+    "wordnet",
+    "collinsdictionary",
+    "oxfordlearnersdictionaries",
+    "lexico.com",
     "britannica",
+    "define:",
+    "definition of",
+    "synonyms for",
+    "glossary of",
     "kubernetes",
     "dockerfile",
 )
@@ -125,7 +137,29 @@ _VERTICAL_HOST_HINTS: dict[Brand, frozenset[str]] = {
         }
     ),
     Brand.TACTIC_STUDIO: frozenset(
-        {"webar", "webxr", "augmented reality", "vp of marketing", "brand manager"}
+        {
+            "webar",
+            "webxr",
+            "augmented reality",
+            "vp of marketing",
+            "brand manager",
+            "quantum fast",
+            "quantum education",
+            "qist",
+            "mqst",
+            "grants.ca.gov",
+            "director of exhibits",
+            "director of experience",
+            "workforce development",
+            "lab director",
+            "program director",
+            "department chair",
+            "uc berkeley",
+            "ucla",
+            "ucsb",
+            "cal poly",
+            "foothill",
+        }
     ),
 }
 
@@ -174,6 +208,11 @@ def assess_search_query(
 
     if any(fragment in cleaned for fragment in _NOISE_QUERY_FRAGMENTS):
         return QueueReviewDecision(keep=False, reason="noise host or docs token in query")
+
+    # Pure lexicon lookups are never useful hunter terms (management titles
+    # should hunt people/orgs, not dictionary definitions of the title words).
+    if cleaned.startswith("define ") or cleaned.startswith("define:") or cleaned.startswith("synonyms for "):
+        return QueueReviewDecision(keep=False, reason="dictionary/definition lookup query")
 
     if is_off_topic_news_query(cleaned):
         return QueueReviewDecision(

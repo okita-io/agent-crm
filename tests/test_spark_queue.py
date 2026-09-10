@@ -14,6 +14,14 @@ from agent_crm.spark_queue.occupancy import (
     _parse_metrics_running,
     _sum_running_fields,
 )
+from agent_crm.spark_queue.config import get_spark_queue_settings
+
+
+@pytest.fixture(autouse=True)
+def _clear_spark_queue_settings():
+    get_spark_queue_settings.cache_clear()
+    yield
+    get_spark_queue_settings.cache_clear()
 
 
 def test_sum_running_fields_from_v1_loads_core() -> None:
@@ -342,3 +350,34 @@ def test_token_ledger_skips_empty_exchanges() -> None:
     ledger = TokenUsageLedger()
     ledger.record("research", 0, 0)
     assert ledger.snapshot()["totals"]["requests"] == 0
+
+
+def test_queue_token_required_when_configured(monkeypatch) -> None:
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from fastapi.testclient import TestClient
+
+    from agent_crm.spark_queue.app import app
+
+    monkeypatch.setenv("SPARK_LLM_QUEUE_TOKEN", "queue-secret")
+    get_spark_queue_settings.cache_clear()
+    upstream = MagicMock()
+    upstream.content = b'{"data":[]}'
+    upstream.status_code = 200
+    upstream.headers = {"content-type": "application/json"}
+    mock_http = MagicMock()
+    mock_http.get = AsyncMock(return_value=upstream)
+    with TestClient(app) as client:
+        with patch("agent_crm.spark_queue.app._client", return_value=mock_http):
+            assert client.get("/health").status_code == 200
+            assert client.get("/v1/models").status_code == 401
+            assert (
+                client.get("/v1/models", headers={"X-CRM-Token": "wrong"}).status_code
+                == 401
+            )
+            ok = client.get("/v1/models", headers={"X-CRM-Token": "queue-secret"})
+            assert ok.status_code == 200
+            bearer = client.get(
+                "/v1/models", headers={"Authorization": "Bearer queue-secret"}
+            )
+            assert bearer.status_code == 200

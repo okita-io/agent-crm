@@ -35,11 +35,13 @@ DEFAULT_AGENT_SKILLS: dict[str, tuple[str, ...]] = {
     "seo": (
         BRAND_CONTEXT_ID,
         "open-seo",
+        "ultimate-aeo-seo-geo",
     ),
     "aeo-geo": (
         BRAND_CONTEXT_ID,
         "aeo-geo",
         "open-seo",
+        "ultimate-aeo-seo-geo",
     ),
     "queue-review": ("marketing-agi",),
 }

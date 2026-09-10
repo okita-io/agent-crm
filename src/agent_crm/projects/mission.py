@@ -40,7 +40,7 @@ def supplemental_seed_queries(
     brand: Brand,
     channel: ProjectChannelName,
     *,
-    max_queries: int = 12,
+    max_queries: int = 48,
 ) -> list[str]:
     """Parse ``query:`` / ``seed:`` lines from a channel prompt as hunt/research seeds.
 

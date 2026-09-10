@@ -152,6 +152,17 @@ def test_compose_publishes_dashboards_on_all_interfaces() -> None:
     assert '"0.0.0.0:3000:80"' in content
 
 
+def test_compose_web_forwards_dashboard_password() -> None:
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    start = content.index("  web:")
+    end = content.index("\n\n", start)
+    block = content[start:end]
+    assert "CRM_API_TOKEN: ${CRM_API_TOKEN:-changeme}" in block
+    assert "CRM_DASHBOARD_PASSWORD: ${CRM_DASHBOARD_PASSWORD:-}" in block
+    nginx = (COMPOSE_PATH.parent / "frontend" / "nginx.conf").read_text(encoding="utf-8")
+    assert "include /etc/nginx/auth.inc;" in nginx
+
+
 def test_workers_wait_for_api_migrations() -> None:
     """Standing workers must start after api so Alembic finishes before init_db."""
     content = COMPOSE_PATH.read_text(encoding="utf-8")

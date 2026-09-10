@@ -147,3 +147,41 @@ def test_spark_used_for_ambiguous_page() -> None:
         )
     assert result.verdict == TopicalRelevanceVerdict.ON_TOPIC
     assert result.spark_used is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.thesaurus.com/browse/director",
+        "https://www.dictionary.com/browse/program",
+        "https://www.merriam-webster.com/dictionary/dean",
+        "https://www.vocabulary.com/dictionary/innovation",
+        "https://www.thefreedictionary.com/director",
+        "https://wordnet.princeton.edu/perl/webwn?s=director",
+        "https://museum.example/glossary/immersive-media",
+        "https://campus.example/dictionary/quantum",
+    ],
+)
+def test_dictionary_thesaurus_and_glossary_urls_rejected(url: str) -> None:
+    assert is_obvious_off_topic_url(url) is not None
+    result = assess_topical_relevance(
+        brand=Brand.TACTIC_STUDIO,
+        url=url,
+        title="Definition of director",
+        snippet="synonyms and meaning from the thesaurus",
+        query="Director of Exhibits university museum",
+        allow_spark=False,
+    )
+    assert result.verdict == TopicalRelevanceVerdict.OFF_TOPIC
+
+
+def test_definition_title_without_people_signals_rejected() -> None:
+    result = assess_topical_relevance(
+        brand=Brand.TACTIC_STUDIO,
+        url="https://random-lexicon.example/words/dean",
+        title="Definition of Dean — Meaning and Synonyms",
+        snippet="What does dean mean? Thesaurus entry and word origin.",
+        query="Dean quantum education California university",
+        allow_spark=False,
+    )
+    assert result.verdict == TopicalRelevanceVerdict.OFF_TOPIC

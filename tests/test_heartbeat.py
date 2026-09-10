@@ -169,6 +169,36 @@ def test_heartbeat_api_round_trip(client: TestClient) -> None:
     assert payload["task"] == "lead 12"
 
 
+def test_aeo_geo_heartbeat_allowed_when_token_configured(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "heartbeat-aeo.db"
+    monkeypatch.setenv("CRM_DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("CRM_API_TOKEN", "secret-token")
+    get_settings.cache_clear()
+    reset_engine()
+    init_db()
+    client = TestClient(app)
+    denied = client.post(
+        "/agents/aeo-geo/heartbeat",
+        json={"status": "working", "task": "geo review"},
+    )
+    assert denied.status_code == 401
+    ok = client.post(
+        "/agents/aeo-geo/heartbeat",
+        headers={"X-CRM-Token": "secret-token"},
+        json={"status": "working", "task": "geo review"},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["agent_name"] == "aeo-geo"
+    unknown = client.post(
+        "/agents/not-a-real-agent/heartbeat",
+        headers={"X-CRM-Token": "secret-token"},
+        json={"status": "idle"},
+    )
+    assert unknown.status_code == 400
+    reset_engine()
+    get_settings.cache_clear()
+
+
 def test_list_agents_includes_idle_roster(client: TestClient) -> None:
     response = client.get("/agents")
     assert response.status_code == 200
