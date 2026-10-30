@@ -6,13 +6,14 @@
 #   <other>    -> exec the args verbatim (escape hatch)
 set -euo pipefail
 
-run_migrations() {
-  echo "[entrypoint] Running database migrations..."
-  # Wait briefly for Postgres if we're pointed at it.
-  if [[ "${CRM_DATABASE_URL:-}" == postgresql* ]]; then
-    echo "[entrypoint] Waiting for Postgres..."
-    for _ in $(seq 1 30); do
-      if python -c "
+wait_for_postgres() {
+  if [[ "${CRM_DATABASE_URL:-}" != postgresql* ]]; then
+    return 0
+  fi
+  echo "[entrypoint] Waiting for Postgres..."
+  local attempt=1
+  while true; do
+    if python -c "
 import sys
 from sqlalchemy import create_engine, text
 from agent_crm.config import get_settings
@@ -24,11 +25,21 @@ try:
 except Exception:
     sys.exit(1)
 " 2>/dev/null; then
-        break
-      fi
-      sleep 1
-    done
-  fi
+      echo "[entrypoint] Postgres is ready."
+      return 0
+    fi
+    if (( attempt >= 120 )); then
+      echo "[entrypoint] Postgres not ready after ${attempt} attempts; exiting." >&2
+      return 1
+    fi
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+}
+
+run_migrations() {
+  echo "[entrypoint] Running database migrations..."
+  wait_for_postgres
   alembic upgrade head
 }
 
@@ -42,6 +53,7 @@ case "$role" in
       --port "${CRM_API_PORT:-8000}"
     ;;
   dashboard)
+    wait_for_postgres
     echo "[entrypoint] Starting dashboard on :${CRM_DASHBOARD_PORT:-8501}"
     exec streamlit run src/agent_crm/dashboard.py \
       --server.address 0.0.0.0 \
@@ -58,6 +70,7 @@ case "$role" in
     run_migrations
     ;;
   *)
+    wait_for_postgres
     exec "$@"
     ;;
 esac

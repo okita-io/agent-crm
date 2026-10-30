@@ -24,6 +24,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
 
   spark-queue:
     build: .
@@ -42,6 +43,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
 
   api:
     build: .
@@ -73,6 +75,7 @@ services:
         condition: service_healthy
       spark-queue:
         condition: service_started
+    restart: unless-stopped
 
   dashboard:
     build: .
@@ -97,6 +100,7 @@ services:
         condition: service_started
       spark-queue:
         condition: service_started
+    restart: unless-stopped
 
   contact-worker:
     build: .
