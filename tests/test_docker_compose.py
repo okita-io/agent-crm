@@ -8,6 +8,24 @@ from agent_crm.agents.registry import compose_services
 
 COMPOSE_PATH = Path(__file__).resolve().parents[1] / "docker-compose.yml"
 
+CORE_SERVICES = ("db", "spark-queue", "api", "dashboard")
+
+
+def _service_block(content: str, service: str) -> str:
+    marker = f"  {service}:"
+    start = content.index(marker)
+    end = content.index("\n\n", start)
+    return content[start:end]
+
+
+def test_compose_core_services_have_restart_policy() -> None:
+    content = COMPOSE_PATH.read_text(encoding="utf-8")
+    for service in CORE_SERVICES:
+        block = _service_block(content, service)
+        assert "restart: unless-stopped" in block, (
+            f"{service} missing restart: unless-stopped"
+        )
+
 
 def test_compose_declares_standing_workers() -> None:
     content = COMPOSE_PATH.read_text(encoding="utf-8")
